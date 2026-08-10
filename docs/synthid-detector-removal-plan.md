@@ -985,6 +985,45 @@ late-fusion ablation for a larger paired corpus; complex spectral analysis
 remains a residual-discovery diagnostic unless a future held-out test reverses
 this result.
 
+### 2026-08-09: closed-corpus architecture and score ablations
+
+A temporally split closed three-class corpus then tested whether the open-proxy
+architecture result transferred to real external-source images. These labels
+establish source classes, not watermark presence; they can measure
+generalization and false positives but cannot substitute for counterfactual
+clean/marked labels.
+
+The frozen normalized-patch baseline was repeated over three training seeds.
+Individual original-image AUCs ranged from 0.864 to 0.879. Averaging the three
+models increased AUC to 0.884, but a threshold above every validation negative
+still produced one false positive among 259 test negatives. At that operating
+point the two positive-source TPRs were only 2.45% and 8.97%. Calibrating near
+1% validation FPR yielded 1.54% test FPR and TPRs of 6.68% and 18.16%.
+Accepted positives had 98.8-100% vendor accuracy, so vendor attribution is
+useful only after an independently reliable presence decision.
+
+A naive full-field spatial model reached only 0.599 AUC. Adding a separately
+encoded stationary-wavelet branch and late fusion reduced AUC to 0.597. Both
+had effectively zero strict TPR. The result does not contradict the causal
+open proxy: it shows that global average pooling over source-labeled images
+does not isolate the transferable signal and that SWT does not repair the
+source shift.
+
+Post-hoc image aggregation also failed to create an operating point. Averaging
+presence logits raised AUC from 0.884 to 0.890, but increased strict test FPR to
+0.77% while reducing TPR. Median, lower-quartile, upper-quartile, and top-tail
+aggregation either preserved the overlap or suppressed almost every positive.
+A separately trained binary presence head plus vendor head reached 0.880
+ensemble AUC, 0.77% strict test FPR, and TPRs of 1.11% and 7.26%. Decoupling the
+heads is architecturally faithful but insufficient without faithful labels.
+
+These ablations close spectral feature engineering, naive full-field pooling,
+and score aggregation as the next detector step. The next valid training epoch
+requires same-content counterfactual pairs or independent watermark oracle
+labels, matched transformations, and an image-level detection loss. External
+generator corpora, including difficult non-target providers, remain hard
+negative and FPR-challenge sets only.
+
 ## Decision record
 
 The program has four possible honest outcomes per provider:

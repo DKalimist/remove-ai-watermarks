@@ -268,6 +268,17 @@ chance, and fixed phase scoring collapsed under crop. Wavelets therefore remain
 a gated late-fusion ablation, while complex spectral analysis remains a
 residual-discovery tool rather than a presence score.
 
+The same conclusion held on a larger temporally split closed corpus. A
+three-seed normalized-patch ensemble reached 0.884 AUC, but its threshold above
+all validation negatives produced a test false positive and detected only
+2.45% and 8.97% of the two positive-source classes. Naive full-field pooling,
+late-fused SWT, robust patch aggregation, and a separate binary detection head
+did not improve that low-FPR operating point. Vendor classification was highly
+accurate among accepted positives, but it cannot rescue an unreliable presence
+decision. Source labels therefore remain suitable for vendor triage and hard
+negative evaluation, not for establishing a SynthID detector without
+counterfactual or oracle watermark labels.
+
 The protocol, exact limitations, and next experiments are recorded in the
 [`detector and removal research plan`](synthid-detector-removal-plan.md).
 
