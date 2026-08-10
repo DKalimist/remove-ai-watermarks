@@ -9,13 +9,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import synthid_tile_attack as attack
+from synthid_periodic_tile import fold_residual_template
 
 
 def test_modulo_folding_recovers_repeated_high_frequency_tile() -> None:
     tile = np.fromfunction(lambda y, x, channel: ((x + y + channel) % 2) * 2.0 - 1.0, (8, 16, 3))
     pixels = 100.0 + np.tile(tile, (8, 4, 1))
 
-    estimated = attack.fold_residual_template(
+    estimated = fold_residual_template(
         pixels,
         tile_height=8,
         tile_width=16,
@@ -29,7 +30,7 @@ def test_modulo_folding_recovers_repeated_high_frequency_tile() -> None:
 def test_subtraction_reduces_repeated_tile_energy() -> None:
     tile = np.fromfunction(lambda y, x, channel: ((x + y + channel) % 2) * 2.0 - 1.0, (8, 16, 3))
     pixels = np.clip(np.rint(100.0 + 4.0 * np.tile(tile, (8, 4, 1))), 0, 255).astype(np.uint8)
-    template = attack.fold_residual_template(
+    template = fold_residual_template(
         pixels,
         tile_height=8,
         tile_width=16,
@@ -47,7 +48,7 @@ def test_folding_rejects_nondivisible_geometry() -> None:
     pixels = np.zeros((63, 64, 3), dtype=np.uint8)
 
     with pytest.raises(ValueError, match="divisible"):
-        attack.fold_residual_template(
+        fold_residual_template(
             pixels,
             tile_height=8,
             tile_width=16,

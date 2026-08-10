@@ -294,6 +294,20 @@ not a universal SynthID detector. Exact measurements and remaining calibration
 gates are in the
 [`detector and removal research plan`](synthid-detector-removal-plan.md#2026-08-10-low-content-controls-and-registered-phase-carrier).
 
+The next native-geometry experiment isolated a stronger mechanism. At
+2048x2048, 108 selected spatial frequencies formed a 128-bin lattice, implying
+a 16x16 periodic residual tile. Folding and averaging 16,384 tile repetitions
+produced a spatial detector that accepted 29 of 30 test positives, none of 49
+calibration negatives, and none of 38 held-out test negatives. It also accepted
+the same two of 182 earlier external-source images as the independent RGB and
+HSV phase branches. Those cases count against operational source-label FPR,
+but may contain the same carrier through an upstream encoder; only an oracle
+can distinguish the two explanations. A normalized tile challenge accepted
+none of 3,000 general images, while symmetric attacks showed strong resize but
+limited JPEG and crop robustness. The pickle-free research implementation is
+`scripts/synthid_periodic_tile_probe.py`; exact evidence and caveats are in the
+[`2048 periodic-tile experiment`](synthid-detector-removal-plan.md#2026-08-10-2048-periodic-tile-detector).
+
 A controlled study (June 2026, clean v0.8.6 with text/face protection OFF,
 native resolution on this repo's default SDXL pipeline) measured the minimum
 img2img strength that removes the SynthID pixel watermark, verified per image on

@@ -14,43 +14,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 import click
-import cv2
 import numpy as np
 from PIL import Image
 from synthid_ensemble_detector import detect_image, load_config, load_models
+from synthid_periodic_tile import fold_residual_template
 from synthid_pixel_attack import load_rgb, measure
 
 log = logging.getLogger(__name__)
-
-
-def fold_residual_template(
-    pixels: np.ndarray,
-    *,
-    tile_height: int,
-    tile_width: int,
-    denoise_sigma: float,
-) -> np.ndarray:
-    """Estimate a zero-mean periodic residual template by modulo folding."""
-    if pixels.ndim != 3 or pixels.shape[2] != 3:
-        raise ValueError("pixels must have shape (height, width, 3)")
-    if tile_height < 1 or tile_width < 1 or denoise_sigma <= 0.0:
-        raise ValueError("tile dimensions and denoise sigma must be positive")
-    height, width = pixels.shape[:2]
-    if height % tile_height != 0 or width % tile_width != 0:
-        raise ValueError("image geometry must be divisible by the tile geometry")
-    source = pixels.astype(np.float64)
-    denoised = cv2.GaussianBlur(
-        source,
-        (0, 0),
-        sigmaX=denoise_sigma,
-        sigmaY=denoise_sigma,
-        borderType=cv2.BORDER_REFLECT_101,
-    )
-    residual = source - denoised
-    repeats_y = height // tile_height
-    repeats_x = width // tile_width
-    folded = residual.reshape(repeats_y, tile_height, repeats_x, tile_width, 3).mean(axis=(0, 2))
-    return folded - np.mean(folded, axis=(0, 1), keepdims=True)
 
 
 def subtract_tiled_template(pixels: np.ndarray, template: np.ndarray, *, strength: float) -> np.ndarray:

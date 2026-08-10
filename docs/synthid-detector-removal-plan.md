@@ -1073,11 +1073,83 @@ The current actionable research candidate remains a positive-only,
 provider-specific expert for the supported 1536x2816 carrier epoch. Identity
 and bounded translation views use the frozen phase and support thresholds;
 unsupported geometry, insufficient carrier magnitude, and ambiguous phase
-return `abstain`. Vendor attribution may select the expert that supplied accepted
-evidence, but it must not turn an abstention into a provider label. The next
+return `abstain`. Vendor attribution may select the expert that supplied
+accepted evidence, but it must not turn an abstention into a provider label. The next
 calibration gate still requires at least 3,000 native-support negatives,
 same-provider oracle negatives, matched non-target solid outputs, and a new
 temporal positive that influenced neither profile nor threshold.
+
+### 2026-08-10: 2048 periodic-tile detector
+
+The phase hypothesis transferred to a second native geometry when the model
+and operating point were kept separate. A 256-peak 2048x2048 model learned from
+111 train positives used the already frozen phase threshold of 0.43, active
+support threshold of 0.40, and a translation search of plus or minus four
+pixels. It accepted 31 of 35 validation positives and 27 of 30 locked-test
+positives while accepting none of 49 validation or 38 test negatives.
+Translation registration recovered the shifted positives without changing
+those identity counts. A threshold recalibrated from only 49 validation
+negatives reached 30 of 30 test positives but accepted one test negative, so it
+was rejected in favor of the transferred rule.
+
+The wider native-geometry challenge exposed the remaining uncertainty. The
+frozen 2048 rule accepted two of 182 earlier external-provider images, for two
+accepted source negatives among all 269 native negatives. Both cases passed at
+zero translation with high phase and support, and both also passed an
+independently learned HSV phase branch. They are operational false positives
+under source labels, but source provenance does not establish watermark
+absence. They may instead expose a shared encoder or upstream backend. Without
+an independent watermark oracle they cannot be relabeled either way. The same
+experiment rejected the 1024x1024 and 768x1376 experts: they accepted 9 of 26
+and 4 of 9 native source negatives, respectively.
+
+The 2048 carrier has a concrete periodic mechanism. Its 256 peaks reduced to
+108 unique spatial frequencies. Translating the frequency coordinates by 128
+rows preserved 56 coordinates, while the maximum overlap in each of 1,000
+uniform random controls was two. The permutation estimate was 0.001, and the
+128-bin spacing implies a 16x16 spatial tile. A separate detector therefore
+folded a high-pass residual modulo 16x16, averaged 16,384 repetitions, and
+correlated the normalized tile against a train-positive template. After
+float64 serialization and validation-only threshold calibration, the fixed
+tile accepted 34 of 35 validation and 29 of 30 test positives, none of the 49
+calibration or 38 held-out test negatives, and the same two of 182 earlier
+source negatives. This second representation supports a real periodic carrier
+rather than an arbitrary set of FFT peaks, but it does not resolve the two
+labels.
+
+The fixed tile also accepted none of a preregistered 3,000-image general-image
+challenge after deterministic 2048x2048 canonicalization. The maximum
+normalized correlation was 0.106 against a threshold of 0.174. The zero-error
+one-sided 95% upper bound is 0.0998% for that challenge. Unlike the earlier
+sparse-phase result, the tile score evaluates every image without a weak
+carrier-support abstention. The challenge is still not native provider data
+and cannot replace the required oracle-negative calibration.
+
+Symmetric attack evaluation established the robustness boundary. The fixed
+tile accepted 29 of 30 original test positives, all 30 after a 75% downscale
+round trip, 21 after JPEG-95, three after JPEG-85, and none after a 5% crop,
+with no accepted held-out negatives under the identity threshold. A
+validation-calibrated JPEG-95 tile threshold recovered 27 of 30 but accepted
+one of 38 test negatives. Requiring both codec-conditioned tile and phase
+scores reduced JPEG-95 to 16 of 30 with no held-out-negative acceptance, but
+still accepted one of the 182 earlier source negatives. The corresponding
+JPEG-85 consensus accepted 5 of 30 positives and none of all 269 native source
+negatives. Scale-and-translation phase search recovered 15 of 35 validation
+and 14 of 30 test crops with no held-out-negative acceptance, but remains
+discovery-only because the test transformation had already influenced the
+branch. Low-frequency peak subsets and transform-augmented phase training
+improved JPEG sensitivity only by raising validation false positives to
+2-10%, so both were rejected.
+
+The reproducible implementation is `scripts/synthid_periodic_tile_probe.py`.
+It stores the normalized template in float64 and calibrates only after loading
+the serialized artifact; an earlier float32 experiment moved a boundary score
+by approximately 2.5e-10 and demonstrated why calibration-before-serialization
+is invalid. The resulting research detector is positive-only and limited to a
+confirmed 2048x2048 carrier epoch. An accepted expert may suggest the encoder
+family, but the two cross-source carrier matches prohibit a stronger vendor
+claim until an oracle distinguishes direct provider output from shared-backend
+output.
 
 ## Decision record
 
