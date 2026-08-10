@@ -258,6 +258,16 @@ research fidelity gate. The OpenAI periodic residual also reduced all three
 local model scores on 11 of 11 additional images before and after JPEG-90, but
 neither provider candidate has a negative matching-provider oracle verdict, so
 neither is an established remover.
+
+A later paired open-method control tested stationary wavelet and complex
+spectral representations without treating another watermark as SynthID. On a
+source-disjoint TrustMark P proxy, the SWT branch moved 59 of 60 transformed
+clean/watermarked pairs in the correct direction but did not improve the
+spatial model's aggregate AUC. Complex FFT maps were indistinguishable from
+chance, and fixed phase scoring collapsed under crop. Wavelets therefore remain
+a gated late-fusion ablation, while complex spectral analysis remains a
+residual-discovery tool rather than a presence score.
+
 The protocol, exact limitations, and next experiments are recorded in the
 [`detector and removal research plan`](synthid-detector-removal-plan.md).
 

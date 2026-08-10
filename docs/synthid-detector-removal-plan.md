@@ -262,8 +262,10 @@ Goal: learn watermark presence from counterfactual image-level evidence that a
 fixed template misses.
 
 The primary model uses a full canonical field with raw RGB or luminance/chroma,
-absolute-amplitude fine and coarse residuals, and an optional frequency branch.
-Locally normalized patch evidence remains a frozen ablation, not the primary
+absolute-amplitude fine and coarse residuals, and optional stationary-wavelet
+and complex-frequency branches. Every optional representation is encoded
+separately and fused late; early channel concatenation is not a valid ablation.
+Locally normalized patch evidence remains a frozen baseline, not the primary
 input. Multi-view registration is aggregated into one image-level presence
 logit. Payload-like, phase, localization, and content-watermarkability heads are
 auxiliary and must prove an incremental held-out benefit.
@@ -936,6 +938,52 @@ substitute for counterfactual negatives.
 Until the counterfactual-label and full-field gates pass, the current residual
 CNN remains a useful vendor-triage stage for a future cascade, but it is not a
 SynthID detector and should not be optimized as the final decision surface.
+
+### 2026-08-09: paired wavelet and spectral ablation
+
+The paired spectral harness was extended with three-level undecimated `db2`
+wavelets, complex Fourier phase coherence and power, cepstral peaks, and a
+cyclic clean/marked permutation control. The implementation streams wavelet and
+spectrum field accumulators rather than stacking transformed fields across
+pairs.
+
+On 60 public TrustMark P training pairs at canonical size 256, the true
+residuals had mean inter-pair RGB NCC of 0.097-0.121. Cyclically mismatching each
+clean image with the next marked image reduced all three channels to about
+-0.017. The strongest coherent Fourier cluster occurred around vertical offsets
+9-11 and was strongest in the blue channel. Wavelet repeatability was greatest
+in horizontal detail bands at levels 1 and 2. These are causal residual
+measurements for the open proxy, not evidence about SynthID's carrier.
+
+The representations then faced a source-disjoint single-image test with 60
+training, 15 calibration, and 15 test pairs under identity, JPEG-90, 0.8 resize,
+and 5% crop transformations. A fixed spectral-template score reached only 0.618
+identity AUC and collapsed to 0.498 under crop. A 318-feature wavelet/spectral
+summary reached 0.653 aggregate AUC and zero TPR at the threshold above every
+calibration negative.
+
+Full-field neural ablations at size 128 gave the following aggregate results:
+
+| Input | AUC | Paired wins | Test FPR | Test TPR |
+| --- | ---: | ---: | ---: | ---: |
+| Spatial RGB plus residuals | 0.723 | 57/60 | 0% | 11.7% |
+| SWT maps only | 0.671 | 59/60 | 0% | 0% |
+| Complex FFT maps only | 0.516 | 41/60 | 0% | 0% |
+| Spatial plus SWT, late fusion | 0.665 | 59/60 | 5.0% | 8.3% |
+| Spatial plus SWT plus FFT, early fusion | 0.639 | 57/60 | 1.7% | 1.7% |
+| Spatial plus SWT plus FFT, late fusion | 0.698 | 54/60 | 0% | 0% |
+
+The table uses one threshold above every calibration negative; test FPR is
+reported separately because a clean calibration result does not guarantee a
+clean locked test.
+
+The SWT branch contains weak, unusually consistent paired evidence, but it did
+not improve the spatial model's source-disjoint discrimination in this small
+proxy. The FFT map branch was indistinguishable from chance. Therefore neither
+representation advances into the primary detector by default. SWT remains a
+late-fusion ablation for a larger paired corpus; complex spectral analysis
+remains a residual-discovery diagnostic unless a future held-out test reverses
+this result.
 
 ## Decision record
 

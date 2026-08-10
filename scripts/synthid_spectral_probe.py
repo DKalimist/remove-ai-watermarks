@@ -1,9 +1,9 @@
-"""Discover and score a shared spectral carrier from exact image pairs.
+"""Analyze wavelet and spectral structure from exact image pairs.
 
 This is a research harness, not a production SynthID detector. Pair provenance
 and oracle labels remain external evidence. The harness deliberately separates
-template discovery from single-image scoring and stores arrays in NPZ without
-pickle.
+paired residual discovery from single-image fixed-template scoring, includes a
+permuted-pair control, and stores arrays in NPZ without pickle.
 
 Usage:
     uv run python scripts/synthid_spectral_probe.py discover \
@@ -19,15 +19,21 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from itertools import combinations
 from pathlib import Path
 
 import click
 import numpy as np
+import pywt
 from PIL import Image, ImageFilter
 
 log = logging.getLogger(__name__)
+
+WAVELET = "db2"
+WAVELET_LEVELS = 3
+SPECTRAL_PEAKS = 32
+CEPSTRAL_PEAKS = 16
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,17 @@ class ImageScore:
     channel_phase_weighted: tuple[float, float, float]
     top_two_channel_phase_12: float
     peak_count: int
+
+
+@dataclass
+class _WaveletAccumulator:
+    """Streaming summary state for one wavelet band."""
+
+    coefficient_sum: np.ndarray
+    energy_sum: np.ndarray
+    coefficient_norm_sum: np.ndarray
+    energy_norm_sum: np.ndarray
+    rms_values: list[np.ndarray] = field(default_factory=list)
 
 
 def load_rgb(path: Path) -> np.ndarray:
@@ -109,6 +126,198 @@ def channel_ncc(first: np.ndarray, second: np.ndarray) -> tuple[float, float, fl
     second_norm = normalized_channels(second)
     values = np.sum(first_norm * second_norm, axis=(0, 1))
     return tuple(float(value) for value in values)
+
+
+def pairwise_ncc_from_normalized_sum(
+    total: np.ndarray,
+    squared_norm_sum: np.ndarray,
+    count: int,
+) -> tuple[float, float, float]:
+    """Recover mean pairwise NCC from the sum of normalized RGB arrays."""
+    if count < 2:
+        return (0.0, 0.0, 0.0)
+    pair_count = count * (count - 1) / 2
+    values = (np.sum(np.square(total), axis=(0, 1)) - squared_norm_sum) / (2.0 * pair_count)
+    return tuple(float(value) for value in values)
+
+
+def stationary_wavelet_bands(
+    residual: np.ndarray,
+    *,
+    wavelet: str = WAVELET,
+    levels: int = WAVELET_LEVELS,
+) -> dict[str, np.ndarray]:
+    """Return undecimated detail bands while preserving canonical coordinates."""
+    if residual.ndim != 3 or residual.shape[2] != 3:
+        raise ValueError("residual must be an RGB array")
+    if levels < 1:
+        raise ValueError("levels must be positive")
+    divisor = 2**levels
+    if residual.shape[0] % divisor or residual.shape[1] % divisor:
+        raise ValueError(f"residual dimensions must be divisible by {divisor}")
+
+    coefficients = pywt.swt2(residual, wavelet, level=levels, axes=(0, 1))
+    bands: dict[str, np.ndarray] = {}
+    for level, (_approximation, details) in enumerate(reversed(coefficients), start=1):
+        for orientation, values in zip(("h", "v", "d"), details, strict=True):
+            bands[f"level_{level}_{orientation}"] = np.asarray(values, dtype=np.float64)
+    return bands
+
+
+def wavelet_report(residuals: list[np.ndarray]) -> dict[str, object]:
+    """Summarize multi-scale wavelet energy and cross-pair repeatability."""
+    if not residuals:
+        raise ValueError("at least one residual is required")
+    accumulators: dict[str, _WaveletAccumulator] = {}
+    for residual in residuals:
+        for name, values in stationary_wavelet_bands(residual).items():
+            coefficient = normalized_channels(values)
+            energy = normalized_channels(np.square(values))
+            accumulator = accumulators.get(name)
+            if accumulator is None:
+                accumulator = _WaveletAccumulator(
+                    coefficient_sum=np.zeros_like(coefficient),
+                    energy_sum=np.zeros_like(energy),
+                    coefficient_norm_sum=np.zeros(3, dtype=np.float64),
+                    energy_norm_sum=np.zeros(3, dtype=np.float64),
+                )
+                accumulators[name] = accumulator
+            accumulator.coefficient_sum += coefficient
+            accumulator.energy_sum += energy
+            accumulator.coefficient_norm_sum += np.sum(np.square(coefficient), axis=(0, 1))
+            accumulator.energy_norm_sum += np.sum(np.square(energy), axis=(0, 1))
+            accumulator.rms_values.append(np.sqrt(np.mean(np.square(values), axis=(0, 1))))
+
+    bands: list[dict[str, object]] = []
+    for name, accumulator in accumulators.items():
+        rms = np.asarray(accumulator.rms_values)
+        bands.append(
+            {
+                "name": name,
+                "median_rms": [float(value) for value in np.median(rms, axis=0)],
+                "rms_cv": [
+                    float(value)
+                    for value in np.divide(
+                        np.std(rms, axis=0),
+                        np.mean(rms, axis=0),
+                        out=np.zeros(3, dtype=np.float64),
+                        where=np.mean(rms, axis=0) > 1e-12,
+                    )
+                ],
+                "coefficient_ncc": pairwise_ncc_from_normalized_sum(
+                    accumulator.coefficient_sum,
+                    accumulator.coefficient_norm_sum,
+                    len(residuals),
+                ),
+                "energy_map_ncc": pairwise_ncc_from_normalized_sum(
+                    accumulator.energy_sum,
+                    accumulator.energy_norm_sum,
+                    len(residuals),
+                ),
+            }
+        )
+    return {"wavelet": WAVELET, "levels": WAVELET_LEVELS, "bands": bands}
+
+
+def _top_half_plane_offsets(values: np.ndarray, count: int, *, min_radius: float) -> list[tuple[int, int, int]]:
+    """Return top ROW/COLUMN/CHANNEL indices from one centered half-plane."""
+    height, width, channels = values.shape
+    center_y, center_x = height // 2, width // 2
+    yy, xx = np.ogrid[:height, :width]
+    radius = np.sqrt(np.square(yy - center_y) + np.square(xx - center_x))
+    half_plane = (yy > center_y) | ((yy == center_y) & (xx >= center_x))
+    valid = (radius >= min_radius) & half_plane
+    masked = np.where(valid[:, :, None], values, -np.inf)
+    limit = min(count, int(np.sum(np.isfinite(masked))))
+    flat = np.argpartition(masked.ravel(), -limit)[-limit:]
+    flat = flat[np.argsort(masked.ravel()[flat])[::-1]]
+    return [tuple(int(value) for value in np.unravel_index(index, (height, width, channels))) for index in flat]
+
+
+def spectral_report(residuals: list[np.ndarray]) -> dict[str, object]:
+    """Summarize complex phase coherence, power, and cepstral periodicity."""
+    if not residuals:
+        raise ValueError("at least one residual is required")
+    unit_sum = np.zeros(residuals[0].shape, dtype=np.complex128)
+    power_sum = np.zeros(residuals[0].shape, dtype=np.float64)
+    for residual in residuals:
+        spectrum = np.fft.fftshift(np.fft.fft2(normalized_channels(residual), axes=(0, 1)), axes=(0, 1))
+        magnitude = np.abs(spectrum)
+        unit_sum += np.divide(spectrum, magnitude, out=np.zeros_like(spectrum), where=magnitude > 1e-12)
+        power_sum += np.square(magnitude)
+    coherence = np.abs(unit_sum / len(residuals))
+    power = power_sum / len(residuals)
+    weighted = coherence * np.sqrt(power)
+    height, width, _ = coherence.shape
+    center_y, center_x = height // 2, width // 2
+    total_power = np.sum(power, axis=(0, 1))
+    peaks = []
+    for row, column, channel in _top_half_plane_offsets(weighted, SPECTRAL_PEAKS, min_radius=4.0):
+        peaks.append(
+            {
+                "dy": row - center_y,
+                "dx": column - center_x,
+                "channel": channel,
+                "phase_coherence": float(coherence[row, column, channel]),
+                "power_fraction": float(power[row, column, channel] / max(total_power[channel], 1e-12)),
+            }
+        )
+
+    mean_power = np.mean(power, axis=2)
+    cepstrum = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(np.log1p(mean_power)))))
+    cepstral_cube = cepstrum[:, :, None]
+    cepstral = [
+        {"dy": row - center_y, "dx": column - center_x, "magnitude": float(cepstrum[row, column])}
+        for row, column, _channel in _top_half_plane_offsets(cepstral_cube, CEPSTRAL_PEAKS, min_radius=2.0)
+    ]
+    return {
+        "phase_coherence_median": float(np.median(coherence)),
+        "phase_coherence_p95": float(np.quantile(coherence, 0.95)),
+        "peaks": peaks,
+        "cepstral_peaks": cepstral,
+    }
+
+
+def _canonical_rgb(path: Path, size: int) -> np.ndarray:
+    """Return floating-point RGB pixels at the canonical analysis size."""
+    with Image.open(path) as source:
+        image = source.convert("RGB").resize((size, size), Image.Resampling.BILINEAR)
+    return np.asarray(image, dtype=np.float64)
+
+
+def permutation_control(
+    residuals: list[np.ndarray],
+    measurements: list[PairMeasurement],
+) -> dict[str, object] | None:
+    """Compare true residual repeatability with deliberately mismatched pairs."""
+    if len(measurements) < 2:
+        return None
+    size = residuals[0].shape[0]
+    true_sum = np.zeros_like(residuals[0])
+    mismatched_sum = np.zeros_like(residuals[0])
+    true_norm_sum = np.zeros(3, dtype=np.float64)
+    mismatched_norm_sum = np.zeros(3, dtype=np.float64)
+    mismatched_rms: list[float] = []
+    for residual in residuals:
+        normalized = normalized_channels(residual)
+        true_sum += normalized
+        true_norm_sum += np.sum(np.square(normalized), axis=(0, 1))
+    for index, measurement in enumerate(measurements):
+        other = measurements[(index + 1) % len(measurements)]
+        clean = _canonical_rgb(Path(measurement.clean), size)
+        marked = _canonical_rgb(Path(other.marked), size)
+        mismatched = marked - clean
+        normalized = normalized_channels(mismatched)
+        mismatched_sum += normalized
+        mismatched_norm_sum += np.sum(np.square(normalized), axis=(0, 1))
+        mismatched_rms.append(float(np.sqrt(np.mean(np.square(mismatched)))))
+    return {
+        "strategy": "cyclic marked-image permutation",
+        "true_pair_ncc": pairwise_ncc_from_normalized_sum(true_sum, true_norm_sum, len(residuals)),
+        "mismatched_pair_ncc": pairwise_ncc_from_normalized_sum(mismatched_sum, mismatched_norm_sum, len(residuals)),
+        "true_median_rms": float(np.median([np.sqrt(np.mean(np.square(residual))) for residual in residuals])),
+        "mismatched_median_rms": float(np.median(mismatched_rms)),
+    }
 
 
 def build_template(residuals: list[np.ndarray]) -> np.ndarray:
@@ -227,7 +436,7 @@ def load_template(path: Path) -> tuple[np.ndarray, np.ndarray]:
 def discovery_report(
     residuals: list[np.ndarray], measurements: list[PairMeasurement], peaks: np.ndarray
 ) -> dict[str, object]:
-    """Build a JSON-safe report with pair statistics and cross-pair NCC."""
+    """Build a JSON-safe paired wavelet and spectral discovery report."""
     pairwise = [
         {
             "first": measurements[first].marked,
@@ -241,12 +450,15 @@ def discovery_report(
         "pairs": [asdict(measurement) for measurement in measurements],
         "pairwise": pairwise,
         "peaks": peaks.tolist(),
+        "wavelet": wavelet_report(residuals),
+        "spectral": spectral_report(residuals),
+        "permutation_control": permutation_control(residuals, measurements),
     }
 
 
 @click.group()
 def main() -> None:
-    """Discover and score an experimental shared spectral carrier."""
+    """Analyze paired residuals and score an experimental spectral template."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
