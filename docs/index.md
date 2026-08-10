@@ -25,6 +25,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, and release workflow. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |
 | [SynthID technical reference](synthid.md) | Mechanism, detector access, robustness, and implications for this project. |
+| [SynthID detector and removal plan](synthid-detector-removal-plan.md) | Gated research program for provider-specific local detection and pixel-only removal. |
 
 ## Research archive
 

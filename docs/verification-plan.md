@@ -175,12 +175,19 @@ Three harness rules are load-bearing and must not be relaxed: score a mark only 
 crop's adjudication scope; take provenance from metadata, never from labels; and never
 report recall from the detector-sampled set.
 
-## Tier D -- external oracles (manual, not automatable here)
+## Tier D -- external oracles
 
-SynthID removal cannot be verified locally by design -- no public decoder exists. Each
-vendor has its own oracle and it covers only that vendor's content: `openai.com/verify` for
-OpenAI (more accessible, the automation candidate), the Gemini app for Google (manual,
-rate-limited). A quiet metadata proxy is **not** proof the pixel watermark is gone.
+SynthID removal cannot currently be verified locally because no public decoder weights
+exist. Each vendor has its own oracle and it covers only that vendor's content. OpenAI
+documents a synchronous Content Provenance API with a distinct SynthID result, while the
+Gemini app provides a manual, quota-limited Google verifier. A quiet metadata proxy is
+**not** proof the pixel watermark is gone.
+
+OpenAI's API documentation says not to use repeated queries to reverse-engineer, remove,
+or evade a watermark. Using it as an adaptive research oracle therefore requires explicit
+authorization. Without that authorization it must not become a training loss, search loop,
+or automated removal gate. The provider-specific detector and pixel-only removal research
+protocol is in [`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
 
 Scope honestly: this tier certifies strength floors on a handful of images per vendor, and
 that is all it can do. See `docs/synthid.md`.
@@ -279,7 +286,7 @@ on one file. The bar is never "handles it" but **never raises and never silently
 5. **A5 contract sweep over a representative local set**.
 6. **B4 resource ceilings**, **E robustness**.
 7. **C recall expansion** -- gated by labelling appetite.
-8. **D oracles** -- manual, per release.
+8. **D oracles** -- authorized and provider-specific, per release.
 
 Every tier writes a versioned snapshot so runs are comparable over time; a run that cannot
 be diffed against the last one is a one-off, not a regression suite.

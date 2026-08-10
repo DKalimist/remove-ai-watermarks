@@ -176,6 +176,62 @@ conversion (the body text of Section 10 is absent from the HTML).
 
 **What is known empirically from our own oracle-verified testing.**
 
+A 2026-08-09 non-generative pilot found a promising Google phase-correlate,
+but did not establish a releasable local detector or pixel-only remover. The
+best independently fitted model relearned phase and magnitude from four of our
+positives while using third-party candidate coordinates; its second frozen
+epoch had zero false positives on 279 new exact-size external images and
+detected the one new confirmed positive used for validation. An additional
+3,000 upscaled photographs all fell outside the measured active-carrier support
+and therefore count as abstentions, not negatives. The corpus is still far too
+small and lacks same-provider hard negatives needed for a 0.1% FPR claim.
+Repeating the spectral fit in six color spaces produced zero false positives
+on the same 279-image comparison set for every branch. HSV had the best
+observed worst-negative margin, but paired normalized negative scores did not
+show a general improvement over RGB. Its apparent benefit came from saturation
+and value; hue failed its channel-level separation check. Luminance-like
+channels dominated YCbCr, YCoCg, opponent, and Lab. This narrows the next
+hypothesis to intensity/contrast and HSV S+V projections rather than a
+hue-specific carrier, but it does not add independent positives or certify an
+operating point.
+The resulting positive-only RGB plus S/V ensemble passed four
+leave-one-positive-out checks, detected all five available positive controls,
+and emitted no positive verdict on 330 newly collected exact-size images.
+Almost all external images lacked sufficient measured carrier support and
+therefore remained abstentions rather than proven negatives.
+
+Directly projecting out the ensemble phases cleared the local detector above
+51 dB PSNR, but three frozen candidates remained detected by Gemini in a
+healthy control session. A subsequent spatial analysis found that 81.25% of
+the top 256 carrier bins lie on a lattice corresponding to a repeating 16x32
+pixel cell. Modulo-folding and subtracting the complete high-pass tile gave
+phase-specific matched-control separation across all five Google positives at
+at least 55.67 dB PSNR: aligned outputs cleared the local ensemble, while
+one-pixel-shifted controls remained positive. The mild locally clearing tile
+candidate nevertheless remained detected in a healthy Google Verify AI
+session, so the tile correlate is not a sufficient removal loss.
+Sparse subtraction reduced the local score sharply at more than 50 dB PSNR,
+yet healthy Gemini sessions still detected SynthID. A one-off negative was
+discarded because the same session also missed the source-positive control.
+An OpenAI-specific 8-pixel phase candidate likewise changed its local score at
+46.70 dB PSNR but remained `SynthID detected` in one frozen OpenAI Verify
+check. No Google threshold or carrier was used in that experiment, and no
+further public OpenAI checks were made because the documented verifier guidance
+rules out repeated watermark-removal queries.
+
+A later local EOT pilot combined periodic full-frame residuals with JPEG-aware
+optimization against provider-specific CNN surrogates. It produced candidates
+that stayed below three local models after actual JPEG round trips, but the
+models remain provider classifiers without same-provider oracle-negative
+controls. The selected Google candidate retained 36.80 dB PSNR and 0.9241
+SSIM; the selected OpenAI candidate retained 34.97 dB and 0.9356. Both miss the
+research fidelity gate. The OpenAI periodic residual also reduced all three
+local model scores on 11 of 11 additional images before and after JPEG-90, but
+neither provider candidate has a negative matching-provider oracle verdict, so
+neither is an established remover.
+The protocol, exact limitations, and next experiments are recorded in the
+[`detector and removal research plan`](synthid-detector-removal-plan.md).
+
 A controlled study (June 2026, clean v0.8.6 with text/face protection OFF,
 native resolution on this repo's default SDXL pipeline) measured the minimum
 img2img strength that removes the SynthID pixel watermark, verified per image on
@@ -186,14 +242,15 @@ Generated cleaned outputs are not committed; the table below is the durable
 record of the historical oracle verdicts. One third-party image from issue #14
 was oracle-verified but is not committed.
 
-**Oracle validation order: start with OpenAI.** When validating removal across
-vendors, run the OpenAI arm first. `openai.com/verify` is more accessible than the
-Gemini app -- fewer per-check restrictions, so it gives the fastest signal and is
-the strongest candidate for automation (Playwright / Chrome MCP driving
-`openai.com/verify`); the Gemini "Verify with SynthID" flow is more manual. This is
-an ordering/throughput choice, not a substitution: each oracle only reads its own
-vendor's SynthID (`openai.com/verify` is OpenAI-scoped), so Google content still
-needs the Gemini app.
+**Historical oracle validation order: start with OpenAI.** The June study used
+the OpenAI web verifier first because it was more accessible than the Gemini app.
+OpenAI now documents a Content Provenance API, but its usage guidance explicitly
+rules out repeated queries for reverse engineering or watermark removal. New
+adaptive experiments require separate authorization and must follow the oracle
+boundary in the
+[`detector and removal research plan`](synthid-detector-removal-plan.md). This is
+not a cross-provider substitution: each oracle reads only its own vendor's
+SynthID, so Google content still needs the Gemini flow.
 
 | Vendor | Images | Resolution(s) | Pipeline | Removed at |
 |--------|--------|---------------|----------|------------|
@@ -269,7 +326,7 @@ diffusion prior."
 
 ## 3. Detectability and verifier access
 
-### 3.1 No public local detector
+### 3.1 No public local decoder
 
 The SynthID decoder is proprietary and not released:
 
@@ -278,16 +335,24 @@ The SynthID decoder is proprietary and not released:
 > available to trusted testers."
 > -- Gowal et al., arXiv:2510.09263
 
-There is no public API, no released decoder weights, and no reproducible
-algorithm for local detection. The verification service (SynthID Detector) is:
+There are no released decoder weights and no reproducible algorithm for local
+detection. Google provides verification in Gemini and a limited SynthID Detector
+portal. OpenAI now documents a synchronous Content Provenance API whose image
+response contains separate C2PA and SynthID outcomes. That API is a remote,
+OpenAI-scoped verifier, not a local decoder. Its documentation also says not to
+use repeated queries to reverse-engineer, remove, or evade a watermark, so an
+adaptive research loop requires separate authorization.
+
+Google's SynthID Detector service is:
 
 > "a verification portal" in early testing with "journalists and media
 > professionals" on a waitlist
 > -- deepmind.google/models/synthid/
 
 The external variant SynthID-O is available "through partnerships" only. Our
-tool cannot locally detect SynthID presence or absence -- this is by design,
-not a gap we can fill.
+tool does not currently detect SynthID pixels locally. The gated research path
+for determining whether that can change is documented in
+[`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
 
 ### 3.2 How our tool recognizes SynthID from provenance
 
@@ -312,20 +377,18 @@ This is why:
 
 ### 3.3 Oracle scope: each vendor detects only their own
 
-From openai.com/research/verify (verbatim, verified 2026-05-31):
-
-> "OpenAI generation signals will only be detected if the image was generated
-> with our tools."
-> "Content could also still be AI-generated by another company's model, which
-> the tool currently does not detect."
+OpenAI's current Content Provenance API documentation says it checks supported
+OpenAI signals and is not a general-purpose AI detector. Google's current Gemini
+documentation likewise says Gemini recognizes SynthID from Google AI tools,
+not other companies' payloads.
 
 SynthID technology is used by multiple vendors, but each verifier is keyed to
 its own payload:
 
-| Oracle                        | Detects          | Does NOT detect         |
-|-------------------------------|------------------|-------------------------|
-| Gemini app "Verify with SynthID" | Google SynthID | OpenAI SynthID          |
-| openai.com/research/verify    | OpenAI SynthID   | Google SynthID          |
+| Oracle | Detects | Does not detect |
+| --- | --- | --- |
+| Gemini app verification | Google SynthID | OpenAI SynthID |
+| OpenAI Content Provenance API or web verifier | Supported OpenAI SynthID | Google SynthID |
 
 A Google-SynthID image reads clean on openai.com/verify. An OpenAI image reads
 clean in the Gemini oracle. They are different payloads within the same
@@ -620,8 +683,10 @@ Two constraints on reading this:
   subjects.** JPEG re-encoding removes C2PA metadata but does NOT remove the
   SynthID pixel watermark (verified June 2026 on issue #14 pic3). Do not
   dismiss these as "not faithful originals" for SynthID-removal tests.
-- **The correct oracle for OpenAI images is openai.com/verify**, not the Gemini
-  app. The two oracles detect different payloads.
+- **The correct oracle for OpenAI images is an authorized OpenAI provenance
+  verifier**, not the Gemini app. OpenAI now documents both a web tool and a
+  Content Provenance API; the API's published use restrictions still apply.
+  The OpenAI and Google oracles detect different payloads.
 - **A quiet `identify` output after processing is not proof of removal.** It
   means the provenance evidence is gone. The pixel watermark state is unknown without
   an oracle check.
@@ -756,8 +821,8 @@ reproducible verification requires a fixed seed.
    Forensic Stealth in Generative-AI Watermark Removal.** arXiv:2605.09203.
    https://arxiv.org/abs/2605.09203
 
-5. OpenAI. **Verify tool for AI-generated images.** openai.com/research/verify.
-   Accessed 2026-05-31.
+5. OpenAI. **Content provenance.**
+   https://developers.openai.com/api/docs/guides/content-provenance
 
 6. Google. **Verify AI-generated images, videos, and audio.**
    https://support.google.com/gemini/answer/16722517
