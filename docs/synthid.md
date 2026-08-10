@@ -42,6 +42,21 @@ after generation, by a separate neural network. This means:
 - Replacing the generative model does not remove the watermarking capability.
 - The encoder/decoder pair can be updated independently of the generative model.
 
+The detector's training target is narrower than provider or AI-image
+classification. Equation 1 trains on watermarked `f(x)` as positive and the
+corresponding unwatermarked distribution `x` as negative, with both drawn from
+the same target image distribution. Equation 2 applies the same sampled
+semantics-preserving transformation to both sides. Unrelated generators and
+camera images are useful later for false-positive evaluation, but they do not
+replace source-matched clean examples during signal-identifiability training.
+
+The decoder produces a dedicated detection logit whose threshold is calibrated
+after training for a target false-positive rate. Payload recovery is a separate
+problem, not the definition of the presence score. The paper additionally
+describes two-sided conformal calibration for the `not watermarked` and
+`watermarked` hypotheses, which permits a detector to abstain instead of forcing
+an unsupported binary verdict.
+
 The paper does not disclose the internal architecture of the encoder/decoder
 networks (layer types, capacity). The external variant SynthID-O is available
 to partners; the production internal variant is not published.

@@ -219,23 +219,66 @@ Gate: advance the classical detector only if the locked test shows a stable
 watermark-specific advantage over confound baselines. Do not choose a threshold
 from the locked test.
 
+### Mechanism hypotheses for D3-D5
+
+The next detector epoch tests these hypotheses as one preregistered program:
+
+1. **Counterfactual labels.** Train and calibrate on source-matched
+   clean/watermarked examples, ideally the same underlying image before and
+   after encoding. A result that vanishes when source, date, codec, and
+   dimensions are balanced is a provider fingerprint, not watermark evidence.
+2. **Canonical full-field evidence.** Preserve a 512x512 image-level field,
+   absolute residual amplitude, and chroma alongside normalized residuals.
+   Compare it against the frozen patch baseline on source-disjoint pairs.
+   Failure to improve paired low-FPR detection rejects the added global context.
+3. **Registration.** Score several bicubic canonical views spanning small scale,
+   crop, and offset changes, then aggregate before calibration. This tests
+   whether synchronization is distributed across the image rather than fixed to
+   one global phase or local grid.
+4. **Independent detection head.** Learn one presence logit directly. Treat
+   payload-like or phase-consistency heads as auxiliary evidence, not as the
+   presence decision. Their inclusion must improve a held-out paired test, not
+   only attack-surface scores.
+5. **Symmetric transformation channel.** Apply the identical sampled codec,
+   resize, crop, color, noise, or overlay operation to both members of a pair. A
+   transform is admitted only when the reference decoder, where available,
+   confirms that the transformed positive remains valid.
+6. **Encoder versions.** Compare one universal model with version- or
+   epoch-specific experts on a cross-version transfer matrix. A version split is
+   useful only if it improves held-out likelihood without source metadata at
+   inference.
+7. **Content-dependent watermarkability.** Measure flat, low-contrast,
+   monochrome, logo, and pixel-art strata separately. Allow a
+   content-conditioned expert or abstention instead of forcing one global
+   operating point.
+8. **Two-sided calibration.** Calibrate empirical evidence for both `not
+   watermarked` and `watermarked`, returning positive, negative, or abstain.
+   External generator corpora enter afterward as an untouched false-positive
+   challenge, not as a substitute for counterfactual negatives.
+
 ### Experiment D4: learned residual detector
 
-Goal: learn content-dependent evidence that a fixed template misses.
+Goal: learn watermark presence from counterfactual image-level evidence that a
+fixed template misses.
 
-Start with a small two-view model:
+The primary model uses a full canonical field with raw RGB or luminance/chroma,
+absolute-amplitude fine and coarse residuals, and an optional frequency branch.
+Locally normalized patch evidence remains a frozen ablation, not the primary
+input. Multi-view registration is aggregated into one image-level presence
+logit. Payload-like, phase, localization, and content-watermarkability heads are
+auxiliary and must prove an incremental held-out benefit.
 
-1. a spatial view of locally normalized high-pass RGB residuals;
-2. a frequency view containing log magnitude and phase-derived channels.
-
-Fuse only late features so each view can be ablated. Use aggressive content and
-export balancing, group-aware sampling, and augmentations drawn from the paper's
-transformation families. Never expose metadata, path, dimensions without
-normalization, or encoder-specific byte patterns to the network.
+Use group-aware pair sampling and apply every sampled transformation
+symmetrically to the clean and watermarked members. Never expose metadata,
+paths, native dimensions without normalization, or encoder-specific byte
+patterns to the network. If causal pairs remain unavailable, do not advance a
+learned model from provider classification to this experiment.
 
 Train provider-specific models first. A shared backbone with provider-specific
 heads is a later ablation, not the default architecture. Keep a second detector
 family completely outside remover training so it can reveal surrogate overfit.
+Compare a universal head with version-specific experts, and calibrate the
+selected model with two-sided empirical evidence so ambiguous inputs abstain.
 
 Gate for a detector release candidate:
 
@@ -853,6 +896,46 @@ candidate remains the strongest transport-robust and cross-architecture result;
 the candidates above 40 dB are architecture-specific and cannot support a
 removal claim. No additional public OpenAI verifier requests were made during
 these experiments.
+
+### 2026-08-09: mechanism reset and paired open-method control
+
+The first detector epochs optimized the wrong statistical problem. The
+[technical reference](synthid.md#11-post-hoc-model-independent-design) now
+records the paper's paired training target, symmetric transformation channel,
+independent detection logit, and two-sided calibration. Applied to the initial
+pilots, those details reject three implicit assumptions: that a carrier phase
+can stand in for the detection score, that mean patch classification is an
+adequate image-level decoder, and that a sigmoid threshold calibrated on
+unrelated negatives is a deployable decision rule.
+
+A bounded open-method control tested the architecture concern without claiming
+that another watermark reproduces SynthID. TrustMark P was used only because
+its public encoder creates causal clean/watermarked pairs and its public decoder
+can validate transformed labels. Ninety public COCO images were split by source
+image into 60 training, 15 calibration, and 15 test pairs. Each pair received
+the same identity, JPEG-90, 0.8 resize round trip, or 5% crop transformation.
+The official decoder detected 14/15, 15/15, 14/15, and 15/15 transformed marked
+test images respectively, with zero detections on the corresponding clean
+images.
+
+The existing normalized residual patch recipe reached only 0.707 identity AUC
+and 0.668 aggregate AUC on the held-out pairs. A small full-field model that
+retained RGB amplitude plus fine and coarse residuals reached 0.947 identity AUC
+and 0.841 aggregate AUC. At a threshold above every calibration negative, their
+aggregate TPRs were 5% and 20% respectively. Both models failed to reproduce
+the official decoder's JPEG robustness. This small proxy is not a TrustMark
+benchmark and says nothing directly about SynthID accuracy. It does falsify the
+claim that the current patch-normalized architecture and training recipe are an
+adequate generic neural-watermark detector.
+
+The resulting eight falsifiable hypotheses now define the canonical
+[D3-D5 mechanism program](#mechanism-hypotheses-for-d3-d5). In particular,
+external generator corpora remain a final false-positive challenge and do not
+substitute for counterfactual negatives.
+
+Until the counterfactual-label and full-field gates pass, the current residual
+CNN remains a useful vendor-triage stage for a future cascade, but it is not a
+SynthID detector and should not be optimized as the final decision surface.
 
 ## Decision record
 
