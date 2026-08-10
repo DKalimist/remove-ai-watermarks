@@ -279,8 +279,20 @@ decision. Source labels therefore remain suitable for vendor triage and hard
 negative evaluation, not for establishing a SynthID detector without
 counterfactual or oracle watermark labels.
 
-The protocol, exact limitations, and next experiments are recorded in the
-[`detector and removal research plan`](synthid-detector-removal-plan.md).
+A later low-content matrix also rejected wavelet energy and normalized
+wavelet-shape classifiers: they separated real target outputs from artificial
+flat, Gaussian, and phase-random controls, then accepted 61.6-100% of real
+external negatives. The surviving branch is narrower. A provider-specific
+1536x2816 phase carrier detected all four temporal-test positives, bounded
+translation registration recovered all four one-pixel shifts, and the joint
+phase/support rule produced zero positives on 194 frozen negatives. A
+scale-and-translation discovery rule also produced zero positives on a
+preregistered 3,000-image COCO challenge, but every COCO image was outside
+carrier support and the scale threshold was selected post hoc. The result is
+therefore a positive-only, geometry- and epoch-specific expert with abstention,
+not a universal SynthID detector. Exact measurements and remaining calibration
+gates are in the
+[`detector and removal research plan`](synthid-detector-removal-plan.md#2026-08-10-low-content-controls-and-registered-phase-carrier).
 
 A controlled study (June 2026, clean v0.8.6 with text/face protection OFF,
 native resolution on this repo's default SDXL pipeline) measured the minimum

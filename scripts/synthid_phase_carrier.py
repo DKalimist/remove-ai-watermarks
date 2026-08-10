@@ -16,6 +16,7 @@ from pathlib import Path
 import click
 import numpy as np
 from PIL import Image
+from synthid_phase_registration import MAX_TRANSLATION_SHIFT, extract_frequency_values, register_phase_translations
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,18 @@ class PhaseCarrierScore:
     score: float
     active_weight_fraction: float
     peak_count: int
+
+
+@dataclass(frozen=True)
+class RegisteredPhaseCarrierScore:
+    """Best phase-carrier score across a bounded translation search."""
+
+    path: str
+    score: float
+    active_weight_fraction: float
+    peak_count: int
+    row_shift: int
+    column_shift: int
 
 
 def _load_rgb(path: Path, *, height: int, width: int, canonicalize_geometry: bool = False) -> np.ndarray:
@@ -161,6 +174,11 @@ def discover_model(
     )
 
 
+def _frequency_values(pixels: np.ndarray, model: PhaseCarrierModel) -> np.ndarray:
+    """Return MODEL's selected complex coefficients from PIXELS."""
+    return extract_frequency_values(pixels, model.rows, model.columns, model.channels)
+
+
 def score_image(
     path: Path,
     model: PhaseCarrierModel,
@@ -174,13 +192,7 @@ def score_image(
         width=model.width,
         canonicalize_geometry=canonicalize_geometry,
     )
-    values = np.empty(len(model.rows), dtype=np.complex128)
-    for channel in range(3):
-        positions = np.flatnonzero(model.channels == channel)
-        if len(positions) == 0:
-            continue
-        spectrum = np.fft.rfft2(pixels[:, :, channel])
-        values[positions] = spectrum[model.rows[positions], model.columns[positions]]
+    values = _frequency_values(pixels, model)
     magnitude_gate = np.minimum(np.abs(values) / (model.expected_magnitudes + 1e-12), 1.0)
     active_weights = model.weights * magnitude_gate
     active_weight = float(np.sum(active_weights))
@@ -194,6 +206,41 @@ def score_image(
         score=score,
         active_weight_fraction=active_weight,
         peak_count=len(model.rows),
+    )
+
+
+def score_translations(
+    path: Path,
+    model: PhaseCarrierModel,
+    *,
+    max_shift: int = 4,
+    canonicalize_geometry: bool = False,
+) -> RegisteredPhaseCarrierScore:
+    """Return the best score after compensating bounded integer translations."""
+    pixels = _load_rgb(
+        path,
+        height=model.height,
+        width=model.width,
+        canonicalize_geometry=canonicalize_geometry,
+    )
+    registration = register_phase_translations(
+        _frequency_values(pixels, model),
+        phases=model.phases,
+        weights=model.weights,
+        expected_magnitudes=model.expected_magnitudes,
+        rows=model.rows,
+        columns=model.columns,
+        height=model.height,
+        width=model.width,
+        max_shift=max_shift,
+    )
+    return RegisteredPhaseCarrierScore(
+        path=str(path),
+        score=registration.score,
+        active_weight_fraction=registration.active_weight_fraction,
+        peak_count=len(model.rows),
+        row_shift=registration.row_shift,
+        column_shift=registration.column_shift,
     )
 
 
@@ -287,21 +334,39 @@ def discover(
 @click.argument("images", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--report-out", type=click.Path(dir_okay=False, path_type=Path), required=True)
 @click.option("--canonicalize-geometry", is_flag=True, help="Resize inputs to the model geometry before scoring.")
+@click.option("--max-shift", type=click.IntRange(min=0, max=MAX_TRANSLATION_SHIFT), default=0, show_default=True)
 def score(
     model_path: Path,
     images: tuple[Path, ...],
     report_out: Path,
     canonicalize_geometry: bool,
+    max_shift: int,
 ) -> None:
     """Score IMAGES with MODEL_PATH."""
     model = load_model(model_path)
+    scores = (
+        [asdict(score_image(image, model, canonicalize_geometry=canonicalize_geometry)) for image in images]
+        if max_shift == 0
+        else [
+            asdict(
+                score_translations(
+                    image,
+                    model,
+                    max_shift=max_shift,
+                    canonicalize_geometry=canonicalize_geometry,
+                )
+            )
+            for image in images
+        ]
+    )
     payload = {
         "model": str(model_path),
         "height": model.height,
         "width": model.width,
         "peak_count": len(model.rows),
         "canonicalize_geometry": canonicalize_geometry,
-        "scores": [asdict(score_image(image, model, canonicalize_geometry=canonicalize_geometry)) for image in images],
+        "max_shift": max_shift,
+        "scores": scores,
     }
     report_out.parent.mkdir(parents=True, exist_ok=True)
     report_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

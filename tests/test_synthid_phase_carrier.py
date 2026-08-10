@@ -118,3 +118,30 @@ def test_scoring_can_canonicalize_geometry(tmp_path: Path) -> None:
 
     assert score.path == str(mismatch)
     assert score.peak_count == 4
+
+
+def test_translation_search_recovers_shifted_carrier(tmp_path: Path) -> None:
+    positives: list[Path] = []
+    for index in range(4):
+        path = tmp_path / f"positive-{index}.png"
+        _write_image(path, phase=0.4, seed=index)
+        positives.append(path)
+    heldout = tmp_path / "heldout.png"
+    shifted = tmp_path / "shifted.png"
+    _write_image(heldout, phase=0.4, seed=10)
+    with Image.open(heldout) as source:
+        pixels = np.asarray(source).copy()
+    Image.fromarray(np.roll(pixels, shift=(1, 1), axis=(0, 1)), mode="RGB").save(shifted)
+    model = carrier.discover_model(positives, peak_count=8, min_radius=1.0)
+
+    fixed = carrier.score_image(shifted, model)
+    unregistered = carrier.score_translations(shifted, model, max_shift=0)
+    registered = carrier.score_translations(shifted, model, max_shift=2)
+
+    assert unregistered.score == pytest.approx(fixed.score)
+    assert unregistered.active_weight_fraction == pytest.approx(fixed.active_weight_fraction)
+    assert registered.score > fixed.score
+    assert abs(registered.row_shift) <= 2
+    assert abs(registered.column_shift) <= 2
+    with pytest.raises(ValueError, match="between 0 and 32"):
+        carrier.score_translations(shifted, model, max_shift=33)

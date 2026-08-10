@@ -1024,6 +1024,61 @@ labels, matched transformations, and an image-level detection loss. External
 generator corpora, including difficult non-target providers, remain hard
 negative and FPR-challenge sets only.
 
+### 2026-08-10: low-content controls and registered phase carrier
+
+A same-resolution low-content matrix compared independently generated solid
+outputs from two target model families against three per-image controls: exact
+mean fill, amplitude-matched Gaussian noise, and a phase-randomized residual
+with preserved Fourier magnitude. Raw stationary-wavelet summaries transferred
+between the two target families with AUCs of 0.982 and 1.000, and reached 0.973
+when blue and green were held out by color. This was not watermark evidence.
+The frozen classifier accepted every one of 1,869 external negatives because
+it had learned the distinction between real generator texture and artificial
+controls. Removing absolute wavelet energy reduced external-negative
+acceptance only to 61.6%, with similar 58.1-67.3% acceptance across all three
+source classes. Both low-content wavelet branches are rejected as presence
+detectors until real non-target solid outputs provide matched negatives.
+
+The numeric V3 audit loader was then extended to support both dense and sparse
+format-v2 profiles without pickle. Exact-profile evaluation exposed a sharp
+encoder-version boundary. The 1024x1024 profile accepted none of 231 target
+provider images and none of 26 exact-geometry negatives. The 1536x2816 profile
+accepted 30 of 55 target-provider images, including all four temporal-test
+images, while rejecting the one exact-geometry negative available in the
+closed corpus. The independently fitted phase model accepted 24 of those 55
+and also accepted all four temporal-test images. This is positive evidence for
+a geometry- and epoch-specific carrier, not a universal SynthID decoder.
+
+On the four temporal-test positives, the fixed V3 score survived JPEG-95 and a
+75% downscale on all four images, survived JPEG-85 on two, and failed after a
+5% center crop or a one-pixel translation on all four. Bounded analytical
+translation registration recovered all four shifted images and selected the
+known `(-1, -1)` offset. Searching up to 16 pixels produced no positives among
+50 exact-resolution and 144 canonicalized frozen negatives. The shared
+registration implementation now serves both the numeric V3 probe and the
+independently fitted phase model.
+
+A discovery-only scale-and-translation view search recovered all four 5%
+cropped temporal images with the independently fitted model after lowering the
+active-support gate from 0.50 to 0.40. It produced zero positives on the 194
+frozen negatives and on the same preregistered 3,000-image COCO challenge used
+by the identity scorer. The latter result has a zero-error one-sided 95% bound
+of 0.0998% only for that abstention challenge: every COCO image remained
+outside carrier support, with a maximum active fraction of 0.201. The scale
+rule is not frozen because its support threshold was selected after inspecting
+the crop examples. It requires a new temporal positive holdout before it can
+join the detector rule.
+
+The current actionable research candidate remains a positive-only,
+provider-specific expert for the supported 1536x2816 carrier epoch. Identity
+and bounded translation views use the frozen phase and support thresholds;
+unsupported geometry, insufficient carrier magnitude, and ambiguous phase
+return `abstain`. Vendor attribution may select the expert that supplied accepted
+evidence, but it must not turn an abstention into a provider label. The next
+calibration gate still requires at least 3,000 native-support negatives,
+same-provider oracle negatives, matched non-target solid outputs, and a new
+temporal positive that influenced neither profile nor threshold.
+
 ## Decision record
 
 The program has four possible honest outcomes per provider:

@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from synthid_phase_carrier import _leave_one_out_coherence
+from synthid_phase_registration import extract_frequency_values
 from synthid_v3_codebook_probe import load_v3_model
 
 log = logging.getLogger(__name__)
@@ -138,16 +139,6 @@ def _load_rgb(path: Path, *, height: int, width: int) -> np.ndarray:
         return np.asarray(rgb, dtype=np.float64)
 
 
-def _extract_values(pixels: np.ndarray, bins: np.ndarray) -> np.ndarray:
-    """Extract complex rFFT values at sparse BINS from three-channel PIXELS."""
-    values = np.empty(len(bins), dtype=np.complex128)
-    for channel in range(3):
-        positions = np.flatnonzero(bins[:, 2] == channel)
-        spectrum = np.fft.rfft2(pixels[:, :, channel])
-        values[positions] = spectrum[bins[positions, 0], bins[positions, 1]]
-    return values
-
-
 def discover_model(
     paths: list[Path],
     *,
@@ -180,7 +171,12 @@ def discover_model(
     image_values = np.empty((len(paths), len(bins)), dtype=np.complex128)
     for index, path in enumerate(paths):
         rgb = _load_rgb(path, height=height, width=width)
-        image_values[index] = _extract_values(transform_color_space(rgb, color_space), bins)
+        image_values[index] = extract_frequency_values(
+            transform_color_space(rgb, color_space),
+            bins[:, 0],
+            bins[:, 1],
+            bins[:, 2],
+        )
     magnitudes = np.abs(image_values)
     units = np.divide(image_values, magnitudes, out=np.zeros_like(image_values), where=magnitudes != 0.0)
     unit_sum = np.sum(units, axis=0)
@@ -213,7 +209,12 @@ def score_image(path: Path, model: ColorPhaseModel) -> ColorPhaseScore:
     """Score PATH against MODEL and expose additive channel evidence."""
     rgb = _load_rgb(path, height=model.height, width=model.width)
     bins = np.column_stack((model.rows, model.columns, model.channels))
-    values = _extract_values(transform_color_space(rgb, model.color_space), bins)
+    values = extract_frequency_values(
+        transform_color_space(rgb, model.color_space),
+        bins[:, 0],
+        bins[:, 1],
+        bins[:, 2],
+    )
     magnitude_gate = np.minimum(np.abs(values) / (model.expected_magnitudes + 1e-12), 1.0)
     contributions = model.weights * magnitude_gate * np.cos(np.angle(values) - model.phases)
     active_weights = model.weights * magnitude_gate
