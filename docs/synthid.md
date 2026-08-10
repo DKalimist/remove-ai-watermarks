@@ -199,6 +199,20 @@ leave-one-positive-out checks, detected all five available positive controls,
 and emitted no positive verdict on 330 newly collected exact-size images.
 Almost all external images lacked sufficient measured carrier support and
 therefore remained abstentions rather than proven negatives.
+A later post-freeze challenge used three additional exact-size Google originals
+with signed Google LLC C2PA and explicit SynthID-present assertions. The
+ensemble abstained on all three. They do not replace matching-oracle pixel
+labels, but this zero-of-three source-provenance result rejects the frozen
+ensemble as a general Google detector and narrows it to an epoch- or
+surface-specific correlate.
+
+A multi-epoch leave-one-positive-out refit recovered six of the eight total
+Google positives under a strict RGB-plus-HSV decision; RGB alone ranked every
+excluded positive above the 50-image calibration maximum but produced up to
+eight false positives on 279 held-out external negatives. The signal therefore
+transfers across the two source groups, but remains content-sensitive and
+cannot be separated from provider or generation-pipeline attribution without
+same-provider oracle-negative controls.
 
 Directly projecting out the ensemble phases cleared the local detector above
 51 dB PSNR, but three frozen candidates remained detected by Gemini in a

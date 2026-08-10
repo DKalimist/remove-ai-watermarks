@@ -419,6 +419,62 @@ same-provider hard negatives, and a two-class temporal holdout.
 
 ## Empirical log
 
+### 2026-08-09: D1 confound pilot and codec challenge
+
+The manifest-driven D1 harness was run on the frozen Google pilot containing
+five oracle-positive images and 330 deduplicated exact-geometry external
+photographs. The manifest passed byte, decoded-pixel, lineage, and split
+verification. It is not evidence-ready because the locked test contains no
+same-provider hard negative.
+
+The container-only baseline separated the labels perfectly because the pilot
+still exposes format and export-geometry differences. That result is a measured
+confound, not watermark evidence. The canonical 8x8 decoded-content baseline
+was much weaker: locked-test AUC was 0.620 and temporal AUC was 0.533, and its
+validation-frozen threshold detected neither held-out positive. The existing
+positive-only RGB plus HSV S/V ensemble still detected all five positives and
+emitted no positive verdict on the 330 frozen external images.
+
+A codec challenge re-encoded every positive without changing geometry. The
+ensemble remained positive on five of five JPEG-95 outputs and five of five
+WebP-95 outputs; JPEG-90 retained three of five. This rejects a bare PNG versus
+JPEG container explanation, but does not exclude a generator or source-pipeline
+correlate. With only five positives, the one-sided 95% lower bound on TPR is
+54.9%. With zero positives among 330 external images, the one-sided 95% upper
+bound on FPR is 0.904%, still nine times the 0.1% detector target. Four positives
+also participated in model fitting, leaving only one independent temporal
+positive. The next valid detector claim still requires new oracle-positive
+images and ordinary same-provider oracle-negative controls.
+
+A post-freeze source-provenance challenge then added three exact-geometry
+Google originals that had not influenced fitting or threshold selection. Each
+carried the same signed Google LLC C2PA issuer, trained-algorithmic-media source
+type, and explicit SynthID-present assertion as the detected temporal control.
+The ensemble abstained on all three: two lacked active carrier support in both
+branches, and the third passed RGB evidence but missed the HSV S/V evidence and
+support gates. These are provider-signed embedding assertions rather than
+matching-oracle pixel labels, but zero positives in three new same-geometry
+images falsifies the current ensemble as a general Google SynthID detector. The
+measured phase family is retained only as an epoch- or surface-specific
+correlate pending a broader oracle-labeled corpus.
+
+A follow-up cross-epoch check found that the correlate is not entirely confined
+to the original five images. RGB and HSV models fitted only on the three later
+images ranked each of the five earlier images above all 329 external negatives
+in both color spaces (AUC 1.0), but thresholds derived from the later fitting
+scores transferred poorly: the strict RGB-plus-HSV decision retained only one
+of five earlier positives at zero false positives on the 279-image holdout. An
+eight-fold leave-one-positive-out refit across both source groups then detected
+six of eight excluded positives with the same RGB-plus-HSV conjunction and each
+branch frozen just above its 50-image calibration maximum. RGB alone put all
+eight excluded positives above that maximum, while HSV missed the geometric and
+low-texture images; the per-fold RGB operating points also produced between one
+and eight false positives on 279 held-out negatives.
+This is evidence for a transferable but content- and epoch-sensitive Google
+pixel correlate, not a shippable detector. The experiment still lacks ordinary
+same-provider oracle negatives, and its external-negative set is too small for
+the 0.1% false-positive target.
+
 ### 2026-08-09: fixed spectral-template baseline rejected
 
 An exploratory Google template was reconstructed from four public, purported
@@ -750,10 +806,11 @@ has a matching-provider negative oracle verdict. A three-file Google batch is
 hash-frozen outside the repository for the next healthy quota window: the
 positive source, the stronger phase-only ablation, and the combined periodic
 EOT candidate. Results will be accepted only in that fixed order without
-between-query adaptation. The first later attempt detected the positive source,
-then returned a usage-limit response for the phase-only ablation; that response
-is `indeterminate`, and the combined candidate was not submitted out of order.
-The OpenAI candidate is not scheduled for the public verifier under the current
+between-query adaptation. Two later attempts detected the positive source, then
+returned a usage-limit response for the phase-only ablation. In the latest
+attempt the verifier requested a retry after 17 hours. Both responses are
+`indeterminate`, and the combined candidate was not submitted out of order. The
+OpenAI candidate is not scheduled for the public verifier under the current
 usage restriction.
 
 ### 2026-08-09: OpenAI fidelity and architecture-transfer frontier
