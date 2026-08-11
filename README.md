@@ -30,6 +30,7 @@ removal.
 | Goal | Command | GPU |
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
+| Detect the SynthID pixel carrier in the calibrated image-size range | `detect-synthid` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
@@ -48,6 +49,7 @@ removal.
 | Need | Install |
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
+| Local SynthID carrier detection in the calibrated size range | `remove-ai-watermarks[pixels]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
@@ -73,6 +75,19 @@ Inspect an image:
 ```bash
 remove-ai-watermarks identify image.png
 ```
+
+Detect the supported SynthID pixel carrier after installing the pixel runtime:
+
+```bash
+uv tool install --force "remove-ai-watermarks[pixels]"
+remove-ai-watermarks detect-synthid image.png
+```
+
+This detector is positive-only and limited to one measured carrier family in
+the [calibrated image-size range](docs/synthid.md#32-how-our-tool-detects-the-supported-carrier).
+It expects the recovered carrier at its measured 16-pixel sampling scale;
+arbitrary spatial resampling is not registered. `not_detected` or `unsupported`
+is not a clean-image guarantee.
 
 For visible watermark removal, install the pixel dependencies:
 
@@ -332,6 +347,9 @@ import remove_ai_watermarks as raiw
 
 result, removed = raiw.remove_visible("watermarked.png", "clean.png")
 print(removed)
+
+synthid = raiw.detect_synthid("image.png")
+print(synthid.status, synthid.score)
 
 provenance = raiw.identify_video("input.mp4")
 report = raiw.inspect_video_metadata("input.mp4")

@@ -1074,10 +1074,10 @@ provider-specific expert for the supported 1536x2816 carrier epoch. Identity
 and bounded translation views use the frozen phase and support thresholds;
 unsupported geometry, insufficient carrier magnitude, and ambiguous phase
 return `abstain`. Vendor attribution may select the expert that supplied
-accepted evidence, but it must not turn an abstention into a provider label. The next
-calibration gate still requires at least 3,000 native-support negatives,
-same-provider oracle negatives, matched non-target solid outputs, and a new
-temporal positive that influenced neither profile nor threshold.
+accepted evidence, but it must not turn an abstention into a provider label.
+The next calibration gate still requires at least 3,000 native-support
+negatives, same-provider oracle negatives, matched non-target solid outputs,
+and a new temporal positive that influenced neither profile nor threshold.
 
 ### 2026-08-10: 2048 periodic-tile detector
 
@@ -1151,6 +1151,323 @@ family, but the two cross-source carrier matches prohibit a stronger vendor
 claim until an oracle distinguishes direct provider output from shared-backend
 output.
 
+A pixel-space ablation then tested whether the frozen tile merely predicted the
+local scores or controlled them. At twice the train-median tile norm, aligned
+subtraction changed the fixed-tile decision from 29 of 30 accepted originals to
+zero and the independently fitted sparse-phase decision from 27 of 30 to zero.
+The median fidelity was 53.74 dB PSNR and 0.99681 SSIM. Cyclically shifting the
+same tile by one row and column left one phase acceptance, while a seeded
+zero-mean random tile orthogonal to the learned template left 13; their median
+PSNRs were within 0.13 dB of the aligned edit. For both local representations,
+the aligned edit reduced the score more than either control on all 30 paired
+images, with a two-sided sign-test p-value of 1.86e-9 for each comparison.
+The same aligned edit reversed both local decisions on each of the two disputed
+cross-source matches, while the orthogonal control left both phase decisions
+accepted. That two-item result is descriptive but makes an accidental threshold
+crossing less likely; it still cannot distinguish a shared carrier from direct
+provider output.
+
+This is the strongest local causal evidence for the 16x16 mechanism, but the
+strength was selected after inspecting this locked test and is therefore
+discovery-only. The shifted control also suppressed the phase representation
+substantially, so local score reversal cannot certify signal removal. A matching
+provider oracle must still compare untouched sources, aligned candidates, and
+norm-matched controls before any removal claim. The reproducible local harness
+is `scripts/synthid_periodic_tile_ablation.py`; its report records input and
+model hashes without writing derivative images.
+
+### 2026-08-10: confirmatory oracle-batch readiness
+
+The corpus audit found no new 2048x2048 positive collected after the tile rule
+and subtraction strength were frozen. Existing test images cannot be renamed as
+a temporal holdout, so the confirmatory oracle batch remains blocked on new
+provider output at the supported native geometry.
+
+The batch mechanics are ready in `scripts/synthid_oracle_batch.py`. For each new
+source, it preregisters five requests in a fixed order: untouched source,
+lossless re-encode, aligned subtraction, cyclic-shifted subtraction, and an
+orthogonal norm-matched tile. It refuses to write media inside the repository,
+records artifact and decoded-pixel hashes, pins both model artifacts and the
+matching provider, and detects any post-registration byte change. Oracle results
+live in a separate manifest-bound file so the preregistration remains immutable;
+the evaluator requires complete ordered results, verbatim responses,
+timezone-aware timestamps, and separate SynthID and C2PA verdicts.
+
+A causal success requires the source, re-encode, shifted, and orthogonal views
+all to remain `detected` while only the aligned view becomes `not_detected`.
+`Indeterminate` and refusal remain indeterminate. A one-source dry run on an old
+test positive verified all five artifacts and the local scoring path, but is
+pipeline validation only and contributes no confirmatory evidence.
+
+### 2026-08-10: first confirmatory oracle attempt
+
+Four new 2048x2048 Gemini outputs were generated after the local rule and
+strength were frozen, then registered as a 20-request batch. The manifest and
+all 20 artifacts passed hash verification before submission. The first source
+group produced these ordered results:
+
+| Role | Local tile/phase decision | Provider result |
+| --- | --- | --- |
+| source | detected / detected | SynthID indeterminate; Google C2PA present |
+| re-encode control | detected / detected | Google AI signal detected |
+| aligned subtraction | detected / not detected | Google AI signal detected |
+| shifted control | detected / detected | Google AI signal detected |
+| orthogonal control | detected / detected | refused: verification quota exceeded |
+
+The quota response instructed the account to wait 24 hours. No adaptive retry
+was made, and the remaining 15 preregistered requests were not submitted. The
+batch cannot receive its preregistered aggregate verdict until complete ordered
+results exist.
+
+Even incomplete, this attempt rejects the frozen removal recipe for the first
+temporal source: aligned subtraction crossed the phase threshold but remained
+above the tile threshold and did not clear the provider oracle. The remaining
+sources can still measure transfer and disagreement between the two local
+experts, but they cannot turn this first aligned result into a universal
+pixel-only removal success.
+
+### 2026-08-10: positive-only runtime detector
+
+Removal is deferred while the transferred tile signal is exposed as a bounded
+detector. `src/remove_ai_watermarks/synthid_detector.py` loads the frozen model
+as a bundled pickle-free runtime asset and returns `detected`, `not_detected`,
+or `unsupported` without resizing input. The direct API and
+`detect-synthid` CLI initially covered only native 2048x2048 images; `identify`
+consumes a positive match as high-confidence evidence but never treats a
+negative or unsupported result as proof of absence.
+
+The operating point and model are unchanged from the locked experiment. The
+detector accepted all four post-freeze Gemini outputs, including the source
+whose frozen phase score missed, while retaining the prior 29-of-30 locked-test
+sensitivity and zero accepted validation/test negatives. The unresolved two
+external-source matches remain the reason a runtime positive names the carrier
+but does not attribute a provider.
+
+### 2026-08-10: calibrated native-geometry extension
+
+The frozen 16x16 template and threshold transfer across the common native
+geometries in the provider-positive evidence. Non-divisible image dimensions
+use direct modulo folding with per-cell sample counts; divisible dimensions,
+including 2048x2048, retain the original numerical path. All prior 2048x2048
+records were replayed and matched exactly, including floating-point scores.
+
+The runtime registry was expanded only after the unchanged threshold accepted
+none of 60,000 public COCO challenge views, 3,000 at each of 20 target
+geometries. This is a geometry extension of the same positive-only carrier
+expert, not an OpenAI pixel detector or a proprietary payload decoder.
+
+### 2026-08-11: calibrated image-size range
+
+The fixed template was then evaluated on every provider-positive image in the
+local evidence set rather than only its common geometries. It accepted 3,928 of
+4,698 images across 757 exact geometries. Sensitivity separated by pixel count:
+1,987 of 2,021 images at or above three megapixels crossed the threshold, while
+1,940 of 2,672 images from one through two megapixels did. This establishes a
+carrier-family boundary, not universal SynthID recall: explicit C2PA watermark
+actions also occur below threshold, and three strong carriers use a different
+cyclic phase.
+
+Two public-image geometry challenges tested whether geometry itself creates
+false matches. The first balanced 5,000 COCO images across all 757 observed
+geometries, with every geometry present in both development and final partitions;
+the maximum fixed score was 0.12549 and none crossed the unchanged 0.17357
+threshold. The second transformed the same 5,000 source images at 256 generated
+geometries from one through 18 megapixels, covering every width/height remainder
+pair modulo 16. Its maximum was 0.16387 and again none crossed the threshold.
+Runtime support therefore uses that challenged pixel-count interval instead of
+an enumerated geometry registry, still without resizing.
+
+A cyclic-registration branch was rejected after the public-image challenge.
+At a low threshold it recovered 130 fixed-phase misses but false-fired on
+tracked OpenAI and Adobe controls. Raising the threshold above all development
+controls recovered only 23 in-range provider positives while adding 84
+cross-source matches beyond the fixed detector. Three strong shifted Google
+carriers remain a documented miss rather than weakening the runtime rule.
+
+Top-level source labels were not treated as watermark-negative truth. Of 237
+non-Google-labeled corpus images crossing the fixed threshold, 81 retained
+SynthID provenance. High-scoring Adobe manifests explicitly named Gemini Flash
+as the remote provider, and perceptual matching found direct Google derivatives
+under editing or relabeling categories. The remaining source labels cannot prove
+absence of the carrier, so they constrain provider attribution but do not justify
+raising the pixel threshold.
+
+### 2026-08-11: spatial-resampling boundary
+
+Arbitrary decoded geometry did not imply arbitrary resize robustness. A
+stratified sample of 80 fixed-positive provider images was rescaled in memory at
+0.5, 0.625, 0.75, 0.875, 1.125, 1.25, and 1.5. The unchanged 16x16 detector
+accepted none of the 80 images at every nonidentity scale. Restoring each view
+to its source dimensions recovered 58-80, which isolates the failure to the
+scaled sampling lattice rather than simple information destruction.
+
+Scaling the template and modulo fold to the corresponding integer periods 8,
+10, 12, 14, 18, 20, and 24 recovered 73-80 of the discovery images at the
+native threshold. Searching all eight periods raised control scores, so a
+single threshold was frozen above the maximum of 3,000 deterministically
+resized COCO development views. It accepted none of 2,000 final controls and
+672 of 800 source-disjoint provider positives, with 77-88 accepted at each
+scale. Six tracked OpenAI and Adobe controls remained below the frozen threshold.
+
+This did not generalize to arbitrary scaling. Factors 0.8, 0.9, 1.1, 1.2, and
+1.333 create noninteger carrier periods; rounding the period accepted zero of
+80 images in the fixed-phase branch at every factor, and cyclic registration
+accepted only 1-16. Period-specific thresholds improved sensitivity but accepted
+five of the 2,000 final controls. The integer-period bank is therefore retained
+as a research result, not added to the runtime. A universal resize branch needs
+fractional-period registration or reliable reconstruction of the pre-resize
+geometry, followed by a new multiple-search calibration.
+
+A discovery follow-up tested that fractional-period direction with the 30
+strongest template harmonics. A continuous 7.5-24.5 spectral search placed the
+true period within 0.05 pixels among its top three candidates for 58 of 60
+transformed positives. Searching nine neighboring integer reconstruction
+geometries recovered 44 of 60 at the native threshold; even the true source
+geometry recovered only 48, so resampling damage sets a separate upper bound.
+The full search then failed a frozen 250-development/150-final COCO challenge:
+the calibration threshold accepted two final controls. A preselected product
+of canonical correlation and spectral confidence increased positive
+acceptance from 49 to 52 of 60 at its development threshold but accepted the
+same two final controls. This fractional FFT baseline is rejected for runtime
+use; better period estimation alone does not solve multiple-search specificity.
+
+### 2026-08-10: OpenAI periodic-carrier challenge
+
+The OpenAI track repeated the Google carrier method without runtime provenance
+features. C2PA selected the research labels, but every candidate score consumed
+only decoded RGB pixels. The temporally split corpus contained 4,615 OpenAI
+training positives, 1,280 validation positives, 1,364 development-test
+positives, 8,668 difficult external-source controls, and 3,000 COCO controls.
+The development test is not called a locked holdout because earlier
+representations had already exposed it.
+
+High-pass residuals were folded modulo 8x8, 16x16, and 32x32 and normalized as
+in the Google fixed-tile expert. A single 16x16 OpenAI template accepted only
+one of 1,280 validation positives at the threshold above all 2,287 validation
+controls. A 16-template geometry bank improved that to 12 positives but
+accepted one of 3,372 development-test controls. The corresponding
+development-test sensitivity was 9 of 1,364. The frozen Google template did
+not transfer: at its unchanged threshold it accepted 14 validation positives
+and 572 validation controls.
+
+The apparent native-size signal was a confound. At 1024x1536, 91.6% of the
+learned template energy projected onto a 2x2 periodic lattice, compared with
+5.6% for the frozen Google template. Firefly, China AIGC-labeled, local
+diffusion, and unidentified hosted-generator controls reached correlations of
+0.92-0.98 against the uncorrected OpenAI template. This is operational evidence
+for a shared decoder or upscaler lattice, not an OpenAI watermark carrier.
+
+Projecting the 2x2 nuisance lattice out of every 16x16 fold isolated a weaker
+epoch-specific residual. The 1024x1536 expert accepted 5 of 55 validation and
+10 of 51 development-test positives while accepting none of the full
+validation or development-test controls. Nine of the ten development-test
+matches occurred from July 12 through July 14; later dates contributed only
+one of 27. The 1536x1024 expert accepted 6 of 37 validation and 2 of 51
+development-test positives with no development-test controls. Amplitude,
+active-support, channel-consensus, payload-invariant power, and spherical
+multi-template branches did not improve this frontier without false positives.
+
+The OpenAI branch therefore remains research-only and is not added to the
+runtime detector. The next valid training epoch requires same-content
+OpenAI-oracle `detected` and `not_detected` pairs, or provider-authorized decoder
+labels, followed by a fresh temporal holdout. Source provenance alone cannot
+distinguish a true watermark carrier from the measured generator lattice.
+
+### 2026-08-10: OpenAI content-dependent decoder challenge
+
+The periodic result did not exhaust the neural-watermark hypothesis. OpenAI's
+ChatGPT Images 2.0 system card describes its watermark as content-specific, and
+the SynthID-Image paper says the encoder is content-dependent by design. The
+paper also separates watermark detection from payload recovery and evaluates
+the external SynthID-O model at its preferred 512x512 input size. These facts
+support a learned full-field decoder, but they do not establish that OpenAI and
+Google deploy identical model weights, payloads, or pixel spectra.
+
+A second corpus audit found 261 same-provider candidate controls. Their signed
+provenance contained `created` and `converted` actions without the
+`c2pa.watermarked.unbound` action, but a subsequent software-agent audit showed
+that they do not all come from the positive generation epoch. Only 118 name
+`gpt-image 2.0`: 97 training, 16 validation, and five development-test images.
+Another 108 name an earlier version and 35 do not expose a usable version. The
+full 261-image split remains 217/26/18. These are useful confound controls, but
+even the exact-version subset is action-derived rather than a provider-oracle
+negative label.
+
+Two pixel-only native-resolution experts were trained with the mixed-version
+control set. A
+local residual CNN accepted 132 of 1,280 validation positives and 149 of 1,364
+development-test positives, with zero same-provider or COCO controls in both
+splits and two of 1,373 difficult development-test controls. A separate
+spectral, autocorrelation, bit-plane, and residual-error expert accepted 175
+validation and 167 development-test positives with no accepted controls. A
+validation-selected linear combination accepted 243 positives in each split,
+with no accepted validation or development-test control. The zero-error
+development-test bound across 3,391 controls is 0.0883% at one-sided 95%
+confidence, but the same-provider subset contains only 18 images and therefore
+does not independently establish provider specificity.
+
+The exact-version audit did not invalidate the native score counts, but it
+weakened their attribution. None of the 16 validation or five development-test
+`gpt-image 2.0` controls crossed the residual, forensic, ensemble, canonical,
+or JPEG-equalized thresholds. That is directionally useful, but five temporal
+test controls cannot establish deployment specificity. Perceptual-hash and
+local CLIP searches compared all 118 exact-version controls with 7,259
+positives. They recovered a few near-content matches but no clean before/after
+watermark pair. Sub-pixel affine alignment left content, edge, and photometric
+changes in the residual, while 8x8, 16x16, and 32x32 folded residual
+correlations varied in sign and magnitude. Those candidates cannot be used as
+causal watermark differences.
+
+Transformation challenges rejected the combined native expert as a SynthID
+decoder. Of its 243 accepted development-test positives, 121 remained accepted
+after a 5% crop round trip, six after a 75% resize round trip, and none after a
+JPEG-95 round trip. No transformed same-provider control was accepted. The
+codec fragility is inconsistent with treating the score as the documented
+robust watermark without further evidence.
+
+The 512x512 branch also failed the held-out specificity gate. Its selected
+model accepted 238 validation and 194 development-test positives, but also
+accepted two of 18 same-provider, four of 1,373 difficult, and nine of 2,000
+COCO development-test controls. Finally, a CNN trained and evaluated only
+after applying the same JPEG-95 round trip to every positive and control
+accepted eight validation positives and six development-test positives while
+accepting five of 2,000 development-test COCO controls. Equalizing the codec
+therefore removed nearly all of the apparent signal instead of revealing a
+robust hidden decoder feature.
+
+An independent three-CNN OpenAI surrogate was also evaluated from its
+published weights, without adopting its code or claims. At the published 0.5
+threshold its ensemble marked 82.0% of COCO validation controls and 83.4% of
+COCO development-test controls as watermarked. It also marked 56.3% of
+difficult development-test controls and 15 of 16 exact-version OpenAI
+validation controls, compared with 87.3% of OpenAI validation positives. The
+repository does not publish its training corpus or logs, and its implementation
+applies supposedly shared pair augmentation independently. This result rejects
+the model as a SynthID decoder and demonstrates why same-content-looking
+regenerations are not sufficient negative labels.
+
+A final transform-augmented full-field branch tested the closest practical
+approximation to the documented neural decoder. A 512x512 CNN consumed both
+RGB and a fixed high-pass residual and trained with random crop/resize,
+JPEG 70-100, horizontal flip, and mild color transforms. Training sampling
+balanced watermarked positives, difficult controls, and the exact-version
+OpenAI candidate controls. Selection required a score above every control for
+both native and JPEG-95 validation views. All four fixed training epochs
+accepted zero of 500 selection positives. On the full validation set the
+frozen model accepted zero of 1,280 OpenAI positives in native, JPEG-95,
+75%-resize, and 5%-crop views, while accepting up to two unrelated controls.
+On development test it accepted zero of 1,364 OpenAI positives in native,
+JPEG-95, and resize views. The crop view accepted one OpenAI positive and one
+of 1,373 difficult controls. Transform augmentation therefore did not recover
+a usable weaker OpenAI signal.
+
+The measured OpenAI-native separation is best classified as an export or
+rendering noiseprint, not a validated SynthID detector. None of these models is
+added to runtime. Transform-augmented training has now also failed. A
+defensible next epoch needs provider-authorized labels or clean same-content
+before/after watermark pairs, plus a fresh temporal holdout that has not
+influenced representation or threshold selection.
+
 ## Decision record
 
 The program has four possible honest outcomes per provider:
@@ -1184,5 +1501,6 @@ Only after this milestone should implementation of D3 and D4 begin.
 ## Primary sources
 
 - OpenAI, [Content provenance](https://developers.openai.com/api/docs/guides/content-provenance).
+- OpenAI, [ChatGPT Images 2.0 system card](https://deploymentsafety.openai.com/chatgpt-images-2-0/automated-evaluations-and-adversarial-testing).
 - Google, [Verify AI-generated images, videos, and audio](https://support.google.com/gemini/answer/16722517?hl=en).
 - Gowal et al., [SynthID-Image: Image watermarking at internet scale](https://arxiv.org/abs/2510.09263).

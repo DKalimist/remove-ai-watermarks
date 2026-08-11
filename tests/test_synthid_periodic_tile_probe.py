@@ -80,6 +80,25 @@ def test_registration_recovers_cyclic_tile_shift(tmp_path: Path) -> None:
     assert (registered.row_shift, registered.column_shift) == (7, 6)
 
 
+def test_array_scoring_matches_file_scoring(tmp_path: Path) -> None:
+    carrier = _carrier(12)
+    positives = []
+    for index in range(3):
+        path = tmp_path / f"positive-{index}.png"
+        _write_image(path, carrier, seed=index)
+        positives.append(path)
+    model = probe.discover_model(positives, tile_height=8, tile_width=8)
+    with Image.open(positives[0]) as image:
+        pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
+
+    file_score = probe.score_image(positives[0], model)
+    array_score = probe.score_pixels(pixels, model)
+
+    assert array_score.score == pytest.approx(file_score.score)
+    assert array_score.active_support == pytest.approx(file_score.active_support)
+    assert array_score.path == "<array>"
+
+
 def test_fft_correlations_match_explicit_cyclic_shifts() -> None:
     rng = np.random.default_rng(30)
     template = rng.normal(size=(4, 5, 3))

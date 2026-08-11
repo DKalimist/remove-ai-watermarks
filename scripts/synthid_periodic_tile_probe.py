@@ -92,10 +92,18 @@ def discover_model(
     )
 
 
-def score_image(path: Path, model: PeriodicTileModel, *, register: bool = False) -> PeriodicTileScore:
-    """Score PATH against MODEL, optionally searching cyclic tile shifts."""
+def score_pixels(
+    pixels: np.ndarray,
+    model: PeriodicTileModel,
+    *,
+    register: bool = False,
+    path: str = "<array>",
+) -> PeriodicTileScore:
+    """Score exact-geometry RGB PIXELS, optionally searching cyclic tile shifts."""
+    if pixels.shape != (model.height, model.width, 3):
+        raise ValueError("pixel geometry does not match periodic-tile model")
     folded = fold_residual_template(
-        _load_rgb(path, height=model.height, width=model.width),
+        pixels,
         tile_height=model.tile_height,
         tile_width=model.tile_width,
         denoise_sigma=model.denoise_sigma,
@@ -109,13 +117,19 @@ def score_image(path: Path, model: PeriodicTileModel, *, register: bool = False)
         score = float(np.sum(model.template * unit))
         row_shift = column_shift = 0
     return PeriodicTileScore(
-        path=str(path),
+        path=path,
         score=score,
         active_support=min(norm / (model.expected_norm + 1e-12), 1.0),
         row_shift=row_shift,
         column_shift=column_shift,
         repeat_count=(model.height // model.tile_height) * (model.width // model.tile_width),
     )
+
+
+def score_image(path: Path, model: PeriodicTileModel, *, register: bool = False) -> PeriodicTileScore:
+    """Score PATH against MODEL, optionally searching cyclic tile shifts."""
+    pixels = _load_rgb(path, height=model.height, width=model.width)
+    return score_pixels(pixels, model, register=register, path=str(path))
 
 
 def calibrate_threshold(paths: list[Path], model: PeriodicTileModel, *, register: bool = False) -> float:

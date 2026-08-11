@@ -12,6 +12,27 @@ path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
 independently when path-based pixel APIs must decode HEIC, HEIF, or AVIF. See
 the complete [feature-extra matrix](installation.md#feature-extras).
 
+## Detect the supported SynthID carrier
+
+Install `remove-ai-watermarks[pixels]`, then call the lazy top-level API:
+
+```python
+import remove_ai_watermarks as raiw
+
+result = raiw.detect_synthid("input.png")
+print(result.status)     # "detected" | "not_detected" | "unsupported"
+print(result.score)      # float for a supported image size, otherwise None
+print(result.threshold)  # frozen operating point
+```
+
+The detector is positive-only and covers one measured periodic carrier family
+in the [calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier).
+Arbitrary dimensions are accepted inside that range, but arbitrary spatial
+resampling can change the carrier period and is not registered. `not_detected`
+means only that this model did not find its carrier; `unsupported` is kept
+separate from a negative result. Neither is proof that the image contains no
+SynthID watermark.
+
 ## Remove visible marks
 
 Install `remove-ai-watermarks[visible]` before using the visible-removal API.

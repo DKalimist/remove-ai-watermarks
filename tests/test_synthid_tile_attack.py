@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -44,13 +43,15 @@ def test_subtraction_reduces_repeated_tile_energy() -> None:
     assert after < before
 
 
-def test_folding_rejects_nondivisible_geometry() -> None:
+def test_folding_accepts_nondivisible_geometry() -> None:
     pixels = np.zeros((63, 64, 3), dtype=np.uint8)
 
-    with pytest.raises(ValueError, match="divisible"):
-        fold_residual_template(
-            pixels,
-            tile_height=8,
-            tile_width=16,
-            denoise_sigma=1.0,
-        )
+    folded = fold_residual_template(
+        pixels,
+        tile_height=8,
+        tile_width=16,
+        denoise_sigma=1.0,
+    )
+
+    assert folded.shape == (8, 16, 3)
+    assert np.count_nonzero(folded) == 0

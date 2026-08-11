@@ -79,6 +79,7 @@ The inspection and stripping code handles signals in these groups:
 - xAI and Grok EXIF signature fields;
 - Samsung AI editing markers;
 - Hugging Face job metadata;
+- one positive-only SynthID periodic pixel carrier in a calibrated image-size range;
 - open Stable Diffusion style DWT-DCT watermarks with the `detect` extra;
 - Adobe TrustMark with the `trustmark` extra.
 
@@ -125,12 +126,21 @@ Current pipeline values, both CUDA-only:
 The `controlnet`, `sdxl`, `qwen` and `default` values were removed. A retired name
 is rejected at parse time rather than remapped onto a surviving profile.
 
-SynthID does not have a public local pixel decoder in this project. The tool
-recognizes presence from supported provenance: Google AI C2PA under Google's
-all-media watermark policy, and current OpenAI C2PA carrying an explicit
-`c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action does not
-assert SynthID. After provenance metadata is removed, a local negative result
-is still inconclusive.
+Google does not publish the SynthID payload decoder. This project ships a
+positive-only detector for one measured periodic image-carrier family in a
+calibrated image-size range, available through `detect-synthid`
+and the default pixel pass in `identify` when the `pixels` extra is installed.
+The unchanged fixed threshold accepted none of the public COCO views in both
+an observed-geometry challenge and a generated-geometry challenge covering all
+modulo-16 edge cases. Arbitrary dimensions in the calibrated range are accepted,
+but the input must retain the measured 16-pixel carrier scale: arbitrary spatial
+resampling is not registered. The detector does not attribute a provider locally.
+
+The tool also recognizes presence from supported provenance: Google AI C2PA
+under Google's all-media watermark policy, and current OpenAI C2PA carrying an
+explicit `c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action
+does not assert SynthID. A pixel result of `not_detected` or `unsupported`
+remains inconclusive for other sizes, epochs, codecs, and payloads.
 
 For MP4, MOV, and M4V, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
@@ -149,7 +159,7 @@ not a universal clean verdict.
 
 | Provider or family | Visible | Invisible path | Metadata or provenance |
 | --- | --- | --- | --- |
-| Google Gemini | Sparkle | Diffusion regeneration for SynthID | C2PA and related source signals |
+| Google Gemini | Sparkle | Local positive-only calibrated-size detector; diffusion regeneration | C2PA and related source signals |
 | Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID | C2PA and related source signals |
 | OpenAI image generators | None registered | Diffusion regeneration for supported invisible signals | C2PA and generator provenance |
 | Stable Diffusion and SDXL | None registered | Diffusion regeneration; optional open decoder | Embedded parameters and text metadata |

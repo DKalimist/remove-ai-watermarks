@@ -104,6 +104,24 @@ def test_scoring_rejects_geometry_mismatch(tmp_path: Path) -> None:
         carrier.score_image(mismatch, model)
 
 
+def test_array_scoring_matches_file_scoring(tmp_path: Path) -> None:
+    positives: list[Path] = []
+    for index in range(3):
+        path = tmp_path / f"positive-{index}.png"
+        _write_image(path, phase=0.4, seed=index)
+        positives.append(path)
+    model = carrier.discover_model(positives, peak_count=4, min_radius=1.0)
+    with Image.open(positives[0]) as image:
+        pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
+
+    file_score = carrier.score_image(positives[0], model)
+    array_score = carrier.score_pixels(pixels, model)
+
+    assert array_score.score == pytest.approx(file_score.score)
+    assert array_score.active_weight_fraction == pytest.approx(file_score.active_weight_fraction)
+    assert array_score.path == "<array>"
+
+
 def test_scoring_can_canonicalize_geometry(tmp_path: Path) -> None:
     positives: list[Path] = []
     for index in range(3):

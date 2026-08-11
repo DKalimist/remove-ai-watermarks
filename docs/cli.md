@@ -14,6 +14,7 @@ defaults. This page focuses on choosing the right command.
 | Command or signal | Required installation |
 | --- | --- |
 | `metadata` and metadata-only `identify` | Default package |
+| `detect-synthid` and the calibrated-size SynthID pixel signal in `identify` | `remove-ai-watermarks[pixels]` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
 | Adobe TrustMark signals in `identify` | `remove-ai-watermarks[trustmark]` |
@@ -54,8 +55,25 @@ Metadata only inspection:
 remove-ai-watermarks identify image.png --no-visible
 ```
 
-Despite the historical option name, `--no-visible` skips both visible and open
-invisible pixel detectors. Metadata inspection still runs.
+Despite the historical option name, `--no-visible` skips all pixel detectors,
+including the supported SynthID carrier, visible marks, open DWT-DCT, and
+TrustMark. Metadata inspection still runs.
+
+## Detect the supported SynthID pixel carrier
+
+```bash
+remove-ai-watermarks detect-synthid image.png
+remove-ai-watermarks detect-synthid image.png --json
+```
+
+The command returns one of `detected`, `not_detected`, or `unsupported`. The
+runtime detector covers one frozen periodic carrier family in the
+[calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier)
+and needs the `pixels` extra. It never resizes the input and does not register
+a carrier whose sampling period changed through arbitrary spatial resampling.
+It is positive-only: `not_detected` means the score stayed below this detector's
+threshold, while `unsupported` means the image geometry is outside its scope.
+Neither result proves that another SynthID epoch or payload is absent.
 
 ## Remove known visible marks
 

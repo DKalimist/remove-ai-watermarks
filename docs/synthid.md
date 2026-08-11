@@ -308,6 +308,30 @@ limited JPEG and crop robustness. The pickle-free research implementation is
 `scripts/synthid_periodic_tile_probe.py`; exact evidence and caveats are in the
 [`2048 periodic-tile experiment`](synthid-detector-removal-plan.md#2026-08-10-2048-periodic-tile-detector).
 
+An aligned-subtraction ablation strengthened the mechanism finding without
+clearing the oracle gate. At a discovery-selected amplitude, it reversed both
+the fixed-tile and independently fitted phase decisions on all 30 test images
+at a median 53.74 dB PSNR and 0.99681 SSIM. The aligned edit reduced both scores
+more than cyclic-shifted and orthogonal random tile controls on every paired
+image. A shifted tile nevertheless suppressed the phase score enough to leave
+only one accepted image, so these local reversals remain surrogate evidence,
+not verified SynthID removal. The exact controls and caveats are recorded in
+the linked experiment section.
+
+The immutable oracle-batch and result evaluator are implemented. On 2026-08-10,
+four new 2048x2048 Gemini images were generated after the rule was frozen and
+registered as a 20-request confirmatory batch. The first source group exhausted
+the account's verification quota after five requests. The untouched source
+returned Google C2PA Content Credentials without a separate SynthID verdict;
+the lossless re-encode, aligned subtraction, and cyclic-shifted control all
+still returned a Google AI signal. The orthogonal control was refused because
+the quota had been exceeded, and the remaining 15 requests were not submitted.
+This incomplete run is already negative evidence for the frozen pixel-only
+recipe: the aligned candidate cleared the phase detector but remained positive
+under the tile detector and the provider oracle. The local carrier expert
+therefore ships only as a positive-only, exact-geometry detector; it is not a
+universal SynthID detector or a remover.
+
 A controlled study (June 2026, clean v0.8.6 with text/face protection OFF,
 native resolution on this repo's default SDXL pipeline) measured the minimum
 img2img strength that removes the SynthID pixel watermark, verified per image on
@@ -402,7 +426,7 @@ diffusion prior."
 
 ## 3. Detectability and verifier access
 
-### 3.1 No public local decoder
+### 3.1 No public payload decoder
 
 The SynthID decoder is proprietary and not released:
 
@@ -411,8 +435,8 @@ The SynthID decoder is proprietary and not released:
 > available to trusted testers."
 > -- Gowal et al., arXiv:2510.09263
 
-There are no released decoder weights and no reproducible algorithm for local
-detection. Google provides verification in Gemini and a limited SynthID Detector
+There are no released payload-decoder weights or public algorithm. Google
+provides verification in Gemini and a limited SynthID Detector
 portal. OpenAI now documents a synchronous Content Provenance API whose image
 response contains separate C2PA and SynthID outcomes. That API is a remote,
 OpenAI-scoped verifier, not a local decoder. Its documentation also says not to
@@ -425,12 +449,73 @@ Google's SynthID Detector service is:
 > professionals" on a waitlist
 > -- deepmind.google/models/synthid/
 
-The external variant SynthID-O is available "through partnerships" only. Our
-tool does not currently detect SynthID pixels locally. The gated research path
-for determining whether that can change is documented in
+The external variant SynthID-O is available "through partnerships" only. This
+project instead detects one empirically recovered periodic carrier family in a
+calibrated image-size range. It does not decode the proprietary payload or
+generalize that local signal to unsupported sizes,
+codecs, video, or future epochs. The evidence and gates are documented in
 [`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
 
-### 3.2 How our tool recognizes SynthID from provenance
+### 3.2 How our tool detects the supported carrier
+
+`remove-ai-watermarks detect-synthid image.png` folds the image residual modulo
+16x16 and compares it with a frozen float64 template. It evaluates only native
+input, without resize. Exact-multiple dimensions retain the original folding
+path; non-divisible dimensions use count-correct modulo folding. The model and
+threshold remain frozen from the 2048x2048 experiment. The fixed threshold
+accepted none of 5,000 public COCO views balanced across every observed target
+geometry. A separate 5,000-view challenge used 256 generated geometries from one
+through 18 megapixels and covered every pair of width/height remainders modulo
+16; it also produced no accepted view. Runtime support is therefore the
+challenged interval of 1,000,000 through 18,000,000 decoded pixels rather than
+an enumerated width-by-height registry. The original 2048x2048 scores remain
+exactly unchanged.
+
+This geometry support does not imply arbitrary resize robustness. The fixed
+carrier has a 16-pixel sampling lattice. In a stratified 80-image positive
+sample, direct detection fell from 80 accepted originals to zero after each of
+seven nonidentity resizes from 0.5 through 1.5. Scaling the template and folding
+period to matching integers recovered the signal, and a conservative threshold
+above 3,000 resized COCO development controls accepted 672 of 800 source-disjoint
+provider positives with no acceptance in 2,000 final controls. That branch is
+not shipped: noninteger periods from ordinary scale factors collapsed, and
+less conservative per-period thresholds accepted five final controls. The
+runtime therefore detects arbitrary decoded dimensions only when the carrier
+retains its measured 16-pixel scale.
+
+A positive result identifies the carrier but does not attribute a provider.
+Provider identity still comes from provenance.
+
+The command reports `not_detected` separately from `unsupported`. Both are
+inconclusive outside the measured carrier family and calibrated image-size range.
+
+The same modulo-folding method has been tested separately on a large,
+temporally split OpenAI-labeled corpus. Its strongest native-size template was
+dominated by a generic 2x2 generator lattice that also appeared in multiple
+non-OpenAI controls. Removing that nuisance component left a sparse,
+time-limited signal with inadequate sensitivity. OpenAI pixel detection is
+therefore not part of the runtime expert.
+
+Learned residual, forensic, ensemble, and canonical 512x512 representations
+were also tested against 261 same-provider candidate controls. A later
+software-agent audit found that only 118 of those controls explicitly name
+`gpt-image 2.0`; the rest come from earlier or unknown versions. The strongest
+native ensemble accepted 243 of 1,364 development-test positives with no
+accepted controls, but accepted none of those positives after a JPEG-95 round
+trip. A model trained after equalizing every image through JPEG-95 accepted
+only six development-test positives and five COCO controls. The apparent
+native signal is therefore treated as an export noiseprint rather than a
+validated robust watermark. A local CLIP search over the exact-version subset
+found no clean same-content before/after pair, and a published third-party CNN
+surrogate mislabeled 83.4% of held-out COCO controls at its stated threshold.
+A transform-augmented 512x512 RGB-plus-residual CNN then accepted zero of 1,364
+development-test positives in native, JPEG-95, and resize views; its crop view
+accepted one positive and one difficult control. Detailed counts and rejected
+alternatives are in
+the [`OpenAI periodic-carrier challenge`](synthid-detector-removal-plan.md#2026-08-10-openai-periodic-carrier-challenge)
+and [`OpenAI content-dependent decoder challenge`](synthid-detector-removal-plan.md#2026-08-10-openai-content-dependent-decoder-challenge).
+
+### 3.3 How our tool recognizes SynthID from provenance
 
 We recognize SynthID indirectly from supported C2PA evidence; this is not a
 pixel watermark decode. Google states that all media generated by its tools is
@@ -451,7 +536,7 @@ This is why:
 - A quiet `identify` output is not proof that SynthID was removed -- it only
   means the metadata signal is gone.
 
-### 3.3 Oracle scope: each vendor detects only their own
+### 3.4 Oracle scope: each vendor detects only their own
 
 OpenAI's current Content Provenance API documentation says it checks supported
 OpenAI signals and is not a general-purpose AI detector. Google's current Gemini
@@ -470,7 +555,7 @@ A Google-SynthID image reads clean on openai.com/verify. An OpenAI image reads
 clean in the Gemini oracle. They are different payloads within the same
 framework.
 
-### 3.4 Video verification and attack harness
+### 3.5 Video verification and attack harness
 
 Gemini's built-in verification flow reports whether and where it detects Google
 SynthID in a video. This remains a proprietary oracle: invoke `@synthid`, use
@@ -699,7 +784,8 @@ photoreal, `sdxl` on flat graphics, the §5.1 content-x-pipeline table), BUT on 
 hard case (flat fills) `sdxl` is the WEAKER remover (plain img2img barely perturbs a
 flat region at low strength), so it needs AT LEAST controlnet's strength -- the
 certified floor is therefore the right floor for `sdxl` too. This is a MARGIN argument
-for `sdxl`, not a separate certification (no local SynthID detector to self-verify).
+for `sdxl`, not a separate certification (the tested geometries are outside the
+current local detector's scope).
 The higher strength costs little quality where it matters, because `controlnet` is now
 the default pipeline, so `sdxl` is reached only via an explicit `--pipeline sdxl` (a
 deliberate opt-down), where over-regeneration has no faces/text to damage.
@@ -810,7 +896,7 @@ random (unset) seed differed between runs. So **0.15 is the borderline floor for
 controlnet photoreal, not a robust guarantee**: at the threshold the same
 image+settings can pass or fail run-to-run. img2img runs with `seed=None` (random)
 unless `--seed` is passed, so a removal SERVICE gets a coin-flip near threshold and
-has no local SynthID detector to self-verify.
+has no applicable local SynthID detector at these geometries to self-verify.
 
 **Controlnet strength ladder on the two photoreal images (oracle, `--auto`,
 `--max-resolution 1536`):**
@@ -825,7 +911,7 @@ has no local SynthID detector to self-verify.
 non-deterministic borderline); both photoreal survivors cleared at 0.20. Honest
 caveat: 0.20 is one confirming run WITH margin, not an N-run repeatability proof --
 for a removal service, add a little more margin or validate repeatability, since
-there is no local SynthID detector to self-check. **Implications:** (1) the
+these geometries are outside the current local detector's scope. **Implications:** (1) the
 content×pipeline table above conflates a borderline/non-deterministic 0.15 result
 with deterministic content behavior -- the photoreal-survives-controlnet effect is
 solid at 0.10 but at 0.15 it is near-threshold noise; (2) for reliable removal pick
@@ -910,3 +996,6 @@ reproducible verification requires a fixed seed.
 8. Jiang et al. (2025). **VideoMarkBench: Benchmarking Robustness of Video
    Watermarking.** arXiv:2505.21620.
    https://arxiv.org/abs/2505.21620
+
+9. OpenAI. **ChatGPT Images 2.0 system card.**
+   https://deploymentsafety.openai.com/chatgpt-images-2-0/automated-evaluations-and-adversarial-testing

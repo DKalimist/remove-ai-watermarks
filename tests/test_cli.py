@@ -736,6 +736,28 @@ class TestIdentifyCommand:
         assert result.exit_code != 0
 
 
+class TestDetectSynthIDCommand:
+    def test_help(self, runner):
+        result = runner.invoke(main, ["detect-synthid", "--help"])
+        assert result.exit_code == 0
+        assert "calibrated image sizes" in result.output
+
+    def test_unsupported_geometry_is_machine_readable(self, runner, tmp_clean_png):
+        result = runner.invoke(main, ["detect-synthid", str(tmp_clean_png), "--json"])
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["status"] == "unsupported"
+        assert payload["score"] is None
+
+    def test_non_json_output_preserves_negative_scope(self, runner, tmp_clean_png):
+        result = runner.invoke(main, ["detect-synthid", str(tmp_clean_png)])
+
+        assert result.exit_code == 0, result.output
+        assert "unsupported" in result.output
+        assert "not proof that SynthID is absent" in result.output
+
+
 class TestBatchCommand:
     """Tests for the 'batch' subcommand."""
 

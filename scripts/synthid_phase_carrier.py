@@ -179,6 +179,27 @@ def _frequency_values(pixels: np.ndarray, model: PhaseCarrierModel) -> np.ndarra
     return extract_frequency_values(pixels, model.rows, model.columns, model.channels)
 
 
+def score_pixels(pixels: np.ndarray, model: PhaseCarrierModel, *, path: str = "<array>") -> PhaseCarrierScore:
+    """Score exact-geometry RGB PIXELS against MODEL."""
+    if pixels.shape != (model.height, model.width, 3):
+        raise ValueError("pixel geometry does not match phase-carrier model")
+    values = _frequency_values(np.asarray(pixels, dtype=np.float64), model)
+    magnitude_gate = np.minimum(np.abs(values) / (model.expected_magnitudes + 1e-12), 1.0)
+    active_weights = model.weights * magnitude_gate
+    active_weight = float(np.sum(active_weights))
+    score = (
+        0.0
+        if active_weight == 0.0
+        else float(np.sum(active_weights * np.cos(np.angle(values) - model.phases)) / active_weight)
+    )
+    return PhaseCarrierScore(
+        path=path,
+        score=score,
+        active_weight_fraction=active_weight,
+        peak_count=len(model.rows),
+    )
+
+
 def score_image(
     path: Path,
     model: PhaseCarrierModel,
@@ -192,21 +213,7 @@ def score_image(
         width=model.width,
         canonicalize_geometry=canonicalize_geometry,
     )
-    values = _frequency_values(pixels, model)
-    magnitude_gate = np.minimum(np.abs(values) / (model.expected_magnitudes + 1e-12), 1.0)
-    active_weights = model.weights * magnitude_gate
-    active_weight = float(np.sum(active_weights))
-    score = (
-        0.0
-        if active_weight == 0.0
-        else float(np.sum(active_weights * np.cos(np.angle(values) - model.phases)) / active_weight)
-    )
-    return PhaseCarrierScore(
-        path=str(path),
-        score=score,
-        active_weight_fraction=active_weight,
-        peak_count=len(model.rows),
-    )
+    return score_pixels(pixels, model, path=str(path))
 
 
 def score_translations(

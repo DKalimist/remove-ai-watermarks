@@ -64,12 +64,19 @@ identity or exact texture, and each then runs the same face stage.
 `qwen-zimage` is the higher fidelity of the two. Both are large, slow, and may
 still alter small text or difficult faces.
 
-### Removal cannot be verified locally for proprietary SynthID
+### Local SynthID detection covers one image-carrier family
 
-The project has no public local SynthID pixel decoder. It recognizes presence
-from supported provenance metadata: Google AI C2PA under Google's all-media
-policy, or current OpenAI C2PA with an explicit watermark action. A missing
-provenance signal is not a negative pixel verdict.
+Google does not publish the proprietary SynthID payload decoder. The project
+ships a positive-only detector for one measured periodic image carrier in a
+calibrated image-size range, plus provenance-based recognition
+from Google AI C2PA or current OpenAI C2PA with an explicit watermark action.
+It does not cover images outside that size range, crop, strong JPEG compression,
+video, or future carrier epochs. Arbitrary dimensions inside the range are
+supported only while the recovered carrier retains its measured 16-pixel
+sampling lattice. A spatial resize changes that period; the runtime does not
+yet search fractional periods or infer the pre-resize geometry. A `not_detected`
+or `unsupported` result is not a negative universal verdict, and removal still
+requires the matching provider oracle for confirmation.
 
 For important outputs:
 

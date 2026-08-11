@@ -94,7 +94,7 @@ application actually uses:
 
 | Extra | Capability | Automatically includes | Torch or model download |
 | --- | --- | --- | --- |
-| `pixels` | Shared BGR array and image-processing runtime | NumPy, headless OpenCV | No |
+| `pixels` | Shared BGR runtime and calibrated-size SynthID carrier detection | NumPy, headless OpenCV | No |
 | `heif` | HEIC, HEIF, and AVIF pixel decoding | pillow-heif | No |
 | `visible` | Visible mark detection, OpenCV inpainting, and manual erasing | `pixels` | No |
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV | No |

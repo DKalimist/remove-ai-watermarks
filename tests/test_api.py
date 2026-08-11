@@ -18,8 +18,12 @@ CHATGPT = SAMPLES / "chatgpt-1.png"
 
 class TestTopLevelExports:
     def test_lazy_reexports_resolve(self):
+        from remove_ai_watermarks import synthid_detector
+
         assert raiw.remove_visible is api.remove_visible
         assert raiw.visible_provenance is api.visible_provenance
+        assert raiw.detect_synthid is synthid_detector.detect_synthid
+        assert raiw.SynthIDDetection is synthid_detector.SynthIDDetection
 
     def test_unknown_attribute_raises(self):
         with pytest.raises(AttributeError):

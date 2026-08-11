@@ -297,8 +297,8 @@ _force_option = click.option(
     help=(
         "Run the diffusion scrub even when no invisible AI watermark is locally "
         "detectable. Default: skip it (regeneration only degrades a clean image; a "
-        "skip never claims the image is watermark-free -- a pixel SynthID is "
-        "undetectable once its metadata proxy is gone)."
+        "skip never claims the image is watermark-free -- the local SynthID detector "
+        "covers one carrier family in a calibrated image-size range)."
     ),
 )
 _cpu_offload_option = click.option(
@@ -455,18 +455,20 @@ def _no_invisible_signal_exit(source: Path) -> NoReturn:
     :func:`identify` finds no locally-detectable invisible AI signal, running it
     anyway would damage a clean image for nothing -- the dominant paid score-0
     cause on no-watermark uploads. So skip it, but do NOT imply the image is
-    clean: a pixel SynthID is undetectable here once its metadata proxy is gone.
-    Write no output and exit :data:`EXIT_NO_INVISIBLE_SIGNAL`; ``--force`` runs
-    the scrub regardless.
+    clean: only one SynthID carrier family in a calibrated image-size range has
+    a local detector, so other sizes or epochs can still be present after
+    their metadata proxy is gone. Write no output and exit
+    :data:`EXIT_NO_INVISIBLE_SIGNAL`; ``--force`` runs the scrub regardless.
     """
     console.print(
-        "  No invisible AI watermark detected (no C2PA/SynthID provenance, no open\n"
-        "  watermark). Skipped the diffusion scrub -- regenerating the pixels would\n"
-        "  only degrade the image with nothing to remove, so no output was written.\n"
-        "  This does NOT prove the image is clean: a pixel watermark such as SynthID\n"
-        "  cannot be detected here once its metadata proxy is absent (it may have\n"
-        "  been stripped earlier). If you know the image is AI-generated and want the\n"
-        "  pixels regenerated regardless, re-run with --force:\n"
+        "  No supported invisible AI watermark detected (no provenance, supported\n"
+        "  SynthID carrier, or open watermark). Skipped the diffusion scrub --\n"
+        "  regenerating the pixels would only degrade the image with nothing to\n"
+        "  remove, so no output was written.\n"
+        "  This does NOT prove the image is clean: the local SynthID detector covers\n"
+        "  one carrier family in a calibrated image-size range. If you know the image\n"
+        "  is AI-generated and want the pixels regenerated regardless, re-run with\n"
+        "  --force:\n"
         f"    remove-ai-watermarks invisible {source.name} --force"
     )
     raise SystemExit(EXIT_NO_INVISIBLE_SIGNAL)
@@ -1316,6 +1318,41 @@ def cmd_video_batch(
         raise SystemExit(1)
 
 
+# ── SynthID pixel detection ──
+@main.command("detect-synthid")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Emit the detector result as JSON.")
+def cmd_detect_synthid(source: Path, as_json: bool) -> None:
+    """Detect the SynthID periodic pixel carrier at calibrated image sizes.
+
+    A negative result means this detector did not find its supported carrier; it
+    is not proof that the image contains no SynthID watermark.
+    """
+    from remove_ai_watermarks.synthid_detector import detect_synthid
+
+    source = _validate_image(source)
+    try:
+        result = detect_synthid(source)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2))
+        return
+
+    _banner()
+    console.print(f"\n  SynthID pixel carrier: {result.status}")
+    console.print(f"  Geometry: {result.width}x{result.height}")
+    if result.score is not None:
+        console.print(f"  Score: {result.score:.6f}  (threshold: {result.threshold:.6f})")
+    console.print(f"  Detector: {result.detector}")
+    console.print(
+        "  Scope: one confirmed periodic carrier family in a calibrated image-size range.\n"
+        "  Arbitrary spatial resampling is not registered. A negative or\n"
+        "  unsupported result is not proof that SynthID is absent."
+    )
+
+
 # ── Provenance identification ──
 @main.command("identify")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
@@ -1360,8 +1397,8 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
     if report.is_ai_generated is None:
         console.print(
             "  No locally-readable AI signal found. This is not the same as 'clean': "
-            "metadata is often stripped by re-encoding, screenshots, or upload, and SynthID-class "
-            "pixel watermarks (Gemini / Nano Banana / gpt-image) have no local detector. "
+            "metadata is often stripped by re-encoding, screenshots, or upload, and the local "
+            "SynthID pixel detector covers one carrier family in a calibrated image-size range. "
             "See caveats below."
         )
 
@@ -1455,8 +1492,9 @@ def cmd_all(
     stage_text = {
         ("invisible", "no-signal"): (
             "Skipped (no invisible AI watermark detected; pixels left intact).\n"
-            "    Not a clean-image guarantee: a pixel SynthID is undetectable once its\n"
-            "    metadata proxy is gone. Re-run with --force to scrub regardless."
+            "    Not a clean-image guarantee: the local SynthID detector covers one\n"
+            "    carrier family in a calibrated image-size range. Re-run with --force\n"
+            "    to scrub regardless."
         ),
         ("invisible", "unavailable"): (
             f"Warning: Skipped - GPU dependencies not installed.\n    Install them with: pip install {INVISIBLE_EXTRA}"

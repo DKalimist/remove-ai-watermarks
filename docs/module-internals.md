@@ -451,7 +451,56 @@ metadata extraction from verdict logic:
   both extractors reach the same answer. It did not, and the record path silently
   reported no SynthID for images the file path flagged.
 - `identify` preserves the path-based API and adds the optional registered
-  visible-mark and open invisible-watermark decoders after extraction.
+  visible-mark, open invisible-watermark, and supported SynthID carrier
+  detectors after extraction.
+
+### SynthID periodic carrier detector
+
+[`synthid_detector.py`](../src/remove_ai_watermarks/synthid_detector.py) is the
+runtime form of the frozen 2048x2048 periodic-tile experiment. It folds a
+Gaussian high-pass residual modulo 16x16 within a calibrated pixel-count range
+and compares the normalized RGB tile with the bundled float64 template
+`assets/synthid_periodic_tile_2048_v1.npz`. Exact multiples use the original
+reshape-and-mean path; other sizes use count-correct modulo folding,
+without resize. Channels are filtered and folded sequentially, and partial edge
+blocks are accumulated without a full-frame padding buffer so the 18-megapixel
+ceiling does not require multiple three-channel float workspaces. The model hash
+is pinned by a test, and the unchanged operating threshold is
+`0.17357069773071196`.
+
+The direct API returns `detected`, `not_detected`, or `unsupported`; the last is
+distinct because no resize is performed. Support is based on a calibrated range
+of 1,000,000 through 18,000,000 decoded pixels. The frozen threshold accepted
+none of 5,000 public COCO views balanced across every observed target geometry,
+and none of a separate 5,000-view challenge over 256 generated geometries
+covering every pair of modulo-16 edge remainders. The original 2048x2048
+verdicts and exact scores remain unchanged. Runtime matches do not attribute a
+provider. `identify` adds only positive matches as high-confidence
+evidence and never turns a local negative into a clean verdict.
+
+Arbitrary geometry is not the same as arbitrary spatial resampling. On a
+stratified 80-image fixed-positive sample, one-step resizes at seven nonidentity
+scales from 0.5 through 1.5 reduced the unchanged 16x16 detector from 80 accepted
+sources to zero at every scale. Restoring the original geometry recovered 58-80
+sources, showing that the carrier period scaled with the pixels. A discovery
+bank that scaled the template to integer periods 8, 10, 12, 14, 18, 20, and 24
+was promising: a threshold frozen above 3,000 resized COCO controls accepted no
+view in a 2,000-control final partition and accepted 672 of 800 source-disjoint
+provider positives. It also stayed below threshold on the tracked OpenAI and
+Adobe controls. The branch remains research-only because noninteger periods at
+scales 0.8, 0.9, 1.1, 1.2, and 1.333 collapsed, while separate per-period
+thresholds accepted five final controls. The runtime therefore keeps only the
+fixed 16-pixel lattice.
+
+A follow-up fractional-period probe sampled the 30 strongest template harmonics
+over a continuous 7.5-24.5 period range. The correct period appeared within
+0.05 pixels among the top three candidates for 58 of 60 transformed positives.
+Testing nine neighboring reconstructed geometries then recovered 44 of 60 at
+the native threshold, compared with an upper bound of 48 when the true source
+geometry was supplied. The complete search still failed its small frozen
+control split: a threshold above 250 development controls accepted two of 150
+final controls. Multiplying the canonical score by spectral-period confidence
+also accepted two. This branch is not a calibrated runtime fallback.
 
 ### Portable metadata record
 

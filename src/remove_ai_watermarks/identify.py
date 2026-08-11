@@ -6,15 +6,14 @@ Aggregates every locally-readable signal into a single :class:`ProvenanceReport`
   the signing platform (OpenAI, Google, Adobe, Microsoft).
 - **IPTC ``digitalSourceType``** "Made with AI" marker (Meta, X, others).
 - **PNG text / EXIF generation parameters** (Stable Diffusion, ComfyUI, InvokeAI).
-- **SynthID provenance evidence** -- Google AI C2PA follows Google's all-media
-  policy; current OpenAI C2PA explicitly declares a watermark action.
+- **SynthID evidence** -- supported C2PA provenance plus a positive-only local
+  detector for one confirmed periodic carrier family in a calibrated image-size range.
 - **Registered visible marks** (optional; needs cv2/numpy, no GPU) through the
   shared watermark registry.
 
-Hard limit: a stripped image (re-encoded, screenshotted, social-media upload)
-loses all metadata, and the SynthID *pixel* watermark is not locally decodable
-(proprietary decoder). Absence of signals is therefore reported as ``Unknown``,
-never as "clean". See CLAUDE.md "SynthID detection is metadata-only".
+Hard limit: Google does not publish its payload decoder. The local pixel detector
+covers only one measured carrier family in a calibrated image-size range, so
+absence of signals is reported as ``Unknown``, never as "clean".
 """
 
 from __future__ import annotations
@@ -111,8 +110,14 @@ _STRIP_CAVEAT = (
     "text chunks are stripped by re-encoding, screenshots, or social-media upload."
 )
 _SYNTHID_CAVEAT = (
-    "SynthID presence comes from supported provenance here; the pixel watermark is not locally "
-    "decoded (proprietary decoder). Confirm via the Gemini app or openai.com/verify."
+    "SynthID presence comes from supported provenance here. The separate local pixel detector "
+    "covers one measured carrier family in a calibrated image-size range; confirm other cases with "
+    "the provider oracle."
+)
+_SYNTHID_PIXEL_CAVEAT = (
+    "The local SynthID pixel result is a positive-only match to one measured periodic carrier family "
+    "in a calibrated image-size range, not a proprietary payload decode. A negative or unsupported "
+    "result is not proof of absence."
 )
 _IPTC_ONLY_CAVEAT = "The IPTC 'Made with AI' tag flags AI provenance but does not identify the specific platform."
 _INVISIBLE_WM_CAVEAT = (
@@ -951,6 +956,15 @@ def _trustmark(image_path: Path) -> str | None:
     return detect_trustmark(image_path)
 
 
+def _synthid_pixel_watermark(image_path: Path, decode: _SharedDecode) -> bool:
+    """Whether the supported positive-only SynthID carrier is detected."""
+    from remove_ai_watermarks.synthid_detector import detect_synthid, is_available
+
+    if not is_available() or (image := decode.get()) is None:
+        return False
+    return detect_synthid(image_path, image=image).detected
+
+
 class _SharedDecode:
     """One decode of the source pixels, shared by every detector in a single report.
 
@@ -1295,6 +1309,17 @@ def _identify_from_evidence(
         if platform is None:
             platform = f"{scheme} (open DWT-DCT watermark)"
 
+    # ── Positive-only SynthID periodic carrier ──────────────────────
+    # This is deliberately separate from C2PA provenance. It survives lossless
+    # metadata stripping, but covers only one carrier family and a calibrated
+    # image-size range.
+    if check_invisible and pixel_path is not None and _synthid_pixel_watermark(pixel_path, decode):
+        signals.append(Signal("synthid_pixel", "calibrated periodic carrier", "high"))
+        watermarks.append("SynthID periodic pixel carrier (calibrated image size)")
+        caveats.append(_SYNTHID_PIXEL_CAVEAT)
+        if platform is None:
+            platform = "SynthID carrier detected (provider not attributed locally)"
+
     # ── Adobe TrustMark invisible watermark (open decoder, no key) ───
     # The watermark behind Adobe Durable Content Credentials. Decoded locally,
     # but it binds provenance for human-authored content too, so it enriches the
@@ -1306,7 +1331,7 @@ def _identify_from_evidence(
             platform = "Adobe (TrustMark / Content Credentials)"
 
     # ── Verdict so far (metadata + embedded watermark) ──────────────
-    invisible_wm = any(s.name == "invisible_watermark" for s in signals)
+    invisible_wm = any(s.name in {"invisible_watermark", "synthid_pixel"} for s in signals)
     exif_gen = any(s.name == "exif_generator" for s in signals)
     xai_sig = any(s.name == "xai_signature" for s in signals)
     ai_from_metadata = bool(
@@ -1405,8 +1430,9 @@ def identify(
         image_path: Path to the image (PNG, JPEG, WebP, or ISOBMFF container).
         check_visible: Also run the registered visible-mark detectors through cv2.
             Set False for a metadata-only, dependency-light scan.
-        check_invisible: Also decode optional open invisible watermarks
-            (SD/SDXL/FLUX). No-op when the decoder extra is not installed.
+        check_invisible: Also run optional pixel detectors for the supported
+            SynthID carrier and open SD/SDXL/FLUX watermarks. No-op when their
+            numeric extras are not installed.
 
     File-backed metadata extraction runs first. The extracted evidence is then
     evaluated independently, followed by the optional pixel-backed visible and
@@ -1436,13 +1462,13 @@ def has_invisible_target(image_path: Path) -> bool:
     to remove. Runs :func:`identify` with ``check_visible=False`` -- a visible mark
     is handled by the separate visible pass and is NOT a diffusion target -- and
     ``check_invisible=True`` so an open watermark counts. Returns
-    ``report.ai_from_metadata`` (C2PA AI issuer / SynthID provenance, IPTC, AIGC, local
-    gen params, EXIF/xAI, open DWT-DCT / TrustMark).
+    ``report.ai_from_metadata`` (C2PA AI issuer / SynthID provenance or periodic
+    carrier, IPTC, AIGC, local gen params, EXIF/xAI, open DWT-DCT / TrustMark).
 
-    IMPORTANT -- this cannot prove a pixel SynthID is absent: SynthID is detectable
-    only through its C2PA proxy, so a metadata-stripped AI image reads as no signal
-    here. A False therefore means "no locally-detectable invisible target", not
-    "clean". Callers must NOT present a skip as a finished clean result.
+    IMPORTANT -- this cannot prove a pixel SynthID is absent: the local detector
+    covers one carrier family in a calibrated image-size range. A False therefore
+    means "no supported locally-detectable invisible target", not "clean". Callers
+    must NOT present a skip as a finished clean result.
 
     Fail-safe: any error resolves to True so the removal still runs -- leaving a
     watermark on a paid removal is worse than over-regenerating a clean image.
