@@ -70,13 +70,17 @@ Google does not publish the proprietary SynthID payload decoder. The project
 ships a positive-only detector for one measured periodic image carrier in a
 calibrated image-size range, plus provenance-based recognition
 from Google AI C2PA or current OpenAI C2PA with an explicit watermark action.
-It does not cover images outside that size range, crop, strong JPEG compression,
-video, or future carrier epochs. Arbitrary dimensions inside the range are
-supported only while the recovered carrier retains its measured 16-pixel
-sampling lattice. A spatial resize changes that period; the runtime does not
-yet search fractional periods or infer the pre-resize geometry. A `not_detected`
-or `unsupported` result is not a negative universal verdict, and removal still
-requires the matching provider oracle for confirmation.
+It does not cover images outside the selected mode's size range, crop, strong
+JPEG compression, video, or future carrier epochs. Arbitrary dimensions inside
+the default range are supported only while the recovered carrier retains its
+measured 16-pixel sampling lattice. A spatial resize changes that period. The
+opt-in `detect-synthid --register-scale` mode searches a bounded
+fractional-period range for images from 250,000 through 10,000,000 pixels, but
+requires both sides to be at least 64 pixels. Its measured positive range is
+approximately scale 0.65 through 1.5; a 0.5 resize aliases the carrier with
+ordinary resize lattices and is not reliably detected. It is also slower. A
+`not_detected` or `unsupported` result is not a negative universal verdict, and
+removal still requires the matching provider oracle for confirmation.
 
 For important outputs:
 

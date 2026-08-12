@@ -81,13 +81,18 @@ Detect the supported SynthID pixel carrier after installing the pixel runtime:
 ```bash
 uv tool install --force "remove-ai-watermarks[pixels]"
 remove-ai-watermarks detect-synthid image.png
+remove-ai-watermarks detect-synthid resized.png --register-scale
 ```
 
 This detector is positive-only and limited to one measured carrier family in
 the [calibrated image-size range](docs/synthid.md#32-how-our-tool-detects-the-supported-carrier).
-It expects the recovered carrier at its measured 16-pixel sampling scale;
-arbitrary spatial resampling is not registered. `not_detected` or `unsupported`
-is not a clean-image guarantee.
+The fast default expects the recovered carrier at its measured 16-pixel
+sampling scale. `--register-scale` opts into a much slower bounded scale search
+for resized images from 250,000 through 10,000,000 decoded pixels, with both
+sides at least 64 pixels. Its measured positive scale range is approximately
+0.65 through 1.5; 0.5x resizes remain outside reliable detection. `identify`
+keeps the fast default. `not_detected` or `unsupported` is not a clean-image
+guarantee.
 
 For visible watermark removal, install the pixel dependencies:
 

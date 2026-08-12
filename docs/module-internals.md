@@ -500,7 +500,32 @@ the native threshold, compared with an upper bound of 48 when the true source
 geometry was supplied. The complete search still failed its small frozen
 control split: a threshold above 250 development controls accepted two of 150
 final controls. Multiplying the canonical score by spectral-period confidence
-also accepted two. This branch is not a calibrated runtime fallback.
+also accepted two. That baseline was rejected rather than shipped at its
+discovery threshold.
+
+The opt-in `register_scale=True` path is the later calibrated successor. It
+keeps the harmonic search, adds three-level scale-space consistency and quadrant
+agreement. Its calibrated decision requires the canonical winner to be the
+strongest spectral-period candidate, its three-way amplitude to cross the
+threshold for that period bin, and both independent high-frequency template
+bands to correlate by at least `0.075`. The public registered score is the
+minimum normalized margin across those gates, so its decision threshold is
+`1.0`.
+
+The earlier single-threshold version produced 68 false positives among 11,273
+symmetrically downscaled Spaces controls. A top-candidate plus period-bin version
+removed those but still produced 6 false positives among 1,000 source-independent
+Open Images controls. The high-band gate removed them and then accepted none of
+499 previously untouched Open Images reserve controls. The resulting rule
+retained 229 of 355 source-disjoint transformed positives: 0/65 at scale 0.5 and
+229/290 from scale 0.65 through 1.5. The explicit period-8 rescue is rejected
+because resize lattices fully overlap its positive distribution.
+
+The separately measured geometry range remains 250,000 through 10,000,000
+decoded pixels with both sides at least 64 pixels. The default path and
+`identify` remain the native fold. A 20-image real-corpus drift check was
+byte-identical after integration. The calibration history and caveats are in the
+linked detector research plan.
 
 ### Portable metadata record
 

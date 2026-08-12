@@ -2,8 +2,8 @@
 
 This is a positive-only detector for one measured carrier epoch, not Google's
 private payload decoder. A positive result is strong local evidence for the
-carrier. A negative result means only that this exact detector did not find it;
-image sizes outside the calibrated pixel-count range are reported separately.
+carrier. A negative result means only that the selected detector did not find
+it; image sizes outside that mode's calibrated range are reported separately.
 
 The numeric runtime requires the ``pixels`` extra. Imports remain lazy so the
 package's metadata-only paths stay dependency-light.
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 SynthIDDetectionStatus = Literal["detected", "not_detected", "unsupported"]
 
 DETECTOR_ID = "synthid-periodic-tile-v2"
+REGISTERED_DETECTOR_ID = "synthid-periodic-tile-registered-v2"
 MODEL_FILENAME = "synthid_periodic_tile_2048_v1.npz"
 # The template remains frozen at this model geometry. Runtime images are never
 # resized. The supported pixel-count interval is the separately challenged domain:
@@ -35,6 +36,12 @@ MODEL_HEIGHT = 2048
 MIN_SUPPORTED_PIXELS = 1_000_000
 MAX_SUPPORTED_PIXELS = 18_000_000
 TILE_THRESHOLD = 0.17357069773071196
+REGISTERED_MIN_SUPPORTED_PIXELS = 250_000
+REGISTERED_MAX_SUPPORTED_PIXELS = 10_000_000
+REGISTERED_MIN_SIDE = 64
+# The registered score is the minimum normalized margin across its amplitude,
+# spectral-candidate, and high-frequency agreement gates.
+REGISTERED_THRESHOLD = 1.0
 INSTALL_HINT = "install the pixel extra: uv add 'remove-ai-watermarks[pixels]'"
 
 
@@ -206,11 +213,43 @@ def _geometry_supported(width: int, height: int) -> bool:
     return MIN_SUPPORTED_PIXELS <= pixels <= MAX_SUPPORTED_PIXELS
 
 
-def detect_synthid(image_path: str | Path, *, image: NDArray[Any] | None = None) -> SynthIDDetection:
+def _registered_geometry_supported(width: int, height: int) -> bool:
+    """Whether scale registration was challenged at this decoded size."""
+    pixels = width * height
+    return (
+        min(width, height) >= REGISTERED_MIN_SIDE
+        and REGISTERED_MIN_SUPPORTED_PIXELS <= pixels <= REGISTERED_MAX_SUPPORTED_PIXELS
+    )
+
+
+def folded_template_score(
+    pixels: NDArray[Any],
+    template: NDArray[Any],
+    denoise_sigma: float,
+) -> tuple[float, NDArray[Any]]:
+    """Fold PIXELS at the model geometry and score the normalized tile."""
+    tile_height, tile_width = template.shape[:2]
+    folded = fold_residual_template(
+        pixels,
+        tile_height=tile_height,
+        tile_width=tile_width,
+        denoise_sigma=denoise_sigma,
+    )
+    normalized, _norm = unit_tile(folded)
+    return float((template * normalized).sum()), folded
+
+
+def detect_synthid(
+    image_path: str | Path,
+    *,
+    image: NDArray[Any] | None = None,
+    register_scale: bool = False,
+) -> SynthIDDetection:
     """Detect the supported periodic carrier in IMAGE_PATH.
 
     ``not_detected`` is not a clean-image guarantee. It means only that the
-    frozen periodic carrier did not cross its calibrated threshold.
+    frozen periodic carrier did not cross its calibrated threshold. Set
+    ``register_scale`` for the slower, separately calibrated resize search.
     """
     path = Path(image_path)
     if image is None:
@@ -219,13 +258,19 @@ def detect_synthid(image_path: str | Path, *, image: NDArray[Any] | None = None)
         if image.ndim != 3 or image.shape[2] != 3:
             raise ValueError("image must be a three-channel BGR array")
         height, width = image.shape[:2]
-    if not _geometry_supported(width, height):
+    geometry_supported = (
+        _registered_geometry_supported(width, height) if register_scale else _geometry_supported(width, height)
+    )
+    threshold = REGISTERED_THRESHOLD if register_scale else TILE_THRESHOLD
+    detector_id = REGISTERED_DETECTOR_ID if register_scale else DETECTOR_ID
+    if not geometry_supported:
         return SynthIDDetection(
             status="unsupported",
             width=width,
             height=height,
             score=None,
-            threshold=TILE_THRESHOLD,
+            threshold=threshold,
+            detector=detector_id,
         )
     if not is_available():
         raise RuntimeError(f"SynthID pixel detection needs numpy and OpenCV; {INSTALL_HINT}")
@@ -233,7 +278,7 @@ def detect_synthid(image_path: str | Path, *, image: NDArray[Any] | None = None)
     import numpy as np
     from PIL import Image
 
-    template, sigma, _model_height, _model_width, tile_height, tile_width = _load_template()
+    template, sigma, *_model = _load_template()
     if image is None:
         with Image.open(path) as source:
             pixels = np.asarray(source.convert("RGB"), dtype=np.uint8)
@@ -241,18 +286,17 @@ def detect_synthid(image_path: str | Path, *, image: NDArray[Any] | None = None)
         pixels = np.asarray(image[:, :, ::-1], dtype=np.uint8)
     if pixels.shape != (height, width, 3):
         raise RuntimeError("decoded image geometry does not match its header")
-    folded = fold_residual_template(
-        pixels,
-        tile_height=tile_height,
-        tile_width=tile_width,
-        denoise_sigma=sigma,
-    )
-    normalized, _norm = unit_tile(folded)
-    score = float(np.sum(template * normalized))
+    if register_scale:
+        from remove_ai_watermarks._synthid_registered import registered_score
+
+        score = registered_score(pixels, template, sigma)
+    else:
+        score, _folded = folded_template_score(pixels, template, sigma)
     return SynthIDDetection(
-        status="detected" if score >= TILE_THRESHOLD else "not_detected",
+        status="detected" if score >= threshold else "not_detected",
         width=width,
         height=height,
         score=score,
-        threshold=TILE_THRESHOLD,
+        threshold=threshold,
+        detector=detector_id,
     )

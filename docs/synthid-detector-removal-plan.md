@@ -1331,6 +1331,99 @@ acceptance from 49 to 52 of 60 at its development threshold but accepted the
 same two final controls. This fractional FFT baseline is rejected for runtime
 use; better period estimation alone does not solve multiple-search specificity.
 
+### 2026-08-11: multiscale calibration and opt-in registered detector
+
+The fractional search was revisited as a multiple-search calibration problem,
+not as period estimation alone. A source-disjoint challenge used 200 confirmed
+fixed-carrier positives, 40 independent sources at each scale 0.8, 0.9, 1.1,
+1.2, and 1.333. Controls were 4,900 unique COCO images resized into the positive
+pixel-count domain, split into 2,900 development and 2,000 final items. The ten
+frozen candidates combined exact fractional canonical correlation, quadrant
+agreement, and a three-level scale-space score through mean or minimum rules.
+Pure box-counting dimensions, multifractal width, lacunarity, roughness,
+wavelet-energy slope, and a generic log-Mellin response had already failed the
+smaller pilot and were not promoted to the large challenge.
+
+At the development-only threshold, the three-way mean accepted 177 of 200
+positives versus 163 for canonical correlation alone, with 16 positives rescued
+and two lost in the paired decision. Each produced one final false positive, on
+different source images, so the development threshold was rejected. Recalibrating
+above all 4,900 COCO controls left 176 of 200 three-way positives and 160 of 200
+canonical-only positives. This recalibration is exploratory rather than a new
+validation because the final controls had then been inspected.
+
+A second source-disjoint corpus froze those thresholds before scoring 105 new
+positives across scales 0.5, 0.65, 0.8, 1.0, 1.2, 1.333, and 1.5, plus all 879
+content-deduplicated Kodak and Picsum controls available locally. Natural
+2816x1536 controls had a heavier null tail than upscaled COCO: the three-way
+mean accepted 82 of 105 positives and six controls at the COCO threshold,
+whereas canonical-only accepted 79 positives and ten controls. A threshold
+above all 5,779 controls retained 253 of the first 305 positives for the
+three-way mean. Four coarse pixel-count bins recovered only six more positives,
+so size normalization did not explain the main 0.5x miss.
+
+At 0.5x, a fixed period-8 branch raised canonical correlation for seven of the
+15 discovery positives but also won the unconstrained search on 629 of 879
+controls. Searching it unconditionally merely raised the null threshold. The
+frozen remedy requires period-8 native correlation of at least 0.35 and takes
+the maximum of the old and period-8 three-way scores. It added four positives
+without an accepted control in the discovery corpus. On the earlier 4,900
+controls, the frozen gate never opened and none crossed the final three-way
+threshold `0.2460603834083705`.
+
+The improvement itself was then tested on 50 additional source-disjoint 0.5x
+positives that influenced neither gate nor threshold. The ungated three-way
+score accepted 6; the frozen gate accepted 17, rescuing 11 and losing none. The
+exact paired sign test was `p = 0.0009765625`. These results support an opt-in
+scale-registered detector over 250,000 through 10,000,000 decoded pixels. The
+runtime also requires both sides to be at least 64 pixels so each canonical
+quadrant can retain a full 16-by-16 tile. These results do not establish a
+universal SynthID decoder: the control maximum helped set the operating point,
+33 of 50 new 0.5x positives still missed, and crop, strong codec changes, other
+carrier epochs, and provider attribution remain outside the claim. The fast
+native fold remains the default and the `identify` path.
+
+That period-8 conclusion was overturned by a later symmetric negative test.
+Every one of the 11,506 known non-Google Spaces controls was downscaled by 0.5,
+matching the positive transformation; 11,273 outputs remained in the registered
+geometry range. The direct analytic 8-by-8 template was dominated by shared
+resize structure: 80.8% of its energy projected onto a 2-by-2 lattice and 94.0%
+onto a 4-by-4 lattice. The production period-8 gate opened on 73 controls, and
+all 73 crossed the registered threshold. They spanned hosted jobs, Firefly,
+China AIGC-labeled generators, Meta-tagged images, OpenAI, and local tools. No
+tested secondary condition separated the 11 rescued positives from those 73
+controls. The explicit period-8 rescue is therefore rejected and not part of
+the runtime detector. The 0.5x rescue result is retained here as an incident
+record against asymmetric transformed-positive evaluation.
+
+The same symmetric corpus also invalidated the main single-threshold registered
+rule: 68 of 11,273 supported controls crossed `0.2460603834083705`. Fixed
+thresholds for nine recovered-period bins eliminated those errors while
+retaining 238 of 355 transformed positives, but one of 4,900 COCO controls then
+crossed through the third spectral candidate. Requiring the canonical winner to
+match the strongest spectral candidate removed that case and all 68 Spaces
+errors, with 239 of 355 positives retained. This version was not shipped: a
+fresh, content-deduplicated 1,000-image Open Images validation corpus produced
+six false positives.
+
+All six Open Images errors concentrated their apparent match in one
+middle-frequency ring. Their correlations disappeared or changed sign in the
+two higher-frequency rings of the 16-by-16 carrier, unlike the accepted Gemini
+positives. Adding a frozen minimum correlation of `0.075` across those two rings
+removed the six development errors and retained 229 of 355 positives. A
+previously untouched reserve of 499 supported Open Images controls then produced
+five amplitude-gate candidates and zero final positives; their maximum
+high-band score was `0.004682175209264222`.
+
+The retained positives by scale were 0/65 at 0.5, 8/15 at 0.65, 53/55 at 0.8,
+33/40 at 0.9, 13/15 at 1.0, 30/40 at 1.1, 38/55 at 1.2, 40/55 at 1.333, and
+14/15 at 1.5. A physically transformed template recovered strong correlations
+for some period-8 positives, but 975 top-candidate Spaces controls fully
+overlapped every tested amplitude, spectral-band, and joint feature. No
+zero-control operating point retained a period-8 positive. The calibrated
+runtime therefore uses the top-candidate, period-bin, and high-band gates and
+makes no 0.5x detection claim.
+
 ### 2026-08-10: OpenAI periodic-carrier challenge
 
 The OpenAI track repeated the Google carrier method without runtime provenance

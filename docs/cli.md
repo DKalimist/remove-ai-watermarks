@@ -64,13 +64,19 @@ TrustMark. Metadata inspection still runs.
 ```bash
 remove-ai-watermarks detect-synthid image.png
 remove-ai-watermarks detect-synthid image.png --json
+remove-ai-watermarks detect-synthid resized.png --register-scale
 ```
 
 The command returns one of `detected`, `not_detected`, or `unsupported`. The
 runtime detector covers one frozen periodic carrier family in the
 [calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier)
-and needs the `pixels` extra. It never resizes the input and does not register
-a carrier whose sampling period changed through arbitrary spatial resampling.
+and needs the `pixels` extra. The default never resizes the input and does not
+register a carrier whose sampling period changed through spatial resampling.
+`--register-scale` enables a substantially slower bounded search over measured
+carrier periods for images from 250,000 through 10,000,000 decoded pixels, with
+both sides at least 64 pixels. It is opt-in and is not used by `identify`.
+The measured positive scale range is approximately 0.65 through 1.5; 0.5x
+resizes are not reliably detected.
 It is positive-only: `not_detected` means the score stayed below this detector's
 threshold, while `unsupported` means the image geometry is outside its scope.
 Neither result proves that another SynthID epoch or payload is absent.

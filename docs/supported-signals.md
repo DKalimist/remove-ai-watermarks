@@ -132,9 +132,14 @@ calibrated image-size range, available through `detect-synthid`
 and the default pixel pass in `identify` when the `pixels` extra is installed.
 The unchanged fixed threshold accepted none of the public COCO views in both
 an observed-geometry challenge and a generated-geometry challenge covering all
-modulo-16 edge cases. Arbitrary dimensions in the calibrated range are accepted,
-but the input must retain the measured 16-pixel carrier scale: arbitrary spatial
-resampling is not registered. The detector does not attribute a provider locally.
+modulo-16 edge cases. Arbitrary dimensions in the default calibrated range are
+accepted, but the input must retain the measured 16-pixel carrier scale. The
+opt-in `detect-synthid --register-scale` mode performs a slower bounded scale
+search over its separately measured 250,000-through-10,000,000-pixel range and
+requires both sides to be at least 64 pixels. Its measured positive scale range
+is approximately 0.65 through 1.5; 0.5x resizes are not reliably detected.
+`identify` does not enable that search. Neither detector attributes a provider
+locally.
 
 The tool also recognizes presence from supported provenance: Google AI C2PA
 under Google's all-media watermark policy, and current OpenAI C2PA carrying an

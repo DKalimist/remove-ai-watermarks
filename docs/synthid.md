@@ -483,6 +483,30 @@ less conservative per-period thresholds accepted five final controls. The
 runtime therefore detects arbitrary decoded dimensions only when the carrier
 retains its measured 16-pixel scale.
 
+`remove-ai-watermarks detect-synthid image.png --register-scale` opts into the
+separately calibrated scale-registered detector. It samples the 30 strongest
+template harmonics over fractional periods, reconstructs the three strongest
+canonical candidates, and combines full-frame correlation with quadrant and
+three-level scale-space consistency. A positive result additionally requires
+the canonical winner to be the strongest spectral candidate, a calibrated
+threshold for its recovered period, and agreement in two independent
+high-frequency template bands. The reported score is the minimum normalized
+margin across these requirements; its threshold is `1.0`.
+
+The final rule retained 229 of 355 source-disjoint transformed positives and
+accepted none of 499 previously untouched Open Images controls. It retained
+229 of 290 positives from scale 0.65 through 1.5, but none of 65 at scale 0.5.
+A separate period-8 rescue was rejected because symmetric 0.5x control resizing
+reproduced the same lattice and fully overlapped the positive feature range.
+The measured input range is 250,000 through 10,000,000 decoded pixels.
+Both dimensions must also be at least 64 pixels so every canonical quadrant can
+retain one 16-by-16 carrier tile.
+
+This mode is not the default because the bounded search is materially slower;
+scale registration is explicit and `identify` keeps the native detector. The
+registered mode does not reliably detect 0.5x carriers and does not make the
+detector universal across crop, codecs, carrier epochs, or providers.
+
 A positive result identifies the carrier but does not attribute a provider.
 Provider identity still comes from provenance.
 

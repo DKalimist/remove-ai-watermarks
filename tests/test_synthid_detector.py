@@ -28,6 +28,25 @@ def supported_images(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pa
     return positive, negative
 
 
+@pytest.fixture(scope="module")
+def registered_scale_positive(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create a strong period-12.8 carrier by shrinking a period-16 source."""
+    import cv2
+
+    directory = tmp_path_factory.mktemp("synthid-registered")
+    template, *_model = detector._load_template()
+    scaled_tile = template / np.max(np.abs(template)) * 40.0
+    source = np.tile(scaled_tile, (64, 64, 1)) + 128.0
+    pixels = cv2.resize(
+        np.clip(np.rint(source), 0, 255).astype(np.uint8),
+        (819, 819),
+        interpolation=cv2.INTER_AREA,
+    )
+    path = directory / "period-12.8-positive.png"
+    Image.fromarray(pixels, "RGB").save(path)
+    return path
+
+
 def test_bundled_model_is_the_frozen_calibrated_artifact() -> None:
     model = Path(detector.__file__).parent / "assets" / detector.MODEL_FILENAME
 
@@ -53,6 +72,36 @@ def test_geometry_outside_the_challenged_pixel_count_range_is_unsupported(
     height: int,
 ) -> None:
     assert not detector._geometry_supported(width, height)
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "supported"),
+    [
+        (500, 500, True),
+        (4000, 2500, True),
+        (64, 3907, True),
+        (499, 500, False),
+        (4001, 2500, False),
+        (32, 7813, False),
+    ],
+)
+def test_registered_geometry_uses_its_measured_pixel_count_range(
+    width: int,
+    height: int,
+    supported: bool,
+) -> None:
+    assert detector._registered_geometry_supported(width, height) is supported
+
+
+def test_registered_mode_rejects_a_side_too_short_for_quadrants(tmp_path: Path) -> None:
+    path = tmp_path / "too-narrow.png"
+    Image.new("RGB", (32, 7813), "white").save(path)
+
+    result = detector.detect_synthid(path, register_scale=True)
+
+    assert result.status == "unsupported"
+    assert result.score is None
+    assert result.detector == detector.REGISTERED_DETECTOR_ID
 
 
 def test_detects_supported_periodic_carrier(supported_images: tuple[Path, Path]) -> None:
@@ -84,6 +133,95 @@ def test_detects_unregistered_non_divisible_geometry_in_size_range(tmp_path: Pat
     assert (result.width, result.height) == (width, height)
     assert result.score is not None
     assert result.score > result.threshold
+
+
+def test_registered_mode_detects_a_rescaled_carrier(registered_scale_positive: Path) -> None:
+    default = detector.detect_synthid(registered_scale_positive)
+    registered = detector.detect_synthid(registered_scale_positive, register_scale=True)
+
+    assert default.status == "unsupported"
+    assert registered.status == "detected"
+    assert registered.score is not None
+    assert registered.score > registered.threshold
+    assert registered.threshold == detector.REGISTERED_THRESHOLD
+    assert registered.detector == detector.REGISTERED_DETECTOR_ID
+
+
+def test_registered_threshold_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    registered_scale_positive: Path,
+) -> None:
+    baseline = detector.detect_synthid(registered_scale_positive, register_scale=True)
+    assert baseline.score is not None
+    mutated_threshold = float(np.nextafter(baseline.score, np.inf))
+    monkeypatch.setattr(detector, "REGISTERED_THRESHOLD", mutated_threshold)
+
+    mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
+
+    assert mutated.status == "not_detected"
+    assert mutated.threshold == mutated_threshold
+
+
+def test_registered_period_thresholds_cover_the_bounded_search() -> None:
+    from remove_ai_watermarks._synthid_registered import _period_threshold
+
+    assert _period_threshold(7.5) == pytest.approx(0.3770629524888979)
+    assert _period_threshold(12.0) == pytest.approx(0.19794247706938645)
+    assert _period_threshold(24.5) == pytest.approx(0.3142958338390489)
+    with pytest.raises(ValueError, match="outside"):
+        _period_threshold(7.49)
+
+
+def test_registered_amplitude_threshold_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    registered_scale_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    baseline = detector.detect_synthid(registered_scale_positive, register_scale=True)
+    assert baseline.status == "detected"
+    monkeypatch.setattr(
+        registered_detector,
+        "_PERIOD_THRESHOLDS",
+        ((7.5, 24.5, float("inf")),),
+    )
+
+    mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
+
+    assert mutated.status == "not_detected"
+
+
+def test_registered_spectral_candidate_disagreement_blocks_decision() -> None:
+    from remove_ai_watermarks._synthid_registered import RegisteredComponents
+
+    matching = RegisteredComponents(0.5, 0.25, 12.8, 12.8, 0.15)
+    mismatching = RegisteredComponents(0.5, 0.25, 12.8, 12.9, 0.15)
+
+    assert matching.decision_score == pytest.approx(2.0)
+    assert mismatching.decision_score == pytest.approx(0.0)
+
+
+def test_registered_high_band_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    registered_scale_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    components = registered_detector.registered_components(
+        np.asarray(Image.open(registered_scale_positive).convert("RGB"), dtype=np.uint8),
+        detector._load_template()[0],
+        detector._load_template()[1],
+    )
+    assert components.decision_score >= detector.REGISTERED_THRESHOLD
+    monkeypatch.setattr(
+        registered_detector,
+        "REGISTERED_HIGH_BAND_THRESHOLD",
+        float(np.nextafter(components.high_band_score, np.inf)),
+    )
+
+    mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
+
+    assert mutated.status == "not_detected"
 
 
 def test_supported_negative_does_not_claim_clean(supported_images: tuple[Path, Path]) -> None:

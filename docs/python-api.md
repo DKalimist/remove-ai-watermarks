@@ -23,15 +23,23 @@ result = raiw.detect_synthid("input.png")
 print(result.status)     # "detected" | "not_detected" | "unsupported"
 print(result.score)      # float for a supported image size, otherwise None
 print(result.threshold)  # frozen operating point
+
+# Opt in when the image may have been spatially resized.
+registered = raiw.detect_synthid("resized.png", register_scale=True)
 ```
 
 The detector is positive-only and covers one measured periodic carrier family
 in the [calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier).
-Arbitrary dimensions are accepted inside that range, but arbitrary spatial
-resampling can change the carrier period and is not registered. `not_detected`
-means only that this model did not find its carrier; `unsupported` is kept
-separate from a negative result. Neither is proof that the image contains no
-SynthID watermark.
+Arbitrary dimensions are accepted inside the default range, but spatial
+resampling can change the carrier period. `register_scale=True` enables the
+slower scale-registered operating point over 250,000 through 10,000,000 decoded
+pixels, with both sides at least 64 pixels; the default remains the native-period
+detector used by `identify`. Its score is a normalized multi-gate statistic with
+a threshold of `1.0`, not the native detector's raw template correlation. Scale
+0.5 is outside its reliable positive range.
+`not_detected` means only that the selected model did not find its carrier;
+`unsupported` is kept separate from a negative result. Neither is proof that
+the image contains no SynthID watermark.
 
 ## Remove visible marks
 

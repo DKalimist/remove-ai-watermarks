@@ -1322,7 +1322,12 @@ def cmd_video_batch(
 @main.command("detect-synthid")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--json", "as_json", is_flag=True, help="Emit the detector result as JSON.")
-def cmd_detect_synthid(source: Path, as_json: bool) -> None:
+@click.option(
+    "--register-scale",
+    is_flag=True,
+    help="Search the slower calibrated range of spatial carrier scales.",
+)
+def cmd_detect_synthid(source: Path, as_json: bool, register_scale: bool) -> None:
     """Detect the SynthID periodic pixel carrier at calibrated image sizes.
 
     A negative result means this detector did not find its supported carrier; it
@@ -1332,7 +1337,7 @@ def cmd_detect_synthid(source: Path, as_json: bool) -> None:
 
     source = _validate_image(source)
     try:
-        result = detect_synthid(source)
+        result = detect_synthid(source, register_scale=register_scale)
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -1346,10 +1351,15 @@ def cmd_detect_synthid(source: Path, as_json: bool) -> None:
     if result.score is not None:
         console.print(f"  Score: {result.score:.6f}  (threshold: {result.threshold:.6f})")
     console.print(f"  Detector: {result.detector}")
+    scale_scope = (
+        "  Bounded spatial-scale registration was enabled. A negative or\n"
+        if register_scale
+        else "  Arbitrary spatial resampling was not registered. A negative or\n"
+    )
     console.print(
         "  Scope: one confirmed periodic carrier family in a calibrated image-size range.\n"
-        "  Arbitrary spatial resampling is not registered. A negative or\n"
-        "  unsupported result is not proof that SynthID is absent."
+        + scale_scope
+        + "  unsupported result is not proof that SynthID is absent."
     )
 
 
