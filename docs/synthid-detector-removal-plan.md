@@ -1424,6 +1424,167 @@ zero-control operating point retained a period-8 positive. The calibrated
 runtime therefore uses the top-candidate, period-bin, and high-band gates and
 makes no 0.5x detection claim.
 
+### 2026-08-12: Registered color and phase-lock challenge
+
+A crop-specific research branch tested whether the recovered 16x16 carrier is
+better represented in a perceptual color space or a shift-tolerant directional
+transform. Every branch reused the direct RGB period-and-phase registration,
+fitted on the first 30 positives, selected on the next 20 positives and 200
+controls, and reported the remaining 50 positives and 299 controls separately.
+Only records whose recovered period was 15.5 through 16.5 were eligible.
+
+The frozen RGB template's channel norms were `0.887:1.000:0.930` for R:G:B,
+including `0.903:1.000:0.916` above FFT radius 4.5. An SVD assigned 79.80% of
+template energy to a nearly equal-channel component, 18.39% to a
+green-vs-magenta component, and 1.81% to a red-vs-blue component. The common
+component had strong diagonal energy, while 98.6% of the coarse
+green-opponent orientation energy was axis-aligned. This measured carrier does
+not support a fixed `0.85:1.00:0.70` channel rule or an exclusively diagonal
+decoder.
+
+Nonlinear cube-root LMS coordinates from the OKLab transform exposed the
+signal most strongly in the direct color-fold comparison, but the
+development-selected full-vector candidate retained 32 of 50 final positives
+and accepted six of 299 controls. This is evidence that nonlinear color
+projections can improve carrier SNR, not evidence that the deployed embedder
+uses Lab or OKLab internally.
+
+A three-level DTCWT probe retained all six orientations rather than only the
+`+/-45` degree pair. Its development-selected near-vertical green energy
+candidate retained 37 of 50 final positives and accepted eight controls. The
+green-opponent near-vertical candidate retained 39 positives and accepted one
+control. Separating energy, normalized complex correlation, and phase-only
+coherence changed the development choice to all-orientation green-opponent
+phase coherence, which retained 37 positives and accepted four controls. The
+directional representation therefore exposes real carrier structure but fails
+the low-false-positive gate.
+
+An explicit FFT probe then froze 8, 16, 32, or 64 carrier bins from the fit
+positives and compared signed cosine phase coherence with the proposed
+`abs(cos(delta_phase)) > 0.90` rule. The absolute rule never produced a usable
+operating point; treating phase and antiphase as equivalent increased the null
+overlap. With 64 bins, the development-selected green-channel signed cosine
+retained 26 of 50 final positives and initially accepted none of 299 controls.
+That result was underpowered because only 39 of 499 controls selected the
+eligible period-16 branch.
+
+The green phase candidate and its threshold were frozen before a full
+period-and-phase search over 1,000 COCO controls. It accepted five controls.
+Among the 129 eligible controls, the maximum score was `0.6910271977636098`,
+above the frozen `0.5443545641095117` threshold. Raising the threshold above
+that maximum retained only eight of 100 positives. Explicit registered phase
+lock is therefore a useful diagnostic of this carrier family but is rejected
+as a standalone detector. Because it shares the RGB registration stage, it is
+also not independent confirmation of the carrier.
+
+### 2026-08-12: Green phase perturbation and blind SWT removal
+
+A second removal probe tested the specific claim that changing only phase at
+the recovered Green-channel carrier bins can preserve spectral magnitude and
+image fidelity while defeating detection. It used the 100-image public Gemini
+set at native period 16 and modified conjugate FFT pairs together so the
+inverse remained real. Before pixel quantization, the maximum absolute change
+in FFT magnitude was `5.24e-10` for the 32-pair inversion. After clipping and
+rounding to 8-bit pixels, the maximum magnitude change relative to the largest
+source coefficient was 0.175%.
+
+The native periodic detector accepted 59 of the 100 sources. Inverting the 32
+strongest unique Green-channel carrier pairs left one of those 59 positive.
+Across all 100 images, PSNR was at least 43.36 dB and SSIM at least 0.99048;
+the medians were 52.79 dB and 0.99739. Median signed phase coherence moved from
+0.485 to -0.371 and the median full RGB tile score moved from 0.230 to 0.041.
+This reproduces the proposed fidelity and local-score effect against the
+recovered periodic detector.
+
+It does not establish SynthID removal. The current test targets the same
+carrier used by the local score, and earlier wider complex-spectrum and
+phase-projection candidates already cleared local phase models at 51.94-56.03
+dB while remaining detected in healthy Google verifier sessions. The 32-pair
+Green candidate is therefore a preregistered oracle candidate, not a remover.
+The official SynthID-Image description also identifies a post-hoc neural,
+content-dependent encoder-decoder rather than a fixed Fourier codebook; it
+does not document phase bins as its decision surface.
+
+The preregistered Google-oracle challenge then used three of the strongest
+local positives. Each fixed group contained the original, its 32-pair Green
+phase inversion, and an RMS-matched random-noise sham. All three phase
+candidates fell below the local `0.17357069773071196` threshold, with PSNR
+from 55.41 to 57.86 dB and SSIM from 0.99709 to 0.99807. The three shams
+remained locally positive. Nine files were submitted to Gemini's `Verify with
+SynthID` tool in separate chats with the unchanged prompt. Eight verdicts
+persisted and all eight reported Google AI signals. This includes all three
+phase candidates, both recoverable source controls, and all three shams. The
+second source request was submitted, but its chat did not persist and no
+verdict could be recovered; it was not retried outside the fixed upload budget.
+
+This falsifies the operative removal claim: Green-carrier phase inversion
+clears the local periodic correlate on three of three images but clears the
+Google oracle on zero of three. It is evidence that the local template observes
+one stable component or correlate of SynthID, not that these FFT coefficients
+form the proprietary decoder's sufficient decision surface. Do not productize
+the Green phase inversion or report its local score change as SynthID removal.
+
+The three oracle-confirmed phase candidates were then treated as adversarial
+hard positives for detector analysis, without using them to relax the existing
+runtime thresholds. Both runtime modes missed all three. Their native scores
+were 0.126-0.160 against the 0.174 threshold; their registered decision scores
+were 0, 0, and 0.553 against the threshold of 1. A phase-invariant magnitude
+profile was therefore tested as a possible rescue. The development-selected
+all-bin RGB profile retained 39 of 50 final positives but accepted one of 299
+final Open Images controls and still missed all three hard positives.
+
+A frozen-template, top-32 Blue-magnitude profile did accept all three hard
+positives and initially accepted none of 499 Open Images controls, but this was
+a post-hoc hard-positive-selected branch with low ordinary sensitivity: 17 of
+70 development and final positives. Its frozen threshold accepted 39 of 1,000
+fresh COCO controls. Combining it with a native-score floor of 0.10 happened to
+accept none of all 3,000 COCO controls while retaining the three hard positives,
+but failed the next independent challenge: 90 of 11,506 metadata-labeled
+non-Google controls passed both gates. Accepted controls included Adobe
+Firefly, local diffusion, Samsung, Microsoft, and several other generator
+families. The phase-invariant magnitude rescue is therefore rejected as a
+provider-specific detector; it measures a shared periodic rendering family.
+
+Channel separation exposed a narrower attack-specific rescue. The Green-only
+phase inversion leaves Red and Blue pixels unchanged, but the runtime RGB score
+normalizes all three channels jointly. On the three oracle-confirmed hard
+positives, separate signed correlations remained 0.781-0.804 in Red and
+0.798-0.825 in Blue while Green moved to -0.400 through -0.645. A Red threshold
+of `0.3770237083693908`, frozen above 200 Open Images calibration controls,
+retained 16 of 70 development and final ordinary positives and accepted none
+of the remaining 299 Open Images controls. It also accepted all three oracle
+hard positives and none of 3,000 fresh COCO controls.
+
+Red correlation alone remained a generic periodic-renderer correlate: it
+accepted 96 of 11,506 metadata-labeled non-Google controls. Every one of those
+96 had positive Green correlation. The attack-specific conjunction of Red at
+or above the frozen threshold and negative Green accepted none of 15,005 total
+controls across three independent corpora, while retaining all three
+oracle-confirmed phase candidates. Across the 100-image synthetic inversion
+probe, it recovered 19 of the 58 locally detected sources that the attack had
+moved below the RGB threshold. One additional attacked image still passed the
+existing detector.
+
+This channel-discordance rule is the first zero-control rescue for the
+oracle-confirmed hard positives, but it is not added to runtime. Its form was
+motivated after inspecting the attack, only three examples carry external
+oracle labels, and its synthetic rescue sensitivity is 19 of 58. A valid next
+gate must preregister this unchanged rule, obtain new oracle-confirmed
+Green-perturbed positives, and challenge a newly collected control set plus
+resize, crop, and codec views. Until then it is an attack diagnostic, not a
+universal SynthID detector.
+
+A blind three-level `db2` SWT probe then soft-thresholded only the Green
+horizontal, vertical, or diagonal detail bands at 0.25, 0.5, 1, and 2 times the
+band's robust noise estimate. Diagonal HH thresholding left all 59 original
+positives detected at every strength. Vertical thresholding cleared four at
+strength 1 and five at strength 2, but the respective minimum fidelity fell to
+32.57 dB and 0.96971 SSIM, then 28.52 dB and 0.93646. At strength 1, vertical
+score reduction exceeded diagonal reduction on 97 of 100 paired images
+(`p = 2.63e-25`, exact two-sided sign test). Blind HH soft-thresholding is
+therefore rejected; the stronger vertical response is consistent with the
+separately measured axis-aligned green-opponent carrier component.
+
 ### 2026-08-10: OpenAI periodic-carrier challenge
 
 The OpenAI track repeated the Google carrier method without runtime provenance

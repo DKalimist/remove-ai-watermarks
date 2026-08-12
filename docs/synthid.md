@@ -507,6 +507,47 @@ scale registration is explicit and `identify` keeps the native detector. The
 registered mode does not reliably detect 0.5x carriers and does not make the
 detector universal across crop, codecs, carrier epochs, or providers.
 
+A crop-specific follow-up tested cube-root LMS and OKLab projections, all six
+DTCWT orientations, and explicit FFT phase-lock metrics after period-and-phase
+registration. Each representation exposed additional positive signal, but its
+development-selected candidate failed a fresh control challenge. The strongest
+registered green-channel phase candidate accepted five of 1,000 COCO controls;
+a threshold above their maximum retained only eight of 100 positives. These
+features remain research diagnostics and are not part of the runtime detector.
+See the
+[`Registered color and phase-lock challenge`](synthid-detector-removal-plan.md#2026-08-12-registered-color-and-phase-lock-challenge).
+
+Green-channel inversion of the 32 strongest conjugate carrier pairs then
+cleared 58 of 59 locally detected public positives while preserving at least
+43.36 dB PSNR and 0.99048 SSIM. This demonstrates precise control over the
+local periodic correlate, not the proprietary decoder. A fixed Google-oracle
+challenge made that distinction explicit: all three phase candidates cleared
+the local threshold at 55.41-57.86 dB PSNR, while Gemini still reported Google
+AI signals for all three. The recoverable source controls and RMS-matched shams
+were also positive. One of nine submitted chats did not persist, but every
+phase candidate produced a verdict. Blind Green-channel SWT-HH thresholding
+cleared none of the 59 local positives. See the
+[`Green phase perturbation and blind SWT removal`](synthid-detector-removal-plan.md#2026-08-12-green-phase-perturbation-and-blind-swt-removal)
+challenge.
+
+Those three oracle-confirmed phase candidates are now adversarial hard
+positives: both the native and registered runtime modes miss all three. A
+phase-invariant Blue-carrier magnitude rescue recovered all three and happened
+to reject 3,000 COCO controls when combined with a native-score floor, but it
+then accepted 90 of 11,506 metadata-labeled non-Google controls. The branch is
+therefore a shared generator or renderer correlate, not a SynthID-specific
+rescue, and is not included in runtime.
+
+Separating signed channel correlations produced a more specific research
+candidate. The three oracle-confirmed Green-phase hard positives retained Red
+correlations of 0.781-0.804 while their Green correlations became negative. A
+frozen `Red >= 0.377 and Green < 0` conjunction accepted all three and none of
+15,005 controls across three independent corpora. It recovered 19 of
+58 synthetic Green inversions that cleared the native detector. This remains
+research-only because the rule was motivated after inspecting the attack,
+only three recovered images have external oracle labels, and no untouched
+control corpus remains for a final challenge.
+
 A positive result identifies the carrier but does not attribute a provider.
 Provider identity still comes from provenance.
 
