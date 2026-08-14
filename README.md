@@ -31,6 +31,7 @@ removal.
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
 | Detect the SynthID pixel carrier in the calibrated image-size range | `detect-synthid` | No |
+| Verify supported OpenAI SynthID from pixels with the official remote API | `verify-openai-synthid` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
@@ -50,6 +51,7 @@ removal.
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
 | Local SynthID carrier detection in the calibrated size range | `remove-ai-watermarks[pixels]` |
+| Official remote OpenAI SynthID verification | `remove-ai-watermarks[verify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
@@ -86,13 +88,34 @@ remove-ai-watermarks detect-synthid resized.png --register-scale
 
 This detector is positive-only and limited to one measured carrier family in
 the [calibrated image-size range](docs/synthid.md#32-how-our-tool-detects-the-supported-carrier).
-The fast default expects the recovered carrier at its measured 16-pixel
-sampling scale. `--register-scale` opts into a much slower bounded scale search
+The native default uses the fixed fold through 10 megapixels and a separately
+challenged opponent-color large-image branch above 10 through 18 megapixels;
+the large branch requires both sides to be at least 2,048 pixels. Both expect
+the recovered carrier at its measured 16-pixel sampling scale.
+`--register-scale` opts into a much slower bounded scale search
 for resized images from 250,000 through 10,000,000 decoded pixels, with both
 sides at least 64 pixels. Its measured positive scale range is approximately
 0.65 through 1.5; 0.5x resizes remain outside reliable detection. `identify`
 keeps the fast default. `not_detected` or `unsupported` is not a clean-image
 guarantee.
+
+The large native branch is not recompression-robust: all seven official large
+positives fell below its frozen threshold after same-size JPEG-95 and JPEG-90
+re-encoding. Use it for original or losslessly copied pixels, and treat a miss
+after lossy transcoding as inconclusive.
+
+For supported OpenAI images, the optional official verifier provides a broader
+pixel-watermark verdict than the incomplete local OpenAI research signal:
+
+```bash
+uv tool install --force "remove-ai-watermarks[verify]"
+remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload
+```
+
+The command removes AI provenance metadata from a temporary copy, verifies that
+the decoded pixels are unchanged, uploads only that copy to OpenAI, and consumes
+only the independent SynthID response. It never runs implicitly from `identify`.
+An API key, endpoint access, and explicit upload acknowledgement are required.
 
 For visible watermark removal, install the pixel dependencies:
 
@@ -355,6 +378,9 @@ print(removed)
 
 synthid = raiw.detect_synthid("image.png")
 print(synthid.status, synthid.score)
+
+openai_synthid = raiw.verify_openai_synthid("image.png", acknowledge_upload=True)
+print(openai_synthid.status)
 
 provenance = raiw.identify_video("input.mp4")
 report = raiw.inspect_video_metadata("input.mp4")

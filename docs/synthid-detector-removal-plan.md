@@ -577,6 +577,60 @@ deduplicated positives, expand the negative set to at least the rule-of-three
 minimum, and add same-provider hard negatives before fitting or publishing an
 operating point.
 
+### 2026-08-13: external V4 cross-color codebook audit
+
+The later `aloshdenny/reverse-SynthID` V4 artifact was audited independently at
+commit `b110836`. The audit read only numeric NPY members from its NPZ ZIP with
+pickle disabled and reproduced the published native-resolution phase score;
+no third-party Python or pickle payload was executed. Its bundled
+`sample_watermarked.png` crossed the documented `phase_match > 0.52` threshold
+at `0.535`, confirming that the reproduction follows the intended path.
+
+The operating point did not transfer. Taking the better of the two published
+model profiles detected 141 of 355 Google positives and 191 of 499 controls.
+On a later frozen 1,000-image Open Images reserve it accepted 386 controls. The
+phase score had AUC 0.517 on the paired corpus. Reproducing the July 2026 GUI's
+0.3%-aspect-ratio gate reduced coverage without adding discrimination: it
+supported 121 positives and detected 46, while supporting 343 controls and
+detecting 132; it also detected 284 of 685 supported fresh controls.
+
+The failure follows directly from the metric. Per-bin phase similarity is
+`1 - abs(wrapped_difference) / pi`, whose expectation under independent uniform
+phase is 0.5, only 0.02 below the threshold. The detector selects bins by
+cross-color phase coherence alone and does not require image-side carrier
+amplitude or a content-baseline excess. Its selected bins span nearly the full
+spectrum, with a typical spatial period around 2.5 pixels. Cross-color
+coherence is useful for discovering candidates from genuinely low-texture
+references, but this single-image score is not a calibrated detector.
+Two prespecified rerankings did not rescue it. Restricting carrier periods to
+4-128 pixels and ranking by either coherence times reference magnitude or the
+stored carrier weight times reference magnitude produced best-of-model AUCs of
+0.521 and 0.524. They were evaluated as continuous scores without selecting a
+new test-set threshold and are also rejected.
+
+The repository's older V3 phases also failed this external challenge. Their
+best dark/white phase score had AUC 0.473; the documented 0.78 phase threshold
+accepted 5 of 355 positives, 5 of 499 controls, and 6 of the later 1,000 fresh
+controls. The repository's current bundled sample and four validation sources
+all remained below that phase threshold. The README's accuracy claim is
+therefore not accepted as evidence for the current corpora.
+
+The linked Hugging Face dataset cannot repair OpenAI calibration as published.
+Its DALL-E 3 `black` and `white` buckets are not solid-color probes: per-image
+mean luminance ranged from 11.66 to 143.74 and 124.94 to 235.66 respectively.
+Across ten 1024-square images per bucket, only 39 and 32 RGB frequency bins had
+phase coherence above 0.9, versus 20,443 and 100,252 for the corresponding
+Gemini 3.1 buckets. Only four DALL-E bins cleared 0.9 in both colors and all
+four were trivial DC or self-conjugate-axis coordinates; Gemini had 11,478
+nontrivial joint bins and 3,341 also had cross-color absolute-cosine agreement
+above 0.9. Those DALL-E folders measure heterogeneous content phase, not an
+OpenAI solid-reference codebook. The official SynthID-Image paper also says
+nearly uniform corner cases may be excluded from watermarking, so generating
+flatter references does not guarantee a stronger watermark. A useful next
+external experiment requires newly collected low-content OpenAI outputs whose
+pixel watermark is separately confirmed, plus same-provider oracle-negative
+controls, before freezing any phase bins.
+
 ### 2026-08-09: independently fitted phase-carrier pilot
 
 An exact-geometry phase model was then fitted from four of our own
@@ -1125,6 +1179,16 @@ sparse-phase result, the tile score evaluates every image without a weak
 carrier-support abstention. The challenge is still not native provider data
 and cannot replace the required oracle-negative calibration.
 
+A later exact-1024 content audit found that perceptual siblings can cross an
+image-level fit split even when file and decoded-pixel hashes differ. The local
+2048 reports retain aggregate counts and model hashes but not the 111 fitting
+paths, so the old train/validation/test split cannot now be audited for that
+specific leakage mode. This does not invalidate the independently collected
+general-image challenges or justify changing the frozen runtime model, but the
+reported positive rates remain conditional on the historical split. Any next
+model calibration must retain content-group membership and prove that no group
+crosses train, validation, test, or temporal partitions.
+
 Symmetric attack evaluation established the robustness boundary. The fixed
 tile accepted 29 of 30 original test positives, all 30 after a 75% downscale
 round trip, 21 after JPEG-95, three after JPEG-85, and none after a 5% crop,
@@ -1175,6 +1239,88 @@ provider oracle must still compare untouched sources, aligned candidates, and
 norm-matched controls before any removal claim. The reproducible local harness
 is `scripts/synthid_periodic_tile_ablation.py`; its report records input and
 model hashes without writing derivative images.
+
+### 2026-08-12: fast adaptive carrier projection
+
+The fixed twice-median subtraction was intentionally conservative but spent
+substantially more pixel norm than many images needed. A follow-up tested a
+one-dimensional per-image solver. For source pixels `x`, frozen unit carrier
+`t`, and scalar amplitude `a`, the candidate is
+`clip(round(x - a * tile(t)))`. A bounded scalar search selects the smallest
+`a` that reaches the local target. This is a direct pixel edit: it uses no
+generative decoder, does not resize the image, and searches one scalar rather
+than optimizing a full-resolution tensor.
+
+The first challenge reused the 30 historical 2048x2048 causal-ablation
+sources. Three were not simultaneously positive under the fixed-tile and
+independently fitted phase rules and were excluded before counting a reversal.
+All 27 conjunctive positives cleared both local rules after adaptive
+subtraction. Median PSNR was 59.83 dB and median SSIM was 0.99890; the minima
+were 55.19 dB and 0.99705. Repeating the same selected amplitude with a
+one-row, one-column cyclic shift cleared zero of 27. Sixteen original images
+remained conjunctively positive after JPEG-95. The aligned candidates cleared
+all 16 after the same round trip, while the shifted controls cleared one. This
+improves materially on the earlier fixed-strength median of 53.74 dB without
+weakening the local causal control.
+
+A three-image pilot also compared subtracting the complete per-image folded
+high-pass residual and a regularized inverse-high-pass reconstruction. Both
+could clear the two local scores, but their selected candidates retained only
+about 54-57 dB PSNR, compared with 59-62 dB for the frozen carrier projection
+on the same images. Removing the whole folded residual therefore spends pixel
+norm on content-correlated periodic structure and was rejected in favor of the
+narrow carrier direction.
+
+The geometry challenge then selected three `first_only` carrier positives from
+each of the 20 most frequent native Spaces geometries. The edit repeats the
+same 16x16 carrier past the image boundaries and crops the repetition to the
+decoded dimensions, so it does not require dimensions divisible by 16. A zero
+score target cleared 60 of 60 aligned candidates and 5 of 60 matched shifted
+controls. Median PSNR and SSIM were 60.37 dB and 0.99919; the minima were
+53.56 dB and 0.99581. These samples come from an already inspected detector
+corpus, so they measure mechanism transfer across geometry rather than fresh
+detector or removal generalization.
+
+The zero target left one WebP-95 and eight resize survivors among transformed
+sources that were still locally positive. A frozen follow-up used a target
+score of -0.25. It cleared all 60 native candidates at median 57.70 dB PSNR and
+0.99863 SSIM, with minima of 52.38 dB and 0.99443. Conditional on the matching
+transformed source remaining above the fixed carrier threshold, the aligned
+candidate cleared 32 of 32 JPEG-95, 13 of 13 JPEG-90, 8 of 8 JPEG-85, 15 of 15
+WebP-95, and 54 of 54 0.75x resize round trips. The corresponding one-pixel
+shifted controls cleared 7, 1, 1, 5, and 17. The increased shifted-control rate
+is the measured price of adding transform margin.
+
+The frozen -0.25 recipe was finally run once on one deterministic first-carrier
+positive from every represented native Spaces geometry. All 647 images at 647
+distinct decoded sizes reached the target, with no maximum-amplitude failure.
+Median fidelity was 57.67 dB PSNR and 0.99867 SSIM; the worst case was 51.78 dB
+and 0.99400. Of 323 source images whose carrier survived JPEG-95, 323 aligned
+candidates and 58 shifted controls cleared after the same round trip. Natively,
+153 of 647 shifted controls also cleared at this deeper margin. The consistent
+aligned result supports geometry-independent control, while the increased
+shifted rate shows that the conservative edit perturbs a wider neighborhood of
+the periodic carrier. Because the all-geometry corpus had already influenced
+detector research, it is a coverage challenge rather than a fresh holdout.
+
+This is a fast local carrier suppressor, not a verified SynthID remover. The
+earlier Google oracle remained positive after analytical edits that already
+looked favorable to local models, and the adaptive scalar recipe has not been
+submitted to a matching-provider oracle. Provider terms and the project oracle
+policy also prohibit turning verifier responses into an adaptive search loop.
+The next valid test is one preregistered source/re-encode/aligned/shifted batch
+at a healthy authorized oracle, with the amplitude rule and -0.25 target frozen
+before submission. Until that batch returns a matching-provider negative result,
+no production command exposes this method as removal.
+
+The reproducible implementation is
+`scripts/synthid_adaptive_carrier_suppress.py`. It writes only lossless PNG,
+refuses overwrite and locally negative input, and records source/output hashes,
+the selected scalar amplitude, local scores, fidelity metrics, and runtime in a
+sidecar JSON report. Unit tests cover non-divisible geometry, target attainment,
+an unreachable target, and the negative-input guard. A real CLI smoke test on a
+Spaces source reproduced its reported score exactly through the runtime detector
+after saving. It remains a research script rather than a routed package command.
 
 ### 2026-08-10: confirmatory oracle-batch readiness
 
@@ -1424,6 +1570,369 @@ zero-control operating point retained a period-8 positive. The calibrated
 runtime therefore uses the top-candidate, period-bin, and high-band gates and
 makes no 0.5x detection claim.
 
+An exploratory amplitude-times-high-band rescue later tested whether the two
+existing gates could trade evidence instead of both passing independently. A
+threshold frozen above all 341 top-1 development controls recovered 11 of the
+126 current false negatives and accepted none of a separate 499-image Open
+Images reserve; the reserve maximum was 0.100583 against the 0.118168
+threshold. The decisive symmetric challenge rejected it: 19 of all 11,506
+Spaces controls after 0.5x resizing crossed the frozen threshold, with a
+maximum of 0.179989. The errors spanned OpenAI, Firefly, Microsoft, hosted
+jobs, and other generators. Raising the threshold post hoc above that maximum
+would recover only seven false negatives, none at scale 0.65 or 0.8. The joint
+rescue is rejected; the independent amplitude and high-band gates remain the
+measured operating point.
+
+### 2026-08-13: public bypass corpus and inverse-carrier audit
+
+The public `cebeuq/Synthid-Bypass` V2 comparison set supplied 12 external
+before/after pairs produced by a diffusion reconstruction workflow. The fixed
+runtime carrier accepted 10 of 12 `before` images and none of the 12 `after`
+images. The two misses were not assumed negative: Gemini Verify AI reported
+SynthID on `before/03.webp` and `before/07.png`, and no SynthID on both paired
+outputs. Outputs `01` through `06` were also oracle-negative; the verifier's
+daily limit stopped the same-session sweep at `08`.
+
+`07.png` is a low-SNR instance of the shipped positive direction. Its full-frame
+score was `0.1248368819`; its signed RGB correlations were 0.073, 0.183, and
+0.111, and all nine aligned region scores were positive. A proposed rescue at
+`score >= 0.12` with Green dominance and spatial agreement separated it from
+the two highest transformed-COCO controls, but failed a fresh exact-1024 Open
+Images challenge. A 2009 natural photograph scored `0.2123730698`, had stronger
+Green dominance and nine-region agreement, and Gemini returned `SynthID not
+detected`. The downloaded bytes matched a fresh fetch from the official Open
+Images validation bucket. This is a confirmed runtime false positive, not a
+provider-label inference.
+
+The failure is broader than that one JPEG. Symmetrically resizing the 24 Kodak
+PNG controls to 1536 by 2752 with Lanczos produced fixed scores as high as
+`0.3768339306`. Those synthetic views were not used as independent clean
+samples, but they prove that rational resize lattices can create a stronger
+signed 16-by-16 match than the runtime threshold. The existing 5,000-view
+observed-geometry and 5,000-view generated-geometry COCO challenges remain
+valid for their exact source-and-transform assignments; they do not justify a
+universal transformation claim. No threshold relaxation for `07` is allowed,
+and the current direct detector needs a fresh source-and-transform-grouped
+specificity epoch before its support range can be broadened.
+
+`03.webp` tested a different hypothesis. The two content-group-separated
+alternate-Gemini experts both rejected it. Its shipped-template score was
+instead `-0.3263447029`, all three channel scores were below `-0.28`, and every
+one of nine aligned regions was negative. The paired oracle-negative output
+weakened to `-0.1531420136`. Neither 5,000-view COCO geometry challenge nor the
+fresh Open Images blocks contained a score at or below `-0.20`, making the
+opposite-polarity response a plausible additional codeword or provider state.
+It is not specific enough to ship: 40 of 11,506 heterogeneous non-Google-labeled
+AI controls crossed `-0.20`, with examples from OpenAI, Microsoft, multiple
+other generators, and unassigned made-with-AI files. An inverse-template expert
+therefore remains a research hypothesis until matching-provider oracle labels
+and a new untouched natural and AI control split exist.
+
+A follow-up decomposed the two high-frequency rings instead of taking their
+minimum. The 19 joint-rule false positives were broad-band, with median
+`min(ring) / max(ring)` of 0.84, while the registered false negatives had a
+median of 0.27. A development-selected rescue therefore multiplied normalized
+amplitude by the stronger ring and required ring balance at or below 0.5. A
+threshold above 341 development controls recovered 11 of 65 top-1 false
+negatives and accepted none of the 499-image Open Images reserve. The full
+symmetric challenge again rejected it: 13 of 11,506 resized Spaces controls
+passed, with a maximum score of 0.694818 against the 0.308683 threshold. Strong
+single-ring lattices occurred in Firefly, OpenAI, hosted jobs, China-labeled
+generators, Canva, and other controls. Radial imbalance is therefore another
+general renderer or resize feature, not a SynthID-specific rescue.
+
+A multi-codeword hypothesis then projected the shared 16-by-16 template out of
+each normalized residual tile and fitted source-disjoint spherical codebooks to
+the remaining 768-dimensional vectors. Five prototypes selected on 300
+positives retained 366 of 600 held-out positives. Three prototypes were highly
+reproducible across an independent 300-positive fit, with matched correlations
+of 0.88 through 0.95, while the additional states were less stable. A threshold
+above 2,500 development natural-image controls accepted none of a separate
+2,500-image reserve and selected 225 of 770 metadata-labeled Google images that
+the shared-template threshold missed. The broader challenge decisively rejected
+the feature: 828 of 11,506 metadata-labeled non-Google Spaces controls crossed
+the frozen threshold. Errors occurred across OpenAI, Microsoft, Firefly,
+China-labeled generators, hosted jobs, Stable Diffusion, and other sources. A
+post-hoc intersection above every control that also passed the registered
+min(R, B) gate retained 138 Google candidates, but none passed that independent
+carrier gate. The residual clusters are reproducible generator or resampling
+structure, not a specific additional SynthID codebook, and are excluded from
+runtime.
+
+A related spatial-payload pilot stopped averaging all 16-by-16 blocks and
+measured carrier and codebook responses block by block. The positive carrier
+response was spatially coherent: median adjacent-block correlation was 0.61 on
+both axes, compared with 0.20 and 0.24 in a heterogeneous Spaces sample and
+0.04 and 0.06 among codebook false positives. The development-selected rescue
+was instead the standard deviation of the best codebook response across
+blocks. It retained 11 of 60 reserve positives and none of 180 reserve controls,
+but accepted six of 1,000 fresh heterogeneous controls. Those errors included
+OpenAI, hosted, and China-labeled generators; raising the threshold above their
+maximum retained only four of the 120 pilot positives. Per-block carrier or
+codeword coherence is therefore diagnostic but not a usable rescue.
+
+A geometry-stratified follow-up found a second reproducible native 16-by-16
+carrier in the fixed-template misses. Templates fitted independently from two
+halves of the 1024-by-1024 misses correlated at 0.869, and two independent fits
+from the non-1024 misses correlated at 0.956. The latter correlated 0.82-0.84
+with the 1024 template but only about 0.28 with the shipped carrier. This rules
+out a single-resolution averaging accident and supports a distinct carrier
+direction or state.
+
+The initial 1024 template retained 8 of 91 held-out misses and accepted none of
+81 exact-geometry reserve controls or 500 natural-image reserve controls. Seven
+of those eight positives survived JPEG 95, six survived JPEG 85 and 70, and
+three survived a 0.75x resize round trip; WebP 95 retained none. A threshold
+frozen above the exact-geometry development controls accepted 25 of 11,506
+heterogeneous controls when applied at arbitrary native geometries, so an
+unrestricted second native template is rejected. Canonicalizing every control
+to 1024 by 1024 eliminated all 11,506 errors, and the same path accepted only
+the native 1024-by-1024 Google misses. The signal has a fixed native period,
+not a size-normalized frequency.
+
+A stricter chronological fit used only 1024-by-1024 misses through mid-June and
+tested July misses. Its template correlated 0.839 with the independently fitted
+July template, retained 5 of 95 temporal misses, and accepted none of 81 reserve
+exact-geometry controls. At that frozen threshold, canonicalization accepted 18
+of all 770 fixed-template Google misses and none of all 11,506 heterogeneous
+controls; every accepted miss was natively 1024 by 1024. Requiring agreement
+between two independently fitted early templates retained three temporal
+misses and no reserve controls. This is credible evidence for a second carrier
+direction within the Google cohort, but the positive and exact-geometry control
+counts are still too small for a runtime operating point. The later external
+natural-image challenge below further shows that this repeatability is not yet
+specific enough for blind detection.
+
+Projecting the shipped carrier out of every normalized tile did not remove the
+second direction. The early orthogonal template was numerically orthogonal to the
+shipped template, correlated 0.834 with an independently fitted July orthogonal
+template, and retained the same 5 of 95 temporal misses with none of 81 reserve
+exact-geometry controls. Its threshold was frozen above the development controls
+before the decisive 1024-by-1024 canonical challenge; none of all 11,506
+heterogeneous controls crossed it, and the maximum remained just below the
+frozen boundary. The second direction is therefore not a weak projection of the
+shipped carrier. This strengthens the research finding but does not enlarge the
+small temporal-positive or exact-geometry control reserves required for runtime.
+
+Mapping both frozen scores over all 4,698 Google-labeled images changed the
+interpretation from an epoch replacement to coexisting carrier states. The map
+contained 3,825 first-only, 69 second-only, 103 both, and 701 neither cases;
+the two scores correlated at -0.563. Both directions occurred throughout the
+collection interval and across multiple native geometries, while the presence
+of both in 103 images rules out a simple dated switch from one template to the
+other. The second native threshold remains exploratory outside exact
+1024-by-1024 inputs because 8 of 11,506 heterogeneous native controls crossed
+the orthogonal version's threshold; only the canonical exact-geometry challenge
+retained the zero-of-11,506 result.
+
+Freezing a stricter native threshold above the maximum of 5,753 alternating
+development controls left zero crossings in the other 5,753 controls and 26
+Google images missed by the first carrier above threshold. That retrospective
+split is promising but not a certified operating point: the corpus had already
+been inspected while developing the second carrier, so a fresh source- and
+time-disjoint challenge is still required.
+
+An external natural-image challenge then rejected that strict native threshold.
+It accepted none of 1,500 unique Open Images controls and none of 12 Wikimedia
+controls, but one of 637 content-deduplicated Picsum controls. The original
+Picsum directory contained 1,000 filenames but only 637 unique hashes; the one
+crossing appeared twice under different ids and is counted once. Its RGB and
+quadrant contributions were highly uneven, unlike the small temporal-positive
+set, but that post-error observation cannot retroactively define a gate. The
+strict native threshold remains excluded from runtime.
+
+The original exact-1024 threshold also failed on those external controls: four
+of 1,500 Open Images and four of 637 unique Picsum images crossed it, including
+native 1024-by-1024 cases. The earlier zero-of-11,506 canonical result was
+therefore specific to that heterogeneous control composition, not evidence that
+exact geometry alone makes the carrier specific. Requiring agreement between
+the two independently fitted early templates did not close the gap; it retained
+three temporal positives but accepted one Open Images and two unique Picsum
+controls. The second direction remains a reproducible Google-cohort signal, not
+a blind detector.
+
+Requiring the orthogonal score to survive a JPEG-95 round trip was not a
+specificity gate either. It retained four of the five temporal positives but
+also retained all four Open Images and all four unique Picsum crossings at the
+original threshold. The natural-image confound is itself transport-stable.
+Together with the failed low-rank, two-template, channel-balance, quadrant, and
+two-carrier-plane variants, this exhausts mean-template consensus for the
+second direction on the current data.
+
+The orthogonal carrier is not a cyclic shift or color permutation of the
+shipped template. Its best absolute cyclic correlation was 0.212, Fourier
+magnitude correlation was 0.480, and weighted phase lock was 0.200. Dominant
+frequencies were axial, led by `(0, +/-8)`, `(0, +/-3)`, and `(0, +/-5)` rather
+than the first direction's broader structure. A horizontal-axis-only ablation
+retained all five temporal detections and no reserve exact-geometry control, but
+then accepted three of the 11,506 canonicalized heterogeneous controls. The
+errors included an OpenAI-labeled image and two watermark-remover outputs. The
+full orthogonal template is more specific than its strongest axial component.
+
+A final low-rank variant tested whether that direction contains several payload
+states rather than one mean carrier. SVD bases of ranks 1, 2, 3, 4, 6, 8, 12,
+and 16 were fitted only on early 1024-by-1024 misses. Rank was selected on a
+separate June interval and a separate control third, then reported on July
+misses and the final control third. The selected rank 12 retained 2 of 38
+validation misses and 4 of 95 test misses, with no control error. Rank 2 happened
+to retain 6 test misses but only one validation miss and therefore could not be
+selected without post-test tuning. A multi-state subspace did not improve the
+evidence-grade operating point.
+
+Deflation then tested whether a third stable linear carrier remained. After
+projecting both the shipped and second orthogonal templates out of every
+normalized tile, early and July residual averages correlated only 0.0003. The
+early residual template retained none of 95 temporal misses and none of 81
+reserve exact-geometry controls. Within this 1024-by-1024 temporal corpus, the
+linear periodic model therefore supports two reproducible carrier directions,
+not an open-ended sequence of mean templates.
+
+Treating those directions as a single two-dimensional carrier plane did not
+provide a safer weak-signal rescue. A positive-quadrant Euclidean norm used the
+two independently frozen carrier thresholds as axis scales, then froze its own
+boundary above 81 exact-geometry development controls. It rescued none of the
+Google images below both component thresholds and accepted one of 81 reserve
+controls. The two directions must retain separate operating points; combined
+subthreshold energy is rejected.
+
+The five temporal positives above the original second-carrier threshold also
+had unusually balanced normalized R, G, and B contributions: their worst
+channel ranged from 0.297 to 0.320, while seven of eight native control errors
+were below 0.297 and were commonly blue-heavy with a weak green contribution.
+A clean chronological validation did not justify turning that observation into
+a gate. A template fitted on half of the early positives produced no accepted
+examples in the other early half at the threshold frozen from development
+controls, despite accepting six July examples and no reserve control. The
+channel-balance rule is therefore a post-test hypothesis, not detector logic.
+
+A phase-only follow-up removed observed Fourier magnitude and averaged phase
+agreement using only the early template's fixed spectral-energy weights. The
+phase threshold alone retained 2 of 31 early validation misses and 10 of 95
+July misses, but accepted one of 81 reserve exact-geometry controls. Requiring
+both phase agreement and the independently calibrated linear projection
+removed that control error and all external natural-image errors. The frozen
+conjunction retained 1 of 31 early validation misses and 3 of 95 July misses,
+accepted none of 162 heterogeneous exact-1024 controls, none of 1,500 unique
+Open Images, none of 637 unique Picsum images, and none of 12 Wikimedia images.
+Applied outside its declared geometry it accepted 3 of 11,506 heterogeneous
+native controls, all at non-1024 sizes. This is the first independently
+challenged phase-and-amplitude candidate for the second direction, but three
+temporal positives are not enough to ship a runtime branch.
+
+Across all 443 exact-1024 Google images, the frozen conjunction found 11 that
+the shipped carrier missed and 16 that both branches accepted; 244 were found
+only by the shipped carrier and 172 by neither. The candidate therefore adds
+signal rather than merely confirming the first direction, but its incremental
+native recall is still small.
+
+Swapping the two early fit halves and recalibrating both thresholds retained 4
+of 31 opposite-half validation misses and 4 of 95 July misses, again with none
+of 81 reserve exact-geometry controls passing the conjunction. This supports
+fit-split signal reproducibility, but the swapped operating point accepted one
+of 92 unique exact-1024 Open Images controls in its external challenge; none of
+637 unique exact-1024 Picsum controls crossed. A post-hoc consensus of the two
+fit halves would require another untouched control set, so it is not selected
+from these exposed results. The candidate remains research-only.
+
+An initial two-expert rule required both independently fitted templates to pass
+their own separately calibrated linear and phase thresholds. The next
+nonoverlapping Open Images validation-id block was downloaded without scoring;
+2,000 candidates yielded 100 unique native 1024-by-1024 controls. The first
+expert accepted none, the second accepted one, and their conjunction accepted
+none. That rule appeared to add 5 detections across the 443 exact-1024 Google
+files, including 2 of 95 July fixed-carrier misses.
+
+A subsequent content-group audit invalidated those recall numbers. The 443
+files contained three exact decoded-pixel duplicate pairs and ten
+perceptual-hash groups at a conservative 16-of-256-bit screening distance. One
+early near-duplicate pair had been split between the two expert fits, so the
+experts were not content-independent. After allocating whole groups to one
+side, selecting one representative per group, and recalibrating both experts
+from the same untouched development controls produced templates correlated at
+0.720, and the consensus retained only 6 of 443 Google files. It added 2 files
+missed by the shipped carrier and retained only 1 of 95 July misses. It still
+accepted no conjunction among 81 reserve exact-geometry
+controls, 92 exact-1024 Open Images, 637 exact-1024 Picsum images, or the 100
+new Open Images controls. The corrected result is specific but far too small
+to ship.
+
+Removing the exact-geometry restriction invalidated even that corrected
+consensus. Across all 11,506 heterogeneous native controls, the group-separated
+experts accepted 5 and 6 respectively, and their conjunction accepted 2. Both
+consensus errors were at non-1024 geometries. The result is explicitly an
+exact-1024 research candidate and does not supply a universal-size detector.
+
+A post-hoc margin above both arbitrary-geometry collisions retained the two
+corrected incremental exact-1024 positives. Applying that frozen margin to all
+4,698 Google files accepted 28 and added 16 files missed by the shipped carrier
+across 11 native geometries. A full-corpus perceptual audit assigned those 16
+files to 16 separate content groups, none containing a shipped-carrier-positive
+variant. The same margin accepted none of 1,500 Open Images, 637 unique Picsum,
+or 12 Wikimedia native views. This is the first concrete all-size hypothesis
+for the second direction, but the margin was selected after all 11,506
+heterogeneous controls were exposed and the natural corpora had already
+challenged related experts. It requires a new content-deduplicated AI-control
+corpus before it can be treated as validation or runtime logic.
+
+The next source-independent model-cohort challenge sharply bounded that
+hypothesis. With no exact-byte overlap against the Spaces inventory, the
+original group-separated conjunction accepted 2 of 589 public Gemini 3.1 Flash
+Image Preview images, none of 520 Nano Banana Pro Preview, and none of 280
+DALL-E 3 images. The two Gemini hits were visually distinct diverse images at
+1408 by 768. Each Google cohort also included solid-color and gradient probes
+over several native geometries. The post-hoc 1.033 strict margin rejected every
+cohort image: Gemini reached 1.011, Nano Banana 0.941, and DALL-E 3 0.514. The
+base rule therefore has weak transfer to a current Gemini cohort but still
+collides with 2 of 11,506 arbitrary-size controls; the strict rule removes both
+the controls and the current-Gemini transfer only through a post-test threshold.
+Neither is a validated universal Google-model or cross-provider SynthID
+detector. The 16 Spaces all-size hits and two public Gemini base hits are useful
+hard positives for epoch analysis, not justification for implementation.
+
+The near-duplicate audit also provided a small mechanistic diagnostic. In all
+three perceptually matched pairs where only one variant crossed the shipped
+carrier, subtracting the shipped variant from the non-shipped variant reduced
+the shipped-template direction and increased both independently refitted
+second-template directions. The normalized mean paired difference correlated
+-0.568 with the shipped template and 0.252 and 0.264 with the two second
+templates. Three pairs are insufficient for inference; the two-sided sign-test
+result is 0.25. The paired result supports a carrier-state interpretation but
+is not detector validation.
+
+All three temporal detections from the original first-expert conjunction survived JPEG round trips
+at qualities 95, 85, and 70. None survived WebP 95 or a 0.75x down-and-up resize
+round trip. A symmetric transform challenge prevented promoting that positive
+retention to a JPEG claim: one of 162 heterogeneous exact-1024 controls crossed
+the unchanged rule after JPEG 85. The 92 exact-1024 Open Images and 637 unique
+exact-1024 Picsum controls stayed below threshold in every view. The candidate
+was native-only; fixed-lattice JPEG retention is diagnostic, not a certified
+transport operating point. The transform result applies only to that
+first-expert rule. The corrected group-separated experts have not been
+transport-calibrated, so it supplies no robustness claim for them.
+
+The corrected carrier was then tested causally. The normalized sum of the two
+content-group-separated expert directions correlated 0.927 with each expert.
+Subtracting it from all 16 strict incremental hits cleared every linear and
+phase component on every image; the same amplitudes with a one-pixel cyclic
+shift cleared none. Selected amplitudes were 5.0 through 7.75 integer levels,
+with median 6.5. Fidelity ranged from 58.92 through 69.97 dB PSNR and 0.99961
+through 0.99996 SSIM. The carrier itself was transform-fragile: only one of 16
+sources remained strict after JPEG 95 or 90, and the aligned edit cleared that
+one in both views while the shifted edit did not. No source remained strict
+after JPEG 85, WebP 95, or a 0.75x resize round trip.
+
+A joint ablation then started from all 28 strict second-carrier hits. It first
+suppressed the shipped carrier to the frozen -0.25 target where required, then
+suppressed the second direction until all four expert components were below
+their base thresholds. The original cohort contained 12 first-carrier and 28
+strict second-carrier detections; the aligned candidates contained zero of
+either. The shifted controls left one first-carrier and seven strict
+second-carrier detections. Median fidelity was 61.69 dB PSNR and 0.99984 SSIM;
+the minima were 58.15 dB and 0.99910. The two edits did not reactivate one
+another. Together with the failed third-carrier fit, the current linear native
+16x16 hypothesis is locally exhausted as two jointly controllable states.
+These are detector-score interventions, not Google-oracle removals.
+
 ### 2026-08-12: Registered color and phase-lock challenge
 
 A crop-specific research branch tested whether the recovered 16x16 carrier is
@@ -1568,11 +2077,165 @@ existing detector.
 This channel-discordance rule is the first zero-control rescue for the
 oracle-confirmed hard positives, but it is not added to runtime. Its form was
 motivated after inspecting the attack, only three examples carry external
-oracle labels, and its synthetic rescue sensitivity is 19 of 58. A valid next
-gate must preregister this unchanged rule, obtain new oracle-confirmed
-Green-perturbed positives, and challenge a newly collected control set plus
-resize, crop, and codec views. Until then it is an attack diagnostic, not a
-universal SynthID detector.
+oracle labels, and its synthetic rescue sensitivity is 19 of 58.
+
+A follow-up challenge registered that frozen rule over all 256 modulo-16 phase
+offsets and six fixed carrier periods: 8, 10.4, 12, 16, 20, and 24 pixels. The
+Red-only form accepted one of 3,000 COCO controls during phase registration;
+period search added no further acceptance. The accepted control scored 0.395
+in Red but only 0.267 in Blue. This rejects Red-only registered rescue at the
+existing threshold.
+
+The previously frozen `min(Red, Blue) >= 0.3770237083693908` candidate, still
+combined with negative Green, accepted none of the same 3,000 controls under
+phase-only or phase-and-period registration. Its maximum registered control
+score was 0.342. A symmetric transform stress test then evaluated all twelve
+identity, crop, JPEG, and resize views for 100 fixed Open Images controls. None
+of the 1,200 inputs was accepted; the maximum was 0.332.
+
+The stricter rule retained all three oracle-confirmed hard positives at native
+scale and after offsets of 1x1 and 7x11 pixels or a centered 5% crop. Period
+registration retained all three after 0.65x, 0.75x, 1.25x, and 1.5x resizing.
+It retained none after 0.5x resizing or JPEG round trips at qualities 95, 85,
+and 70. Every source and RMS-noise sham remained negative in all twelve views.
+The small-control zero was not sufficient for the complete period bank. A
+later five-period search over all 11,506 metadata-labeled non-Google controls
+accepted 16 at the original 0.377 threshold: two at period 20 and 14 at period
+24. The maximum `min(Red, Blue)` score was 0.435813. This rejects one common
+threshold across periods 10.4 through 24.
+
+A conservative high-score branch was then frozen strictly above that measured
+maximum. It retained all three hard positives at periods 12, 16, 20, and 24,
+corresponding to 0.75x through 1.5x resizing, identity, and the three crop
+views. A symmetric full-corpus resize challenge accepted none of 11,506
+controls at 0.75x, 1.25x, or 1.5x; the respective maxima were 0.431352,
+0.393949, and 0.372036. The 0.65x path needed separate treatment. Its native
+period-10.4 null maximum was 0.361367, below all three hard positives, but a
+symmetric 0.65x resize round trip raised one control to 0.397396, above the
+weakest hard positive at 0.394911.
+
+That collision motivated an exploratory low-period channel-ratio gate:
+`min(Red, Blue) >= 0.3770237083693908`, negative Green, and
+`Blue >= 1.1 * Red`, only at period 10.4. It retained all three 0.65x hard
+positives. Among all 11,506 controls, the largest score satisfying the ratio
+gate was 0.355165 natively and 0.354955 after the symmetric 0.65x round trip,
+so neither challenge accepted a control. The combined exploratory rule also
+retained all three hard positives in the identity, three crop, 0.65x, 0.75x,
+1.25x, and 1.5x views, while every corresponding source and RMS-noise sham
+remained negative.
+
+Applying the combined rule without further tuning to the 100-image synthetic
+Green-inversion cohort exposed its low sensitivity. Among the 58 attacks that
+moved a natively detected source below the native detector threshold, the rule
+recovered 4 at 0.65x, 5 at 0.75x, 16 at identity, 11 at 1.25x, and 10 at 1.5x.
+The three oracle source images are members of that cohort; only one additional
+synthetic source passed the 0.65x branch. The rule is therefore a
+high-specificity rescue for a strong residual R/B carrier, not a general
+solution to Green-phase perturbation.
+
+A source-split Fisher projection then tested whether a learned three-channel
+direction could improve that sensitivity. Red, Green, and Blue correlations
+were standardized separately by scale, and the projection was fitted from 34
+training attacks and 5,719 training controls. Per-scale thresholds were frozen
+above every training-control score. They accepted 11 of 23,148 views from the
+5,787 test controls. On the seven source-held-out attacks, the projection
+recovered 0 at 0.65x, 0 at 0.75x, 2 at 1.25x, and 2 at 1.5x. It is both less
+specific and less sensitive than the explicit rule and is rejected.
+
+Spatial consistency at 0.65x was also insufficient. At the globally selected
+period-10.4 phase, a 2x2 and 4x4 aligned grid measured local R/B strength,
+negative-G coverage, and `Blue / Red` coverage on all 537 controls in the
+global-score tail at or above 0.20 and on all 58 synthetic native-detector
+misses. Every individual feature overlapped the control tail. Within a small
+fixed grid of global floors and integer coverage counts, the best zero-control
+conjunction recovered four attacks, no more than the simpler global ratio
+rule. Lowering the global floor to 0.30 recovered five but accepted two
+controls. The spatial branch is rejected as non-improving.
+
+This establishes bounded transform behavior for the attack diagnostic, not a
+universal detector. The 0.65x ratio was selected after seeing the full-corpus
+collision, the conservative threshold was derived from an exposed control
+corpus, the period bank is discrete, only three recovered images have oracle
+labels, and JPEG sensitivity is zero in this probe. The next valid gate remains
+new oracle-confirmed Green-perturbed positives plus a preregistered untouched
+control corpus. The branch stays outside runtime until that gate passes.
+
+An exploratory channel-contrast extension then tested whether the magnitude of
+the negative Green response could recover the failed JPEG and 0.5x views. The
+metrics were fixed as `min(Red, Blue) - Green` and
+`mean(Red, Blue) - Green`; 50 Open Images controls across all twelve transforms
+set thresholds before the remaining 50 controls were scored. Calibration over
+600 views required thresholds of 0.655 and 0.695. Neither metric accepted an
+evaluation control, but both still recovered zero of three JPEG cases at every
+quality and only one of three 0.5x cases. A relaxed R/B-only threshold produced
+the same result. Negative-G magnitude therefore adds no useful transform
+coverage at the measured low-false-positive boundary and is rejected.
+
+Codec-specific templates were then fitted from 50 other public positives after
+JPEG 95, 85, and 70 round trips, excluding all three oracle hard-positive
+sources. Neither a quality-matched template nor a three-quality bank recovered
+any of the nine JPEG hard-positive views. They accepted respectively three and
+two of 150 evaluation-control views. The templates primarily captured the JPEG
+8x8 grid and were rejected.
+
+Filtering the unchanged 16x16 template to radial frequency 0.5 through 4.5
+exposed a real JPEG-surviving component. At a threshold above the first 300
+Open Images JPEG views it retained all three hard positives at qualities 95,
+85, and 70. The next frozen challenge rejected it: phase search accepted 35
+native, 50 JPEG-95, 48 JPEG-85, and 46 JPEG-70 views among 3,000 COCO images.
+Cross-band phase agreement did not separate the nine hard-positive views from
+those 179 false positives.
+
+A spatial gate required negative Green in all four quadrants and a median
+quadrant R/B score above the COCO false-positive maximum. It retained all three
+hard positives at JPEG 95 and 85 but none at JPEG 70. On 11,506
+metadata-labeled non-Google controls it nevertheless accepted 35 native, 66
+JPEG-95, and 88 JPEG-85 views. The errors included genuine camera images and
+multiple unrelated generators. Scoring only the unchanged phase also failed,
+accepting 38 native and 210 JPEG views among 3,000 COCO images; its maximum
+control score of 0.673 exceeded the 0.464-0.609 hard-positive range. The
+JPEG-stable band is a general low-frequency or codec lattice, not a
+SynthID-specific rescue, and all of these branches are rejected.
+
+The 0.5x boundary was challenged separately with a physically reduced 8x8
+template. Projecting the dominant 2x2 lattice out of both observation and
+template before scoring R/B with negative Green removed the known nuisance but
+not the overlap. Across all 11,506 symmetrically downscaled controls, the
+zero-control threshold was 0.396. The three oracle hard positives scored only
+0.277-0.288. Channel separation therefore cannot rescue the rejected period-8
+branch.
+
+An untouched 2026-08-07 through 2026-08-10 temporal cohort then challenged the
+runtime template and thresholds. Cohorts were recomputed from explicit
+provenance because a provider-only split incorrectly placed mixed Google/OpenAI
+lineage in the negative set. The frozen native detector accepted 183 of 252
+files with explicit Google LLC SynthID provenance and 3 of 488 with explicit
+OpenAI-only SynthID provenance. Scale registration accepted 130 and 1,
+respectively. Among 170 files with no SynthID provenance assertion, native and
+registered modes accepted eight and two. These operational errors are not
+provider-oracle negatives and cannot establish the true false-positive rate.
+
+The native detector remained positive on 153 of 252 explicit-Google images
+after a symmetric 0.75x resize round trip, 66 after JPEG-95, and 54 after
+WebP-95. A 5% center-crop round trip retained none. This fresh temporal result
+confirms a real, partly codec-tolerant Google pixel signal across many stored
+sizes, while rejecting the stronger claim that the fixed-phase runtime score
+is a universal SynthID decoder. The post-hoc strict second carrier did not
+generalize: it accepted only 2 of 234 Google-platform positives and none of 689
+provider-split controls. Applying the already frozen scale-registration path
+after the crop recovered only 8 of 252 explicit-Google files and accepted none
+of 488 explicit OpenAI-only files. The existing scale search does not solve the
+crop phase boundary.
+
+A diagnostic joint-scale-and-phase probe then reversed the known 0.95 crop
+scale and scored the carrier at the cyclic phase predicted from the removed
+border. It reached 0.859 AUC for explicit Google provenance against all other
+temporal cohorts. A post-hoc threshold above all 671 other rows retained 37 of
+252 explicit-Google rows. Exhaustively searching all 256 tile phases was weaker
+at 0.839 AUC and retained 41 rows above its own zero-control threshold. The
+fixed geometric phase supplies a plausible crop mechanism and a candidate for
+the next preregistered temporal challenge, not a calibrated runtime mode: both
+the transform and reported operating point have now observed this cohort.
 
 A blind three-level `db2` SWT probe then soft-thresholded only the Green
 horizontal, vertical, or diagonal detail bands at 0.25, 0.5, 1, and 2 times the
@@ -1584,6 +2247,223 @@ score reduction exceeded diagonal reduction on 97 of 100 paired images
 (`p = 2.63e-25`, exact two-sided sign test). Blind HH soft-thresholding is
 therefore rejected; the stronger vertical response is consistent with the
 separately measured axis-aligned green-opponent carrier component.
+
+### 2026-08-13: patent architecture and amplitude confound audit
+
+The official paper intentionally leaves the neural network architecture
+unspecified, but a related DeepMind patent family with overlapping authors gives
+more specific architectural evidence. Its image example constructs a
+content-dependent residual as `x' = x + g(x)`, describes a U-Net-like encoder
+and convolutional decoder, injects a message or secret into intermediate layers,
+and trains clean and watermarked pairs under the same sampled transformations.
+It also permits a bank of paired networks in which one decoder is deliberately
+unable to recognize another pair's mark. These patent alternatives are not
+proof of the exact production implementation, but they invalidate the working
+assumption that SynthID must reduce to one provider-independent, fixed
+spread-spectrum key. Multiple Google states and a distinct OpenAI carrier are
+compatible with one technology family.
+
+This changes the role of the shipped 16-by-16 template. It is a validated linear
+expert for one observable encoder state, not a surrogate for the official
+nonlinear detection logit. A universal local detector should be designed as a
+versioned union of independently calibrated experts, with family-wise
+false-positive control and an explicit abstention region. New experts still
+need source-matched clean counterfactuals or provider-oracle labels; metadata
+absence is not a negative label.
+
+A symmetric transform-stability experiment challenged a simpler rescue. The
+weak oracle-positive `07.png` scored 0.1248 natively, 0.0288 after JPEG 95,
+-0.0023 after JPEG 85, 0.1179 after a 0.99x Lanczos round trip, and 0.0791 after
+an eight-pixel crop round trip. The oracle-negative Open Images chestnut scored
+0.2124, 0.1322, 0.0482, 0.2274, and 0.0601 under the same views. Both signals
+degrade similarly under codec and crop operations. Multi-view stability does
+not distinguish the weak positive from this natural lattice confound and is
+rejected as a rescue gate.
+
+Raw folded-tile amplitude was also tested because `07.png` had a norm of 6.924,
+compared with 3.017 for the chestnut and 0.874 for the strongest tested resized
+Kodak confound. The full corpus rejects a general amplitude gate. Among 4,698
+Google rows, the current score threshold accepts 3,928, but accepted norms run
+as low as 0.712. A post-hoc branch at `score >= 0.121` and `norm >= 5` would add
+190 rows below the current threshold, yet an observed-geometry development
+control already reaches score 0.120911 at norm 15.339. The margin to `07.png`
+is under 0.004 and there is no untouched validation set. Amplitude is useful as
+a support diagnostic, but neither a veto nor this low-score rescue is eligible
+for runtime.
+
+The next defensible Google experiment is consequently a preregistered
+multi-expert cascade: preserve the current carrier unchanged; train candidate
+experts only on source-grouped paired or oracle-labeled data; calibrate every
+expert and their union on untouched natural, resize, codec, and provider
+controls; and return `unknown` when neither the watermarked nor unwatermarked
+hypothesis clears its calibrated boundary.
+
+The newly published MarkNull work supplies an independent no-box removal
+baseline. It reports 100% attack success on 20 Imagen-3 images checked through
+Gemini's verification flow. The attack uses a clean Stable Diffusion proxy to
+invert each image, optimize a bounded latent against a noise-latent alignment
+loss plus LPIPS, MSE, and SSIM, and decode it again. Its milder SynthID setting
+still reports only 25.36 dB PSNR and 0.80 SSIM. It therefore strengthens the
+case for latent regeneration as a detector-independent fallback, but it does
+not meet this project's pixel-only or fidelity gates.
+
+The associated [public repository](https://github.com/JieJayCao/MarkNull)
+contributed 50 metadata-free 512-by-512 Gemini/Imagen source candidates, but no
+attacked SynthID pairs in the inspected Git tree. The paper reports only 20
+oracle-evaluated sources and does not map those verdicts to filenames, so all 50
+remain source-asserted candidates rather than individual oracle labels. Both
+shipped experts detected zero of 50. More precisely, the fixed runtime expert
+reported unsupported because 512 by 512 is below its calibrated pixel-count
+floor. Its raw diagnostic score ranged from -0.1044 to 0.1058. Scale
+registration supported all 50 and accepted none, with its highest decision
+statistic at 0.9574 below the frozen 1.0 threshold. The shared scorer in
+`scripts/synthid_runtime_expert_scores.py` now records this distinction and
+exports both observations from one pixel decode.
+
+An external-source split nevertheless exposed a highly reproducible period-4
+component. Templates from the first and second 25 images correlated at 0.958.
+A template fitted only on the first half accepted 22 of 25 held-out candidates
+at a threshold above 250 canonicalized COCO development controls and accepted
+zero of a separate 250 COCO controls. The broader challenge rejected watermark
+specificity: it accepted two of 300 heterogeneous AI controls and five of 282
+content-deduplicated internal negative-test controls at the same frozen
+threshold.
+
+The mechanism diagnostics also identify the confound. The period-4 mean placed
+82.4% of its non-DC spectral power in the horizontal Nyquist bin, and stable
+correlations at larger even periods vanished after projecting out all period-4
+harmonics. Its strongest channel was Blue rather than Green, and its best
+phase-aware correlation with a fourfold-reduced shipped carrier was only 0.375.
+This is an axial renderer or resampling signature, not evidence for another
+validated diagonal SynthID carrier. It is retained as a hard-negative feature
+and excluded from the runtime expert bank.
+
+A schema-versioned conformal cascade now implements the required aggregation in
+`scripts/synthid_conformal_cascade.py`. Every configured expert must emit an
+explicit supported score or unsupported result. For presence, the smallest
+empirical clean-null upper-tail p-value receives a Bonferroni correction over
+the supported expert bank. For absence, the largest lower-tail p-value against
+each expert's positive calibration is used, so every possible encoder state
+must be rejected. `not_detected` is disabled unless the calibration manifest
+explicitly declares complete version coverage and every expert supports the
+query. Input and output manifests are hash-pinned for reproducibility.
+
+The first source-disjoint smoke test used only the unchanged fixed 16-by-16
+expert. Alternating content hashes supplied 2,347 source-asserted Google
+calibration rows and 2,346 evaluation rows. The existing observed-geometry COCO
+partitions supplied 3,000 development controls and 2,000 final controls. At a
+two-sided alpha of 0.001 with incomplete-version coverage, the cascade detected
+2,084 of 2,346 Google rows and one of 2,000 final natural controls; all other
+rows abstained and none returned `not_detected`. The corresponding frozen
+runtime threshold detected 1,954 Google rows and zero final controls. The
+conformal point therefore recovers 130 additional source-asserted positives at
+the cost of one natural false positive. It is statistically compatible with
+the target 0.1% FPR, but it is not a runtime replacement: the corpus has already
+influenced detector development, Google labels are provenance assertions rather
+than per-file oracle verdicts, and a multi-expert union still needs a fresh
+family-wise challenge.
+
+The fixed and scale-registered experts were then evaluated together on their
+frozen source-disjoint resize challenge. Current production scores were
+recomputed from pixels for all 355 transformed Google candidates and 499
+untouched Open Images controls. Sorting each label by source identifier and
+alternating rows produced 178 positive and 250 negative registered-calibration
+examples, followed by 177 positive and 249 negative evaluation examples. The
+fixed calibration used 4,516 Google sources after excluding every evaluation
+source and 2,980 observed-geometry development controls. At the unchanged
+runtime thresholds, fixed accepted 8 evaluation positives, registered accepted
+116, and their union accepted 117 of 177 with zero of 249 controls. On the full
+descriptive corpus the corresponding counts were 15, 229, and 231 of 355, again
+with zero of 499 controls. Registered scale search therefore supplies 109
+source-disjoint evaluation positives that the fixed expert misses; the fixed
+expert adds one that registered misses.
+
+Applying the empirical cascade at alpha 0.01 was less specific. It accepted 122
+of 177 evaluation positives but also five of 249 controls. All five control hits
+came from the registered branch below its frozen decision threshold. The
+250-control calibration provides only 0.00398 p-value granularity, and lowering
+the operating point merely traded five additional positives for five false
+positives. This conformal operating point is rejected. The implementation is
+retained as versioned calibration infrastructure, while the independently
+frozen production thresholds remain the valid two-expert decisions.
+
+A wider calibration reused the already saved component reports for 11,273
+supported, symmetrically resized Spaces controls. The stored high-band value
+made the current registered decision score exactly reconstructible throughout
+the relevant upper tail; rows screened below the historical 0.1182 amplitude
+ratio cannot affect this tail. At alpha 0.001, the two-expert cascade accepted
+119 of 177 evaluation positives and zero of 249 controls. The two additions
+over the runtime union had registered scores 0.9830 and 0.9731, with corrected
+clean-null p-values of 0.000710. This initially appeared to be a non-failing
+multi-expert calibration point, but the positive challenge had already been
+exposed. The alpha, expert bank, and thresholds were frozen before the fresh
+test below.
+
+The decisive reserve used the next 1,500 sorted Open Images validation IDs,
+3,500 through 4,999, frozen before scoring. Download and geometry checks yielded
+1,000 registered-supported controls with no decoded-pixel hash overlap against
+the prior 1,499 Open Images controls. Registered scale search accepted zero.
+The fixed runtime threshold accepted 7 of the 81 controls in its supported
+geometry, or 7 of 1,000 overall, so a simple OR of the two experts also accepted
+seven. The frozen alpha-0.001 cascade was worse: it accepted nine controls,
+eight through the fixed tail and one registered-only row at score 0.8690.
+The candidate is rejected. In overlapping geometry, fixed-only evidence cannot
+be added to registered evidence without a new specificity mechanism; keeping
+the fixed detector available as a separately scoped diagnostic does not make
+their union safe.
+
+The fixed-only geometry does not provide a fallback. Among 89 saved non-Google
+Spaces controls from 10 to 18 megapixels, where registered mode is unsupported
+but fixed mode is supported, 10 crossed the fixed threshold. The errors span
+multiple generator families. A geometry router therefore cannot extend recall
+by selecting fixed whenever registered is unavailable.
+
+`scripts/synthid_routed_expert_bank.py` implements the surviving conservative
+policy without changing the standalone detectors. When registered mode is
+supported, only its frozen threshold can produce `detected`; a fixed-only
+crossing is retained in the report as `fixed_only_ambiguous`. When registered
+mode is unsupported, fixed evidence is likewise reported but the bank abstains.
+The bank never returns absence because encoder-version coverage is incomplete.
+On all 355 transformed positives and 499 reserve controls it detected 229 and
+zero. On the fresh 1,000-image reserve it detected zero and explicitly routed
+the seven fixed crossings to abstention. This is a safe expert-bank baseline,
+not a universal SynthID decoder: scale 0.5, unmeasured encoder states, and the
+separate OpenAI family still require additional validated experts.
+
+Directly enlarging registered mode's pixel ceiling also failed. The unchanged
+registered components were computed on every saved 10-to-18-megapixel example:
+37 Google candidates and 89 non-Google Spaces controls. The frozen threshold
+accepted one positive and zero controls. Amplitude passed for 28 positives and
+the selected spatial and spectral periods agreed for 21, but only three cleared
+the high-band gate. Large full-frame spectra therefore lose almost all recall;
+the absence of control errors does not justify widening the declared geometry.
+Phase-aligned window aggregation inside the calibrated range is the next
+bounded large-image hypothesis. That hypothesis was then challenged with every
+phase-aligned 2,048-square window. Median-window scoring retained 36 of 37
+positives but also 10 of 89 controls; requiring every window to pass retained
+36 positives and eight controls. The false lattices are spatially coherent, so
+window consensus cannot validate a large-image fixed fallback. Large images
+outside registered scope remain abstentions.
+
+A final frozen full-frame alternative isotropically reduced each large image to
+eight megapixels with area interpolation before applying the unchanged
+registered detector. This maps a native period 16 into approximately 10.7-14.3
+pixels, inside the calibrated period range, without discarding spatial regions.
+It still accepted only 1 of 37 positives and zero of 89 controls, and the one
+hit was the same 4096-square image detected natively. Amplitude passed for 26
+positives, period agreement for 16, and high-band agreement for only three.
+Pre-resizing therefore does not recover the missing evidence and adds harmonic
+ambiguity; no target-size sweep is justified on this exposed cohort.
+
+The scale-0.5 failure was also rechecked without the registered detector's
+sequential amplitude gate. High-band correlation was computed for all 65
+period-8 positives and all 499 reserve controls. Positive and control medians
+were 0.0184 and 0.0213, with ranges -0.2381 to 0.1930 and -0.1734 to 0.2148.
+Normalized amplitude also overlapped: positive median and maximum were 0.4611
+and 0.9259, compared with 0.3824 and 1.6296 for controls. Requiring amplitude
+and high-band evidence jointly therefore cannot recover this scale at the
+frozen specificity. The 0.5x case remains an explicit blind spot rather than an
+eligible lower-threshold branch.
 
 ### 2026-08-10: OpenAI periodic-carrier challenge
 
@@ -1626,6 +2506,203 @@ runtime detector. The next valid training epoch requires same-content
 OpenAI-oracle `detected` and `not_detected` pairs, or provider-authorized decoder
 labels, followed by a fresh temporal holdout. Source provenance alone cannot
 distinguish a true watermark carrier from the measured generator lattice.
+
+### 2026-08-12: OpenAI opponent-color carrier challenge
+
+The RGB periodic and learned branches did not test the hypothesis that a weak
+carrier is clearer after the nonlinear LMS transform used by OKLab. A new
+validation-only screen compared sRGB, linear RGB, cube-root LMS, OKLab, and an
+orthonormal linear opponent basis. For each representation it tested periods
+4, 8, and 16 plus whole-vector, single-channel, and chroma-vector folds. Every
+candidate fitted a positive-minus-control direction independently in the native
+and JPEG-95 views. A positive had to cross both thresholds, with each threshold
+strictly above every validation control in the corresponding view.
+
+The development corpus was limited to the three OpenAI native geometries:
+1024x1024, 1024x1536, and 1536x1024. It contained 283/140/158 OpenAI
+train/validation/test images and 252/145/135 heterogeneous controls. The best
+validation candidate was the third cube-root LMS component at period 8. It
+accepted 19 of 140 validation positives. The frozen locked test accepted 16 of
+158 positives and none of 135 controls in the conjunctive native-plus-JPEG
+rule. Native alone accepted 43 positives and one control; JPEG-95 alone accepted
+22 positives and a different control. The native and JPEG templates correlated
+at 0.890.
+
+The 16 test hits were not a single date, geometry, or content family. They
+spanned 11 collection dates; the 1024x1024, 1024x1536, and 1536x1024 cohorts
+contributed 2, 8, and 6 hits. A 256-bit DCT-hash audit found two multi-member
+perceptual groups in the complete 581-image OpenAI native cohort, but neither
+connected an accepted test image to another split. Thresholding against the
+union of heterogeneous validation controls and 140 matched 0.75x-down-and-up
+OpenAI views did not change the operating point. The 158 matched test views
+accepted none while their 16 corresponding source views remained accepted.
+
+The transform boundary is mixed. All 16 source hits remained conjunctively
+accepted after WebP-95; the complete test set then contained 26 accepted OpenAI
+images and one accepted control. JPEG-90 retained four of the 16. Crop and 0.75x
+resize round trips retained none. Searching all 64 cyclic period-8 phases did
+not restore geometric robustness: resize retained 2 of 158 positives and one
+of 135 controls, while crop retained no positive and one control. The loss is
+not merely an unknown modulo origin.
+
+The candidate was also scored without refitting on all 52 action-derived
+same-provider controls at these geometries. It accepted one of 52 and none of
+the 12 controls explicitly naming `gpt-image 2.0`. The exact-version subset is
+only 8/2/2 train/validation/test by the native geometry restriction, and the
+absence of `c2pa.watermarked.unbound` remains an action-derived candidate label,
+not a provider-oracle negative. These counts cannot establish an OpenAI-specific
+false-positive rate.
+
+The dominant exporter lattice was removed explicitly. The raw period-8
+template placed 84-90% of its energy in period-2 or period-4 subspaces. For
+each image, projecting out the complete period-4 component before refitting
+reduced native/JPEG template correlation to 0.564 but still accepted 18 of 140
+validation and 15 of 158 test positives with zero test controls. The useful
+residual therefore does not collapse to the previously documented 2x2/4x4
+generator lattice.
+
+A direct pixel ablation tested causality against the frozen local score. The
+normalized native period-8 direction was subtracted only from the sRGB Blue
+channel, with a scalar search for the smallest amplitude that cleared both the
+native and JPEG-95 thresholds. All 16 locked-test sources cleared. Repeating
+the same selected amplitude at the least-correlated cyclic phase cleared none
+of 16. Median amplitude was two Blue-channel integer levels, median PSNR was
+52.24 dB, and median SSIM was 0.99639. The minima were 40.62 dB and 0.97184,
+so even as a local ablation this is not yet a production-quality remover.
+More importantly, score causality does not establish that the candidate is the
+OpenAI SynthID decoder surface.
+
+An all-size map then evaluated the same fixed native period through partial
+modulo folds, so dimensions did not need to be divisible by eight. It accepted
+94 of all 7,259 OpenAI-labeled files across 13 of 605 geometries and 9 of 8,670
+heterogeneous controls across 7 of 1,534 geometries. The three fit geometries
+contributed 76 positives. The largest exported geometries, including 2,265
+files at 1086x1448 and 992 at 1254x1254, contributed none. Two corpus rows were
+excluded because their decoded geometry no longer matched the indexed metadata.
+
+A scale search was frozen to integer periods 4 through 16 before examining the
+all-size results. Its score was the maximum, across periods, of the minimum
+native and JPEG-95 correlations. The common threshold was set above every
+period-searched validation control, thereby charging the search itself against
+specificity. It accepted 13 of 1,854 validation positives and none of 2,227
+validation controls. On test it accepted 14 of 1,839 positives and one of 2,162
+controls. Every accepted OpenAI image selected period 8; no other period added
+a hit. The carrier does not scale continuously with stored resolution.
+
+This is the strongest local OpenAI periodic candidate so far: it is codec
+tolerant, survives explicit subperiod deflation, has a phase-specific causal
+ablation, and is not explained by date, native geometry, or hash-group leakage.
+It is still research-only. It has low sensitivity, fails geometric transforms,
+has one all-size test-control collision, and lacks a matching-provider oracle.
+The next independent branch should look for a resampling-invariant,
+content-dependent residual on source-grouped data rather than broadening the
+same period search. No runtime OpenAI pixel expert or remover is justified.
+
+The next branch removed phase from the folded LMS spectrum and required three
+views: native pixels, JPEG 95, and a 0.75x down-and-up resize. It screened
+magnitude, power, and log-magnitude profiles at periods 4 through 16 on
+validation only. The selected period-16 power candidate used a separately
+fitted template for each view. It accepted 8 of 140 validation positives and 8
+of 158 locked-test positives, with no native-geometry control accepted in
+either split. On the complete wide challenge it accepted none of 2,227
+validation and 2,162 test Spaces controls, one of all 261 action-derived
+same-provider controls, and none of the 118 exact-version `gpt-image 2.0`
+controls. Five of its eight test hits overlapped the signed period-8 candidate;
+three were additional.
+
+Subperiod deflation bounded that result. Removing the exact period-8 Fourier
+support from each period-16 spectrum improved native-to-resize template
+correlation from 0.061 to 0.925, but the locked test then retained five
+positives and accepted two of 135 controls. Removing period-4 support retained
+no test positive. The transform-tolerant energy is therefore part of the same
+harmonic family rather than a clearly independent carrier.
+
+Finally, a stricter experiment required one shared phase-free template across
+all three views. Validation selected period-15 magnitude, whose independently
+measured view directions correlated 0.992 for native versus JPEG and 0.900 for
+native versus resize. It retained 7 of 158 native-geometry locked-test
+positives and none of 135 controls. That apparent invariance failed on the
+wide geometry challenge: the same thresholds accepted 11 of 2,227 validation
+and 14 of 2,162 test Spaces controls, plus seven of 261 same-provider controls
+and two of 118 exact-version controls. It is a general renderer or resampling
+spectrum and is rejected.
+
+The separately fitted period-16 three-view ensemble remains a useful research
+diagnostic because it survived the broader control challenge, but it is not a
+single codebook, has only eight native-geometry test positives, and derives
+most of its signal from the same subperiod family. It does not rescue the
+universal-detector claim or justify runtime code.
+
+A non-learned fractal hypothesis was tested last. For each image it compared
+the phase-free cube-root LMS spectrum with the same image after JPEG 95 and
+after a physical 0.75x reduction. Candidate native periods 8, 12, 16, 20, and
+24 were paired with scaled periods 6, 9, 12, 15, and 18. The score was the
+minimum of native-to-JPEG and native-to-scaled spectral cosine, so no provider
+template or fixed phase participated. Validation selected period 12-to-9
+log-magnitude and retained 3 of 140 positives above all 145 controls. The
+locked test accepted none of 158 OpenAI positives and one of 135 controls; the
+OpenAI median was 0.515 versus 0.555 for controls. Simple phase-free spectral
+self-similarity is not an OpenAI watermark feature and the fractal branch is
+rejected.
+
+The scale hypothesis was then challenged against the common non-native export
+geometries. A nearest-native inverse-raster surrogate recovered none of 1,321
+test OpenAI images and accepted two of 1,485 symmetrically resampled control
+views. That mapping was intentionally treated as incomplete because it changed
+aspect ratio for important cohorts. The largest cohort, 1086x1448, is instead
+consistent with an isotropic `1/sqrt(2)` reduction from 1536x2048. Restoring
+that exact hypothesized source raster still recovered none of 579 validation
+or 562 test positives. A direct fractional-phase fold avoided inverse
+interpolation and searched two raster-coordinate conventions plus all 64 cyclic
+origins, charging the complete registration search against validation
+controls. It retained 2 of 579 validation and 4 of 562 test positives while
+accepting 2 of 135 test controls. Its median score was lower for OpenAI than
+for controls. The fractional-carrier explanation for this dominant export
+geometry is rejected.
+
+A nonlinear cyclostationary screen next tested whether content-dependent or
+payload-varying signs cancel the cross-image mean while leaving a periodic
+variance. It compared folded magnitude, energy, locally normalized energy,
+and cross-channel products in cube-root LMS and OKLab. Validation selected the
+absolute residual of the third cube-root LMS component at period 4. It retained
+33 of 140 validation and 43 of 158 locked-test positives, but also accepted 2
+of 135 locked-test controls. The frozen wide challenge confirmed a renderer
+confound: it accepted 48 of 1,854 validation and 52 of 1,839 test OpenAI images,
+against 7 of 2,227 validation and 5 of 2,162 test Spaces controls. It also
+accepted 10 of 261 action-derived same-provider controls, including 5 of 118
+that explicitly name `gpt-image 2.0`. Requiring spatial agreement did not
+repair specificity; the validation-selected median over four quadrants kept
+41 of 158 test positives and the same two native-geometry test controls.
+
+Finally, a second-order cyclic screen folded spatial products of the residual
+with lags 1, 2, 4, and 8 along axial and diagonal directions. It evaluated 360
+fixed LMS/OKLab, channel, period, lag, and normalization combinations. The
+validation winner used the second cube-root LMS component, period 16, and a
+vertical four-pixel lag. It retained 36 of 140 validation and 43 of 158 test
+positives, but accepted 4 of 135 locked-test controls. Periodic magnitude,
+patch consistency, and lag autocorrelation therefore expose reproducible
+OpenAI renderer structure but do not meet the SynthID specificity gate.
+
+These negative results bound the current manual feature search. Signed phase,
+phase-free power, subperiods, integer and fractional scale, inverse raster
+registration, spectral self-similarity, nonlinear periodic variance, spatial
+consistency, and second-order lag products have all either lost sensitivity or
+crossed held-out controls. Adding further hand-selected transforms to the same
+exposed corpus would increase adaptive overfitting rather than confidence. A
+defensible next OpenAI epoch requires provider-authorized oracle labels or
+clean same-content counterfactual pairs and a fresh temporal holdout.
+
+An untouched 2026-08-07 through 2026-08-10 temporal cohort supplied that
+holdout for validation, but not the missing oracle negatives. It contained 486
+explicit OpenAI-provenance positives and 504 heterogeneous controls. Only seven
+additional files were pure OpenAI C2PA candidates without a SynthID assertion;
+the remaining same-platform candidates contained inferred or mixed Google and
+OpenAI watermark provenance and were not treated as clean negatives. The frozen
+signed period-8 candidate accepted 5 of 486 positives and 1 of 504 controls.
+The phase-free period-16 candidate accepted 2 of 40 supported positives and 1
+of 50 supported controls. The nonlinear period-4 candidate accepted 14 of 486
+positives and 8 of 504 controls. The manual carrier branches fail temporal
+transfer.
 
 ### 2026-08-10: OpenAI content-dependent decoder challenge
 
@@ -1722,6 +2799,471 @@ defensible next epoch needs provider-authorized labels or clean same-content
 before/after watermark pairs, plus a fresh temporal holdout that has not
 influenced representation or threshold selection.
 
+The same untouched August cohort then challenged the frozen 512-square forensic
+model and its unchanged threshold. It accepted 82 of 486 explicit OpenAI
+positives, one of 504 heterogeneous controls, and one of seven pure OpenAI C2PA
+candidate controls. The aggregate score separation was real, but transformation
+testing resolved its interpretation: all 82 native detections disappeared after
+both JPEG-95 and WebP-95 round trips. A 0.75x resize retained 46, and a 5% crop
+retained 23. The model therefore generalizes as a fragile OpenAI export
+noiseprint, not as the documented robust SynthID signal.
+
+The provider-key alternative was then tested directly. OpenAI training folds
+were clustered into 1, 2, 4, 8, 16, or 32 spherical period-8 cube-root-LMS
+directions, and the cluster count was selected on validation only. Eight
+directions raised the development-test result from 16 to 27 of 158, with one
+of 135 heterogeneous controls and two of 52 action-derived same-provider
+controls accepted. This did not reveal eight independent codewords: the two
+dominant clusters contained 234 of 283 training rows, and their templates
+correlated at 0.982 natively and 0.924 after JPEG-95.
+
+The frozen multi-direction model accepted none of 443 Google native-geometry
+files, but accepted 5 of 39 Microsoft Designer files and 123 of 674 OpenAI-
+platform files. All five Microsoft hits had joint `Microsoft, OpenAI`
+provenance, one explicitly asserted an OpenAI SynthID watermark, and all five
+selected the same dominant direction as 111 OpenAI hits. On the
+fresh August native-geometry cohort, SHA-256 grouping reduced seven OpenAI row
+hits to five unique content groups; two unique Microsoft controls crossed the
+same dominant direction. A sign-invariant carrier-subspace fit retained only 1
+of 158 development-test positives and none of 40 fresh positives. A final
+OpenAI direction orthogonal to Google, Microsoft, and other-provider train
+means likewise retained 1 of 158 and none of 40. The measured period-8 family
+is distinct from Google but is shared with a Microsoft/OpenAI lineage.
+
+Regrouping by the signed watermark assertion found 115 of 589 explicit OpenAI-
+SynthID files accepted, against 13 of 117 OpenAI-lineage files without an
+assertion, none of 443 Google files, and one of 89 other-provider files. The
+aggregate one-sided exact-test result was `p = 0.0179`; the already exposed
+development-test split was not independently significant at 27 of 159 versus
+2 of 25 (`p = 0.202`). Missing watermark action is not an oracle-negative
+label, so this is compatible with a provider-keyed family but does not prove
+that the measured component is the watermark.
+
+The frozen score did exhibit real codec persistence. WebP-95 retained 24 of 27
+native development-test detections and added nine other positives, with the
+same one of 135 controls retained. JPEG-90 retained eight of 27 and added no
+positive, with zero controls. A 0.75x resize and 5% crop retained none. The
+result is stronger than the full-image noiseprint and supports a genuine
+OpenAI/Microsoft raster-phase component, but its geometric fragility excludes
+it as the documented complete robust SynthID decoder surface.
+
+The broader SynthID architecture permits provider-specific codes without
+requiring one shared pixel template. The SynthID-Image paper separates binary
+detection from payload recovery, identifies payloads as a mechanism for
+distinguishing customers of one service, and assigns watermark versions to the
+encoder. OpenAI and Google can therefore use the same watermark family while
+deploying different encoder versions or payload distributions.
+
+The narrower same-carrier/different-phase prediction was challenged directly.
+Period-8 cube-root LMS folded residuals were collected from 581 byte-unique
+OpenAI-asserted files, 443 Google-asserted files, 93 OpenAI-lineage files with
+no watermark assertion, and 82 other-provider controls. Both provider
+contrasts were internally stable across deterministic halves. Raw phase-free
+power means had cross-provider cosine 0.480, but this shared imaging background
+disappeared after subtracting the respective controls: positive power support
+had cosine 0.0123, bootstrap median 0.0232 with a 95% interval of 0.0009 to
+0.0856, and no overlap among the 12 strongest coordinates. The three
+per-channel cosines were all at most 0.0155. The signed contrasts were negative,
+not phase-locked. The evidence therefore rejects a simple Google template with
+an OpenAI phase or payload substitution. It remains compatible with a distinct,
+content-dependent SynthID encoder version and motivates separate learned
+experts rather than further rotation of the Google carrier.
+
+A fixed three-query OpenAI Verify validation then established attribution while
+also falsifying completeness. An asserted OpenAI image accepted by the frozen
+eight-direction period-8 candidate was submitted both in its original form and
+as a pixel-identical PNG re-encoded without metadata. Both returned `SynthID
+detected` and `Content Credentials not detected`. A second asserted OpenAI
+image rejected by the local candidate, with native/JPEG scores 0.709/0.657
+against thresholds 0.918/0.923, was also re-encoded without metadata; it
+returned the same pixel-only SynthID verdict. The period-8 family is therefore
+a genuine OpenAI SynthID component with known oracle-positive false negatives,
+not merely an export fingerprint and not a complete detector. No adaptive
+oracle sweep followed: OpenAI's Content Provenance documentation explicitly
+disallows repeated queries to reverse-engineer, remove, or evade a watermark.
+The next local epoch must treat period-8 as one expert and discover complementary
+content-dependent experts using frozen corpus splits, without oracle-guided
+feature selection.
+
+Relaxing the eight-direction model to a separate validation-control threshold
+for every direction increased validation recall to 36 of 140 with zero of 145
+controls, but it did not preserve specificity. The locked development test
+accepted 46 of 158 OpenAI rows and 4 of 135 controls. A wider provider challenge
+accepted 180 of 603 explicit OpenAI-SynthID rows, 15 of 80 OpenAI-lineage rows
+without an assertion, 6 of 443 Google rows, and 7 of 112 other-provider rows.
+The fresh temporal result was 13 of 40 OpenAI rows, 4 of 50 general controls,
+and 1 of 3 same-provider controls. The oracle-positive local false negative did
+cross direction 4 under this relaxed calibration, but that direction survived
+only 1 of 4 leave-one-positive-out refits; the oracle-positive row itself then
+failed its JPEG threshold. Direction-specific thresholds therefore expose
+unstable minority clusters rather than additional validated codewords.
+
+A train-only bilinear follow-up tested whether a content-dependent or keyed
+phase varies between images while retaining native-to-JPEG covariance within
+each image. It subtracted the control within-class cross-covariance from the
+OpenAI cross-covariance, selected the positive-eigenvalue rank on validation,
+and kept the threshold above every validation control. Rank 1 retained only 1
+of 158 locked-test OpenAI rows and zero of 135 controls, then zero of 40 fresh
+OpenAI rows and zero of 53 fresh controls. A single codec-stable variable-phase
+subspace is therefore rejected as the missing complementary expert.
+
+Taking local spectral magnitude before spatial averaging produced a superficially
+stronger complementary signal. Eighteen period, block-normalization, and spectral
+variants were screened on validation; period-8 unit-block log-magnitude retained
+8 of 158 locked-test OpenAI rows and zero of 135 controls, then 3 of 40 fresh
+OpenAI rows and zero of 53 fresh controls. None of the three fresh hits overlapped
+the frozen global eight-direction hits, and only one overlapped the unsafe
+per-direction union. Both oracle-positive images, including the known local
+false negative, remained below this expert's thresholds.
+
+The full provider challenge rejected watermark attribution despite that clean
+development transfer. The local-spectrum expert accepted 17 of 603 explicit
+OpenAI-SynthID rows, 5 of 80 OpenAI-lineage rows without an assertion, zero of
+443 Google rows, and 2 of 112 other-provider rows; both other-provider hits were
+Microsoft. Explicit watermark assertion was not enriched over same-lineage
+non-assertion (`p = 0.966`, one-sided exact test in the required direction).
+Recalibrating both frozen view thresholds above the 32 same-lineage validation
+maxima reduced locked-test recall from 8 of 158 to zero. Local pre-aggregation
+magnitude therefore reveals another OpenAI/Microsoft raster component, not a
+defensible complementary SynthID expert.
+
+The proposed directional-wavelet branch was also tested directly on OpenAI.
+A three-level DTCWT over the period-8 cube-root-LMS residual screened all six
+orientations, the diagonal and axis-near groups, individual levels, and complex,
+magnitude, and phase statistics. Validation selected all-orientation normalized
+complex correlation at 19 of 140 OpenAI rows and zero of 145 controls. It
+retained 16 of 158 locked-test OpenAI rows and zero of 135 controls, followed
+by 2 of 40 fresh OpenAI rows and zero of 53 fresh controls.
+
+This is a stronger representation of the known phase carrier, not a new expert.
+Both fresh hits were already accepted by the frozen eight-direction model, the
+known oracle-positive local false negative remained negative, and the other
+oracle-positive row missed only the DTCWT JPEG threshold at 0.894 versus 0.897.
+The provider challenge accepted 77 of 603 explicit OpenAI-SynthID rows, 3 of 80
+OpenAI-lineage non-assertions, zero of 443 Google rows, and 2 of 112 other rows,
+both Microsoft. The explicit-assertion enrichment was real (`p = 0.00879`), but
+72 of the 77 hits overlapped the signed phase expert and their union increased
+its explicit count only from 115 to 120. Same-lineage calibration retained 4
+of 158 locked-test and 1 of 40 fresh OpenAI rows, while one Microsoft test row
+still crossed.
+
+The transform challenge then falsified operational shift invariance. Cyclic
+rolls by `(1, 1)` and `(3, 5)`, a 0.75x resize round trip, and a 5% crop round
+trip each retained zero of the 16 baseline detections. JPEG-90 retained four.
+WebP-95 retained 15, accepted 25 OpenAI rows in total, and introduced one of
+135 controls. DTCWT therefore improves codec tolerance for the already measured
+raster phase but does not solve registration, scale, arbitrary resolution, or
+the missing OpenAI payload variants.
+
+Selecting the best DTCWT magnitude and phase candidates within their own
+families did not change that conclusion. The off-diagonal magnitude candidate
+retained 10 of 158 locked-test OpenAI rows and zero of 135 controls, then 3 of
+40 fresh OpenAI rows and zero of 53 controls. All three fresh hits were already
+signed-phase hits. The near-vertical phase candidate retained 9 of 158 and zero
+of 135, but failed temporally at 1 of 40 OpenAI rows versus 3 of 50 general
+controls. Magnitude also retained zero of its ten baseline detections after a
+one-pixel roll, `(3, 5)` roll, resize, or crop; JPEG-90 retained one and WebP-95
+retained two. Taking magnitude only after periodic complex folding preserves
+the phase-origin dependency and does not realize DTCWT's intended shift
+invariance.
+
+A final DTCWT screen removed periodic folding entirely and summarized global
+energy over six orientations and three levels. Nine validation-screened
+translation-insensitive magnitude, power, orientation, and robust-quantile
+statistics selected median magnitude proportions within each level. The locked
+test accepted only 5 of 158 OpenAI rows and 1 of 135 controls; the fresh holdout
+accepted zero of 40 OpenAI rows and zero of 53 controls. DTCWT therefore presents
+a measured tradeoff in this corpus: preserving the periodic complex field
+retains the real OpenAI carrier but its phase origin, while pooling enough to
+be translation insensitive removes the transferable separation.
+
+A metadata-stratified audit then tested whether the 77 provider-challenge hits
+were confined to one encoder rollout or geometry. Within the exact `OpenAI
+Media Service API` cohort, the frozen DTCWT expert accepted 75 of 581 asserted
+rows and 1 of 52 same-generator rows without an assertion. Asserted-row rates
+were 3/16 in May, 46/365 in June, and 26/200 in July, and 6/47, 44/320, and
+25/214 across the three native geometries. The native/JPEG minimum score had
+0.721 AUC against the same-generator non-assertion stratum. The component is
+therefore continuous across time and geometry rather than a short-lived export
+cohort, although missing assertion remains an indeterminate label rather than
+a clean watermark negative.
+
+A prespecified shift-invariant follow-up sorted all 64 cyclic period-8
+template correlations within each image. This preserves the shape of the
+correlation orbit while discarding its absolute phase; one train-only contrast
+was fitted for native and JPEG-95 views, with both thresholds placed above all
+145 validation controls. The individual views retained 5 and 7 of 140
+validation positives, but their conjunction retained none of 158 locked-test
+positives and none of 135 controls. JPEG, WebP, resize, and crop could not
+rescue a baseline detection because there was none. Thus the transferable
+OpenAI evidence is carried by signed raster phase, not merely by a
+shift-invariant matched-filter peak shape.
+
+Content-hash grouping also corrected the temporal denominators. The 486 OpenAI
+rows represented 417 unique byte groups, and the 234 Google rows represented
+211. The signed OpenAI period-8 result became 4 of 417 unique positives versus
+1 of 454 general-control groups; the full-image noiseprint became 68 of 417;
+the Google runtime result became 153 of 211. Repeated uploads did not change the
+decision, but row-level counts must not be treated as independent evidence.
+
+### 2026-08-13: OpenAI low-texture phase and masking-alignment challenge
+
+The dominant 1086x1448 export geometry supplied 2,265 byte-unique images with
+an explicit OpenAI SynthID assertion, 830 general controls at the same geometry,
+and 26 OpenAI-lineage files without a watermark assertion. The exact-geometry
+split contained 1,124/579/562 asserted OpenAI train/validation/test rows and
+399/203/228 general controls. The lineage rows remained an indeterminate
+stratum rather than being relabeled as negatives.
+
+A train-only cross-image phase model selected 256 RGB bins from the 20
+lowest-texture references in each of three luminance groups. It used
+polarity-invariant axial phase and scored both native pixels and a JPEG-95 view
+after canonicalizing to 512 square. Independent train halves shared only two
+of 256 exact channel-frequency bins and three spatial coordinates. The full
+model produced native AUC 0.526 on validation and 0.512 on test; JPEG-95 AUCs
+were 0.521 and 0.512. A threshold above every validation control accepted none
+of 562 test positives, while a validation 1% FPR threshold accepted four
+positives and two of 228 test controls. Texture quartiles did not reproduce a
+useful exception. The common absolute-phase hypothesis is rejected for this
+OpenAI geometry.
+
+The official architecture points to a different mechanism: watermark
+generation is deliberately content-dependent to resist watermark exchange,
+and nearly uniform content can be filtered rather than watermarked. A second
+frozen probe therefore discarded absolute phase and global residual amplitude.
+It measured 60 OKLab relations between blockwise high-frequency energy and
+local texture, contrast, and chroma at two filter scales and two block sizes.
+One train-only shrinkage-Fisher direction was scored in native and JPEG-95
+views, and the joint decision used their minimum above every validation
+control. Joint AUC was 0.563 on validation and 0.593 on test. The frozen test
+count was 15 of 562 asserted OpenAI rows and one of 228 controls.
+
+That weak enrichment was not a stable expert. Directions fitted on deterministic
+train halves had raw-coordinate cosine 0.148. One half accepted 13 test
+positives and two controls, the other accepted none; their test score
+correlations were 0.335 on positives and 0.127 on controls, with no overlapping
+positive decision. The branch is rejected as an unstable content or export
+correlate. Together these experiments reinforce the existing boundary: a new
+OpenAI epoch needs pixel-oracle labels or clean same-content counterfactuals,
+not further adaptive feature selection on provenance-labeled exports.
+
+### 2026-08-13: multi-scheme domain generalization and Gemini bicoherence
+
+A deliberately broader experiment tested whether SynthID could inherit a
+generic post-hoc watermark signature instead of a provider carrier. Ninety
+source-matched COCO pairs were prepared for each of TrustMark P, Meta VideoSeal
+Y-256, classical 64-bit DWT-DCT, and Meta WAM-MIT, always with random payloads.
+The official VideoSeal decoder recovered a mean 99.6% of bits across identity,
+JPEG-90, 0.8x resize round trip, and 5% crop round trip; its mean pair PSNR was
+45.04 dB. WAM recovered 99.5-99.6% across the same views at mean PSNR 38.44 dB.
+DWT-DCT supplied an architecture-diverse control, but only identity and resize
+were retained as positives because its official decode collapsed to chance
+after JPEG and crop.
+
+A sign-symmetric 3,900-feature spatial rich model first learned residual
+co-occurrences in luminance, opponent-color, and Lab channels. Its linear and
+quadratic paired-delta variants recognized familiar schemes but did not transfer
+to a held-out scheme. A stronger neural follow-up used a fixed residual bank,
+worst-family training, cross-family residual transplantation, random sign,
+phase, and amplitude, plus phase-scrambled equal-power residuals as hard
+negatives. Each of four runs withheld one complete encoder family and all test
+source images. Held-out aggregate AUCs were 0.562 for TrustMark, 0.474 for
+VideoSeal, 0.497 for DWT-DCT, and 0.437 for WAM. The corresponding strict
+true-positive rates were 5.0%, 3.3%, 0%, and 0%. This rejects the available
+open-proxy path to a universal single-image detector: even causal paired data
+from three distinct schemes did not generalize to a fourth.
+
+A separate Gemini experiment tested a translation-invariant higher-order
+signature. Block bicoherence measured normalized phase coupling at period-16
+triplets satisfying `f1 + f2 = f3`; unlike ordinary phase correlation, the
+global image-shift phase cancels from this product. Six Green, cube-root LMS,
+and OKLab representations, two residual scales, two block sizes, and three
+train-only harmonic counts produced 72 candidates. The data were separated
+into harmonic-fit, candidate-selection, threshold-calibration, and final
+splits: 30/20/50 Gemini positives and 100/100/100/199 Open Images controls.
+The best selection candidate accepted none of 20 positives at the selection
+control maximum and had AUC 0.523. After independent recalibration, the final
+result was 0 of 50 Gemini positives and 0 of 199 controls, with AUC 0.374.
+Period-16 bicoherence is therefore rejected as a scale or origin rescue. The
+measured Gemini carrier remains a linear, registered periodic tile rather than
+a transferable harmonic cascade.
+
+### 2026-08-14: remaining Gemini resolution challenges
+
+The 0.5x gap was tested with a local-consensus detector rather than another
+global period-8 score. Each half-scaled image was divided into 64-pixel patches;
+the 90th percentile of full-template patch correlations was selected without
+using the locked test. It accepted 33 of 49 validation positives and zero of 166
+validation controls at the frozen 0.552176 threshold, then 27 of 52 locked-test
+positives and zero of 140 controls. This looked like a useful low-resolution
+expert but did not survive scale-matched specificity testing.
+
+The frozen challenge symmetrically resized every remaining Spaces control and a
+separate 1,000-image Open Images reserve to 0.5x. The expert accepted 61 of
+10,906 Spaces controls and 22 of 1,000 Open Images controls. All 83 errors were
+rescored with the prespecified feature inventory. A negative-Green patch-spread
+gate could remove them post hoc, but retained only 12 of 106 base-positive
+development hits. On the later August 7-10 cohort the original patch expert
+accepted 67 of 234 Google-provenance rows and 8 of 689 controls, while the new
+conjunction retained only 2 Google rows and zero controls. The broad challenge
+rejects the base expert and the temporal result rejects the post-hoc repair.
+No 0.5x claim is added.
+
+The large-image window family was completed separately. One centered,
+phase-aligned 2,048-square registered window accepted 1 of 37 candidates above
+10 megapixels and zero of 89 controls. Scoring every phase-aligned 2,048-square
+window and accepting the maximum raised recall to only 2 of 37, still with zero
+controls; the maximum control decision score was already 0.9677 against the 1.0
+runtime boundary. Together with the previously rejected fixed-window consensus
+and full-frame resize, these results leave the 10-megapixel ceiling intact.
+
+Near-ceiling windows, color spaces, and JPEG-paired phase directions did not
+provide a missing large-image expert. Three aligned windows of approximately
+10 megapixels retained 1 of 37 candidates and zero of 89 controls. A native
+fixed-score plus Green mid-band rule retained 15 of 19 candidates in four exact
+recurring geometries and accepted one of 11,417 resized Spaces controls, but
+collapsed to 0 of 19 after JPEG 90. A codebook fitted to the minimum native/JPEG
+period-16 correlation selected RGB Green mid-band on the pre-July split. It
+retained 23 of 26 candidates and zero of 40 controls there, then 10 of 11 and 7
+of 49 on July. Lab and OKLab candidates failed on the same hard control. The
+apparent native signal is a codec or upscaler lattice rather than a robust
+watermark invariant.
+
+Those 37 candidate labels came from Google C2PA and an inference that Google
+media is likely watermarked, not an individual Google pixel-decoder result.
+They cannot support a production recall claim. The next large-image step is an
+immutable SHA-to-verdict Gemini batch, followed by fitting only on
+oracle-detected files. The first live attempt on 2026-08-14 was stopped by
+Google reCAPTCHA before the first new file submission; no CAPTCHA bypass was
+attempted.
+
+### 2026-08-14: official large oracle and opponent-color runtime branch
+
+The frozen Gemini batch was subsequently submitted without bypassing CAPTCHA.
+Every submitted file had AI provenance removed while preserving the decoded
+RGBA fingerprint. Google returned a pixel-positive verdict for seven of seven
+usable submissions across 3072x5504, 5504x3072, 5632x3072, 6336x2688,
+3584x4800, 5016x3328, and 4096x4096. An eighth case was indeterminate after the
+verifier quota ended. This is direct evidence for seven positives, not a label
+upgrade for the remaining 30 C2PA-inferred candidates.
+
+Revisiting the native period-16 fold by opponent color exposed the missing
+separation. Google candidates preserve strong Red-minus-Green and
+Blue-minus-Yellow phase agreement across every phase-aligned 2048-square
+window, while natural resize aliases do not preserve the complete conjunction.
+The frozen large-v1 rule requires minimum fixed score `0.14`, minimum
+Red-minus-Green spatial correlation `0.90`, minimum Blue-minus-Yellow spatial
+correlation `0.70`, and a minimum signed Blue-minus-Yellow mid-band correlation
+at or below `-0.15`. The 3072x5504 portrait geometry additionally requires the
+maximum Green mid-band correlation to stay at or below `0.06`. Its public score
+is the minimum normalized gate margin and crosses at `1.0`.
+
+The rule retained all 37 inferred candidates, including all seven official
+pixel positives. It accepted none of 17,417 exposed COCO, Open Images, and
+Spaces controls after the portrait alias gate. Because those controls informed
+the final gate, they do not certify the operating point. The constants were
+then challenged through the actual runtime on a frozen, decoded-pixel-deduped
+local holdout: 2,000 COCO val2017 images excluded from the earlier 3,000-image
+large color-phase challenge plus 637 unique Picsum controls deduplicated from
+1,000 files. Four large geometries and four resampling kernels were balanced.
+The result was 0 of 2,637 detections, with maximum score `0.0592777965`; the 95%
+zero-error upper bound is about 0.114%. These source collections existed before
+the freeze and supported other experiments, so the result is feature-unseen
+rather than a fresh-acquisition holdout.
+
+The post-freeze Open Images acquisition was too slow to complete the planned
+3,000-image challenge, but its completed subset provides an independent source
+audit. Incomplete `.aria2` files, all prior Open Images decoded-pixel hashes,
+and duplicates were excluded before scoring, leaving 41 controls whose IDs and
+URLs had been frozen after the constants. The unchanged runtime accepted 0/41;
+the maximum score was `0.4083013324`. This small audit supports the source
+boundary but does not replace the 2,637-control feature-unseen interval.
+
+A prespecified post-freeze codec stress test re-encoded the seven official
+positives at unchanged dimensions. Native detection was 7/7, while JPEG-95 and
+JPEG-90 were each 0/7. Thresholds were not refitted. Large-v1 is therefore a
+native-pixel and lossless-copy detector, not a lossy-transcode detector.
+
+The old fixed-only rule still crosses on four locally saved rows representing
+three unique pixel groups. One group is an Adobe file whose C2PA explicitly
+reports Google SynthID present. The other two remain queued for an official
+Gemini verdict and are not counted as clean negatives. The runtime branch is
+therefore positive-only and does not turn a miss into an absence claim.
+
+Production routing now selects the fixed expert from 1 through 10 megapixels
+and the large expert above 10 through 18 megapixels when both sides are at least
+2048 pixels. The score exporter emits fixed, registered, and large observations
+separately, preventing the large result from being mislabeled as a fixed score.
+The router accepts a registered or large threshold crossing only within that
+expert's measured scope and otherwise abstains.
+
+### 2026-08-14: final OpenAI local rescue checks
+
+An assertion-contrast probe at the dominant exact 1254-square geometry tested
+RGB, OKLab, and cube-root-LMS period-8 channel directions without treating
+missing assertion as a clean label. Validation selected `srgb:p8:c2`, accepting
+45 of 259 asserted rows and zero of 13 same-provider plus three other-provider
+rows. The locked test accepted 39 of 233 asserted rows, zero of 15 same-provider
+rows, and one of three other-provider rows. The all-row audit accepted 185 of
+992 asserted rows, one of 55 same-provider rows without an assertion, and one
+of 13 other-provider rows. A safe boundary above either wider control maximum
+retained only a small minority of the asserted cohort. Exact geometry therefore
+does not turn the weak OpenAI component into a production detector.
+
+An independent published-decoder veto was then tested with the official
+InvisMark checkpoint. The downloaded checkpoint hash was fixed before use, and
+its bundled self-test reached 0.997 mean confidence with 0.97 recovered-bit
+accuracy. In contrast, OpenAI DTCWT hits, OpenAI misses, exact-1254 hits and
+misses, same-provider controls, Google, Microsoft, Canva, and unrelated controls
+all had median confidence near 0.18. The decoder is working, but its watermark
+family is absent from these cohorts; it cannot distinguish SynthID-bearing
+OpenAI pixels from renderer confounds.
+
+Two representation-level missing-codeword hypotheses were also rejected.
+DTCWT modulus computed before spatial period folding selected off-diagonal
+phase coherence and retained 5 of 158 locked-test OpenAI rows versus zero of 135
+controls, but zero of 40 fresh OpenAI rows. Whitening the period-8 feature space
+and clustering up to 16 codewords retained 5 of 158 and zero controls, then one
+of 40 fresh OpenAI rows and one of 50 fresh controls. Neither captured the known
+oracle-positive false negative. These were the remaining prespecified phase,
+wavelet, codeword, and external-decoder variants; none earns a local runtime
+route.
+
+### 2026-08-14: production OpenAI verifier boundary
+
+OpenAI's official Content Provenance API now supplies the production-grade
+OpenAI pixel verdict that the local experiments could not justify. The runtime
+integration is deliberately a separate `verify-openai-synthid` command, never
+an implicit `identify` call. It requires the independent `verify` extra,
+`OPENAI_API_KEY`, endpoint access, and `--acknowledge-upload`.
+
+The implementation establishes metadata independence before the request. It
+computes a decoded RGBA fingerprint, strips AI provenance metadata to a
+temporary copy, verifies that no AI markers survived and that the format and
+pixel fingerprint stayed identical, enforces the documented 50 MiB limit, and
+uploads only the temporary PNG, JPEG, or WebP. It parses exactly one `synthid`
+entry and deliberately ignores the independent C2PA outcome. C2PA-only
+positives, missing or duplicate SynthID fields, altered pixels, surviving
+metadata, unsupported formats, and 400/404/429 failures are covered by mocked
+tests. No credentialed API request was made during implementation because no
+API key was available.
+
+A separate live smoke used OpenAI's public web verifier after running the exact
+production metadata-stripping and decoded-RGBA equality checks. Two OpenAI
+images at opposite 3:2 orientations returned `SynthID detected` and `Content
+Credentials not detected`. A Google SynthID oracle-positive control and a COCO
+natural control returned OpenAI `SynthID not detected`, again with Content
+Credentials absent. This confirms pixel-only, provider-specific semantics for
+the integration, but four fixed cases do not estimate statistical error rates
+and do not constitute a live SDK/API transport test.
+
+This closes the production OpenAI detection surface through an official remote
+backend, not by relabeling the incomplete local period-8 expert. It does not
+expand the research oracle authority. The endpoint is not eligible for Zero
+Data Retention, and its documentation prohibits repeated reverse-engineering or
+evasion queries, so it cannot supply adaptive labels for detector or remover
+optimization without separate authorization.
+
 ## Decision record
 
 The program has four possible honest outcomes per provider:
@@ -1736,11 +3278,10 @@ The program has four possible honest outcomes per provider:
 Stopping at a failed gate is a result. It prevents a local surrogate, export
 fingerprint, or quality metric from being mistaken for control over SynthID.
 
-## Immediate first milestone
+## Historical first milestone
 
-The first milestone produces no shipping code. Harness code already exists for
-items 1 and 5; milestone delivery means a completed evidence-bearing artifact,
-not merely an available script. It delivers:
+The first local-research milestone was defined to produce evidence rather than
+shipping code. Its scope was:
 
 1. the private-corpus schema and auditor;
 2. an OpenAI authorization decision for use of the remote provenance verifier;
@@ -1750,7 +3291,10 @@ not merely an available script. It delivers:
 6. the D2 low-texture carrier report with leave-one-group-out results;
 7. a go or no-go decision for real-image detector training.
 
-Only after this milestone should implementation of D3 and D4 begin.
+The completed experiments produced a no-go decision for a local universal
+OpenAI detector. The later official remote backend is a separate production
+route and does not retroactively turn provenance-labeled exports into pixel
+oracle training data.
 
 ## Primary sources
 
@@ -1758,3 +3302,5 @@ Only after this milestone should implementation of D3 and D4 begin.
 - OpenAI, [ChatGPT Images 2.0 system card](https://deploymentsafety.openai.com/chatgpt-images-2-0/automated-evaluations-and-adversarial-testing).
 - Google, [Verify AI-generated images, videos, and audio](https://support.google.com/gemini/answer/16722517?hl=en).
 - Gowal et al., [SynthID-Image: Image watermarking at internet scale](https://arxiv.org/abs/2510.09263).
+- Meta, [VideoSeal](https://github.com/facebookresearch/videoseal).
+- Meta, [Watermark Anything](https://github.com/facebookresearch/watermark-anything).

@@ -132,8 +132,16 @@ calibrated image-size range, available through `detect-synthid`
 and the default pixel pass in `identify` when the `pixels` extra is installed.
 The unchanged fixed threshold accepted none of the public COCO views in both
 an observed-geometry challenge and a generated-geometry challenge covering all
-modulo-16 edge cases. Arbitrary dimensions in the default calibrated range are
-accepted, but the input must retain the measured 16-pixel carrier scale. The
+modulo-16 edge cases. Above 10 through 18 megapixels, the native default uses a
+separately challenged large branch over phase-aligned windows and opponent-color
+phase agreement; both sides must be at least 2,048 pixels. It retained all seven
+officially verified large Google pixel positives and accepted none of 2,637
+feature-unseen, decoded-pixel-unique natural controls. A smaller post-freeze
+Open Images acquisition also produced 0/41 detections. Arbitrary dimensions in
+the default calibrated ranges are accepted, but the input must retain the
+measured 16-pixel carrier scale. The large branch retained 0/7 official
+positives after either JPEG-95 or JPEG-90 re-encoding, so its native-size scope
+does not include lossy retranscodes. The
 opt-in `detect-synthid --register-scale` mode performs a slower bounded scale
 search over its separately measured 250,000-through-10,000,000-pixel range and
 requires both sides to be at least 64 pixels. Its measured positive scale range
@@ -146,6 +154,14 @@ under Google's all-media watermark policy, and current OpenAI C2PA carrying an
 explicit `c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action
 does not assert SynthID. A pixel result of `not_detected` or `unsupported`
 remains inconclusive for other sizes, epochs, codecs, and payloads.
+
+The optional `verify-openai-synthid` command is a separate official remote
+verifier for supported OpenAI watermarks. It strips AI provenance metadata from
+a temporary PNG, JPEG, or WebP copy, proves that decoded RGBA pixels are
+unchanged, and uses only the API's SynthID result. It is therefore independent
+of C2PA for its decision, but it is not local: the sanitized raster is uploaded
+to OpenAI after explicit acknowledgement. It is intentionally excluded from
+`identify` and its negative result remains inconclusive.
 
 For MP4, MOV, and M4V, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
@@ -166,7 +182,7 @@ not a universal clean verdict.
 | --- | --- | --- | --- |
 | Google Gemini | Sparkle | Local positive-only calibrated-size detector; diffusion regeneration | C2PA and related source signals |
 | Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID | C2PA and related source signals |
-| OpenAI image generators | None registered | Diffusion regeneration for supported invisible signals | C2PA and generator provenance |
+| OpenAI image generators | None registered | Official remote pixel verifier; diffusion regeneration | C2PA and generator provenance |
 | Stable Diffusion and SDXL | None registered | Diffusion regeneration; optional open decoder | Embedded parameters and text metadata |
 | FLUX | None registered | Diffusion regeneration; optional open decoder | C2PA for supported sources |
 | Adobe Firefly | None registered | No proprietary local decoder | C2PA; optional TrustMark decoder |

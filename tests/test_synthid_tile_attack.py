@@ -55,3 +55,14 @@ def test_folding_accepts_nondivisible_geometry() -> None:
 
     assert folded.shape == (8, 16, 3)
     assert np.count_nonzero(folded) == 0
+
+
+def test_subtraction_accepts_nondivisible_geometry() -> None:
+    pixels = np.full((5, 7, 3), 100, dtype=np.uint8)
+    template = np.arange(2 * 3 * 3, dtype=np.float64).reshape(2, 3, 3)
+
+    result = attack.subtract_tiled_template(pixels, template, strength=1.0)
+
+    expected_template = np.tile(template, (3, 3, 1))[:5, :7]
+    expected = np.rint(100.0 - expected_template).astype(np.uint8)
+    np.testing.assert_array_equal(result, expected)

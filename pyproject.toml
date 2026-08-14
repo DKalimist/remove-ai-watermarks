@@ -123,6 +123,11 @@ qwen-zimage = [
 trustmark = [
     "trustmark>=0.8.0",
 ]
+# Official remote OpenAI SynthID verification. The command strips AI provenance
+# metadata and proves pixel identity before upload; it is never called implicitly.
+verify = [
+    "openai>=2.52.0",
+]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and
 # cached by huggingface_hub; it is never bundled in this repo. The default cv2
@@ -163,7 +168,7 @@ dev = [
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,heif,detect,trustmark,qwen-zimage,lama,migan]"]
+all = ["remove-ai-watermarks[video,heif,detect,trustmark,qwen-zimage,lama,migan,verify]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"

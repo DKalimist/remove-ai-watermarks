@@ -93,6 +93,88 @@ def test_registered_geometry_uses_its_measured_pixel_count_range(
     assert detector._registered_geometry_supported(width, height) is supported
 
 
+@pytest.mark.parametrize(
+    ("width", "height", "supported"),
+    [
+        (4883, 2048, True),
+        (3072, 5504, True),
+        (2048, 4882, False),
+        (2047, 6000, False),
+        (3001, 6000, False),
+    ],
+)
+def test_large_geometry_requires_multiple_calibrated_windows(
+    width: int,
+    height: int,
+    supported: bool,
+) -> None:
+    assert detector._large_geometry_supported(width, height) is supported
+
+
+def test_large_window_starts_cover_both_edges_on_carrier_phase() -> None:
+    starts = detector._large_window_starts(5504)
+
+    assert starts == (0, 2048, 3456)
+    assert all(start % detector.LARGE_PHASE == 0 for start in starts)
+    assert starts[-1] + detector.LARGE_WINDOW == 5504
+
+
+def test_large_components_apply_the_portrait_alias_guard_only_to_its_geometry() -> None:
+    values = {
+        "minimum_fixed_score": 0.28,
+        "minimum_red_green_spatial": 0.95,
+        "minimum_blue_yellow_spatial": 0.85,
+        "minimum_blue_yellow_mid_band": -0.30,
+        "maximum_green_mid_band": 0.061,
+    }
+    portrait = detector.LargeImageComponents(width=3072, height=5504, **values)
+    landscape = detector.LargeImageComponents(width=5504, height=3072, **values)
+
+    assert portrait.decision_score < detector.LARGE_THRESHOLD
+    assert landscape.decision_score > detector.LARGE_THRESHOLD
+
+
+def test_large_red_green_gate_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    width, height = 4883, 2048
+    image = np.broadcast_to(np.zeros((1, 1, 3), dtype=np.uint8), (height, width, 3))
+    components = detector.LargeImageComponents(
+        width=width,
+        height=height,
+        minimum_fixed_score=0.28,
+        minimum_red_green_spatial=detector.LARGE_RED_GREEN_SPATIAL_MIN,
+        minimum_blue_yellow_spatial=0.85,
+        minimum_blue_yellow_mid_band=-0.30,
+        maximum_green_mid_band=0.0,
+    )
+    monkeypatch.setattr(detector, "is_available", lambda: True)
+    monkeypatch.setattr(detector, "_load_template", lambda: (np.zeros((16, 16, 3)), 1.0, 0, 0, 0, 0))
+    monkeypatch.setattr(detector, "large_image_components", lambda *_args: components)
+
+    baseline = detector.detect_synthid("unused.png", image=image)
+    monkeypatch.setattr(
+        detector,
+        "LARGE_RED_GREEN_SPATIAL_MIN",
+        float(np.nextafter(components.minimum_red_green_spatial, np.inf)),
+    )
+    mutated = detector.detect_synthid("unused.png", image=image)
+
+    assert baseline.status == "detected"
+    assert baseline.detector == detector.LARGE_DETECTOR_ID
+    assert mutated.status == "not_detected"
+
+
+def test_uncalibrated_narrow_large_geometry_is_unsupported() -> None:
+    image = np.broadcast_to(np.zeros((1, 1, 3), dtype=np.uint8), (11_000, 1000, 3))
+
+    result = detector.detect_synthid("unused.png", image=image)
+
+    assert result.status == "unsupported"
+    assert result.detector == detector.LARGE_DETECTOR_ID
+    assert result.score is None
+
+
 def test_registered_mode_rejects_a_side_too_short_for_quadrants(tmp_path: Path) -> None:
     path = tmp_path / "too-narrow.png"
     Image.new("RGB", (32, 7813), "white").save(path)

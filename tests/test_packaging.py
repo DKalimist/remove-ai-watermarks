@@ -53,12 +53,13 @@ def test_video_extra_owns_timestamp_dependency():
 def test_file_format_and_detector_dependencies_are_independent():
     assert "pillow-heif" in _requirement_names("heif")
     assert "pywavelets" in _requirement_names("detect")
+    assert "openai" in _requirement_names("verify")
 
 
 def test_extras_use_capability_names_without_legacy_aliases():
     extras = set(metadata("remove-ai-watermarks").get_all("Provides-Extra") or [])
 
-    assert {"pixels", "heif", "visible", "video", "detect", "diffusion"} <= extras
+    assert {"pixels", "heif", "visible", "video", "detect", "diffusion", "verify"} <= extras
     assert {"gpu", "remove", "detect-pywavelets"}.isdisjoint(extras)
 
 

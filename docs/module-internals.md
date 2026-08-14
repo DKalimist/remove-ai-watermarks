@@ -466,17 +466,46 @@ without resize. Channels are filtered and folded sequentially, and partial edge
 blocks are accumulated without a full-frame padding buffer so the 18-megapixel
 ceiling does not require multiple three-channel float workspaces. The model hash
 is pinned by a test, and the unchanged operating threshold is
-`0.17357069773071196`.
+`0.17357069773071196` through 10 megapixels.
 
 The direct API returns `detected`, `not_detected`, or `unsupported`; the last is
-distinct because no resize is performed. Support is based on a calibrated range
-of 1,000,000 through 18,000,000 decoded pixels. The frozen threshold accepted
+distinct because no resize is performed. The fixed branch is selected from
+1,000,000 through 10,000,000 decoded pixels. The frozen threshold accepted
 none of 5,000 public COCO views balanced across every observed target geometry,
 and none of a separate 5,000-view challenge over 256 generated geometries
 covering every pair of modulo-16 edge remainders. The original 2048x2048
 verdicts and exact scores remain unchanged. Runtime matches do not attribute a
 provider. `identify` adds only positive matches as high-confidence
 evidence and never turns a local negative into a clean verdict.
+
+The native default selects `synthid-periodic-tile-large-v1` above 10 through 18
+megapixels when both dimensions are at least 2,048 pixels. It evaluates all
+phase-aligned 2,048-square windows and combines the minimum fixed-template,
+Red-minus-Green, and Blue-minus-Yellow spatial correlations with the most
+negative Blue-minus-Yellow mid-band correlation. The 3072x5504 portrait
+geometry also applies a Green mid-band alias veto. Each component is normalized
+to its frozen gate and the public threshold is `1.0`.
+
+All 37 inferred large candidates cross the rule, and all seven metadata-free,
+pixel-identical candidates checked by the official Gemini verifier were
+detected. The constants rejected all 17,417 exposed external controls. A
+post-freeze production-path challenge then rejected all 2,637 decoded-pixel-
+unique controls drawn from 2,000 COCO images excluded from the earlier large
+color-phase challenge and 637 deduplicated Picsum controls. Four large
+geometries and four resampling kernels were balanced; the maximum score was
+`0.0592777965`. The source collections were not freshly acquired, so this is a
+feature-unseen holdout rather than a fresh-source estimate.
+
+A separate post-freeze Open Images download yielded 41 completed,
+decoded-pixel-unique controls after excluding incomplete `.aria2` files and all
+prior Open Images hashes. The frozen production path accepted 0/41 and reached
+a maximum score of `0.4083013324`. This source-fresh audit is too small to
+replace the main holdout interval but checks the acquisition boundary.
+
+The same seven official positives were then re-encoded at unchanged dimensions.
+JPEG-95 and JPEG-90 each reduced detection from 7/7 native files to 0/7. The
+large operating point is therefore native-pixel and lossless-copy support, not
+a codec-robust claim.
 
 Arbitrary geometry is not the same as arbitrary spatial resampling. On a
 stratified 80-image fixed-positive sample, one-step resizes at seven nonidentity
@@ -521,11 +550,141 @@ retained 229 of 355 source-disjoint transformed positives: 0/65 at scale 0.5 and
 229/290 from scale 0.65 through 1.5. The explicit period-8 rescue is rejected
 because resize lattices fully overlap its positive distribution.
 
+A subsequently frozen 1,000-image Open Images reserve accepted zero in
+registered mode. The fixed expert supported only 81 of those geometries and
+accepted seven, so fixed and registered results cannot safely be unioned. In
+overlapping geometry the registered decision remains the validated path;
+fixed-only evidence is a diagnostic rather than a universal-cascade positive.
+
+The research-only router in `scripts/synthid_routed_expert_bank.py` encodes that
+precedence and always abstains on fixed-only evidence. Its three-observation
+schema keeps the fixed, registered, and large identities explicit. Registered
+and large crossings are positive routes only in their disjoint calibrated
+ranges; the bank never returns a clean-image verdict.
+
+An unchanged registered challenge from 10 to 18 megapixels retained only 1 of
+37 Google candidates and zero of 89 non-Google controls. Twenty-eight positives
+cleared amplitude, 21 had matching spatial and spectral periods, but only three
+cleared high-band agreement. The 10-megapixel ceiling therefore remains.
+Phase-aligned 2,048-square fixed windows did not provide a fallback: median
+consensus retained 36 positives and accepted 10 controls, while all-window
+consensus retained 36 and accepted eight.
+One frozen full-frame pre-resize to eight megapixels also retained only the same
+1 of 37 positives and zero controls; just three positives cleared high-band
+agreement. Large images therefore cannot be routed through a canonical-size
+registered fallback; the later native opponent-color branch is separate.
+The remaining phase-aligned window variants closed this branch: a single center
+2,048-square registered window retained 1 of 37 positives and zero of 89
+controls, while accepting any phase-aligned 2,048-square window retained 2 of
+37 and zero controls. The latter control maximum was already 0.968 against the
+1.0 decision threshold. Neither the coverage nor the exposed specificity
+margin supports a registered-window expert; these results do not apply to the
+later native opponent-color branch.
+
+A separate half-scale patch-consensus branch initially looked promising. Its
+64-pixel, 90th-percentile patch statistic retained 33 of 49 validation positives
+and zero of 166 controls, then 27 of 52 locked-test positives and zero of 140
+controls. The frozen broad challenge rejected it: 61 of 10,906 symmetrically
+half-scaled Spaces controls and 22 of 1,000 independent Open Images controls
+crossed the unchanged threshold. A post-challenge Green negative-phase spread
+gate removed those errors but retained only 2 of 234 later Google rows and zero
+of 689 later controls. Half-scale support therefore remains explicitly absent.
+
+An independent reproduction of the public `aloshdenny/reverse-SynthID` V4
+cross-color codebook did not provide another expert. Its best-of-two-model phase
+rule retained 141 of 355 positives but accepted 191 of 499 controls and 386 of
+a fresh 1,000-control reserve; AUC was 0.517. The repository's stricter
+aspect-ratio routing reduced coverage but preserved the same approximately 38%
+positive and control acceptance within supported rows. Its older V3 phase score
+had AUC 0.473, and two prespecified amplitude-aware V4 rerankings reached only
+0.521 and 0.524 AUC. These external rules are research baselines only. Their useful
+contribution is the solid-reference phase-consensus construction, not either
+published single-image threshold. Full methodology and the DALL-E reference-set
+confound are recorded in the detector research plan.
+A direct exact-1024 reproduction of the same V4 artifact confirmed rather than
+rescued that verdict: the union of its two published profiles accepted 177 of
+443 Google rows and 60 of 162 controls. The artifact's floor left only about two
+active bins in the inspected profile/channel, explaining why its score acts
+as a weak generic phase-coherence test rather than a specific codebook match.
+
+An exact-1086x1448 OpenAI follow-up also rejected the solid-reference transfer.
+A low-texture 256-bin phase codebook achieved native and JPEG-95 test AUCs of
+0.512, and independent train halves shared only two exact bins. The paper's
+content-dependent alternative was tested with 60 OKLab masking-alignment
+features. Its native/JPEG minimum reached test AUC 0.593 and 15/562 positives
+versus 1/228 controls at the frozen boundary, but deterministic half-fits shared
+no positive decision and had coefficient cosine 0.148. Neither branch is a
+runtime OpenAI expert.
+
+An exact-1254 assertion-contrast search selected an sRGB period-8 Blue-channel
+direction at 45 of 259 validation asserted rows and zero of 16 same- or
+other-provider validation rows. It failed its locked specificity check at 39 of
+233 asserted rows and one of 18 controls. Across the complete exact-geometry
+audit it accepted 185 of 992 asserted rows, one of 55 same-provider rows without
+an assertion, and one of 13 other-provider rows. Raising the threshold above
+the wider controls reduced recall to a small minority, so this branch remains
+research-only.
+
+Three attempted veto or missing-codeword rescues also failed. The official
+InvisMark decoder checkpoint passed its own embedded-watermark self-test at
+0.997 confidence and 0.97 bit accuracy, but all OpenAI and provider-control
+cohorts clustered around 0.18 confidence with no useful separation. DTCWT
+modulus before periodic folding retained 5 of 158 locked-test OpenAI rows and
+zero of 135 controls, then zero of 40 fresh OpenAI rows. A 16-codeword whitened
+period-8 model retained 5 of 158 and zero controls, then 1 of 40 fresh OpenAI
+rows and 1 of 50 fresh controls. They neither explain the known oracle-positive
+miss nor justify runtime routing.
+
+The separate OpenAI period-8 DTCWT component is persistent rather than tied to
+one short rollout: exact-generator asserted hits were 3/16, 46/365, and 26/200
+from May through July, with 75/581 overall versus 1/52 same-generator rows
+without an assertion. Its native/JPEG minimum score reached 0.721 AUC between
+those indeterminate strata. Sorting all 64 cyclic correlation scores removed
+absolute phase but also removed locked-test discrimination at 0/158 positives
+and 0/135 controls. This remains research evidence for a weak signed carrier,
+not a runtime OpenAI detector.
+
+A four-family open-proxy challenge also failed to justify a generic neural
+watermark expert. A fixed residual frontend and cross-family residual mixing
+were trained on three of TrustMark P, VideoSeal, DWT-DCT, and WAM while the
+fourth encoder and its test sources remained unseen. Held-out AUCs ranged from
+0.437 to 0.562. Equal-power phase-scrambled hard negatives prevented simple
+spectral-energy shortcuts, but did not produce architecture transfer. A
+separate translation-invariant Gemini bicoherence search selected none of 20
+development positives and finished at 0/50 positives, 0/199 controls, and AUC
+0.374. Neither branch is part of runtime routing; full split and oracle details
+are in the detector research plan.
+
 The separately measured geometry range remains 250,000 through 10,000,000
 decoded pixels with both sides at least 64 pixels. The default path and
-`identify` remain the native fold. A 20-image real-corpus drift check was
+`identify` remain native-only and select either the fixed or large branch by
+geometry; scale registration stays opt-in. A 20-image real-corpus drift check was
 byte-identical after integration. The calibration history and caveats are in the
 linked detector research plan.
+
+### Official OpenAI SynthID verifier
+
+[`openai_provenance.py`](../src/remove_ai_watermarks/openai_provenance.py)
+provides the explicit remote production backend exposed as
+`verify-openai-synthid`. It is intentionally separate from `identify`, because
+one invocation uploads a sanitized raster to OpenAI. The CLI requires
+`--acknowledge-upload`, and the optional OpenAI SDK lives in the independent
+`verify` extra.
+
+The backend accepts only PNG, JPEG, and WebP. It computes a decoded RGBA pixel
+fingerprint, removes AI provenance metadata into a temporary file through
+`metadata.strip_and_verify`, recomputes the fingerprint, and aborts before any
+request if metadata survived, the format changed, the pixels changed, or the
+sanitized file exceeds the endpoint's 50 MiB limit. It then sends exactly one
+multipart file to `content_provenance_checks.create` and parses exactly one
+`type == "synthid"` result. The independent C2PA entry is never returned or
+used as fallback evidence. Missing, duplicate, or unknown SynthID outcomes are
+errors rather than negative detections.
+
+The result remains provider-scoped and positive-evidence-only. `not_detected`
+does not mean human-created, and the official endpoint's published prohibition
+on repeated reverse-engineering or evasion queries prevents using this backend
+as an adaptive training or removal oracle.
 
 ### Portable metadata record
 

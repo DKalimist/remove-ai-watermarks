@@ -1363,6 +1363,52 @@ def cmd_detect_synthid(source: Path, as_json: bool, register_scale: bool) -> Non
     )
 
 
+# ── Official OpenAI SynthID verification ──
+@main.command("verify-openai-synthid")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--acknowledge-upload",
+    is_flag=True,
+    help="Confirm upload of a pixel-identical, AI-metadata-stripped copy to OpenAI.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the verifier result as JSON.")
+def cmd_verify_openai_synthid(source: Path, acknowledge_upload: bool, as_json: bool) -> None:
+    """Use OpenAI's official verifier on pixels, independently of C2PA.
+
+    The command strips AI provenance metadata from a temporary copy, proves the
+    decoded pixels are unchanged, and uploads that copy to OpenAI. It reads only
+    the SynthID result. The source file is never modified.
+    """
+    if not acknowledge_upload:
+        raise click.ClickException(
+            "this command uploads a temporary pixel-identical copy to OpenAI; pass --acknowledge-upload to continue"
+        )
+    from remove_ai_watermarks.openai_provenance import verify_openai_synthid
+
+    source = _validate_image(source)
+    try:
+        result = verify_openai_synthid(source, acknowledge_upload=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2))
+        return
+
+    _banner()
+    console.print(f"\n  OpenAI SynthID pixel watermark: {result.status}")
+    console.print("  Detector: official OpenAI Content Provenance API")
+    if result.model is not None:
+        console.print(f"  Model: {result.model}")
+    if result.generated_at is not None:
+        console.print(f"  Generated at: {result.generated_at}")
+    console.print(
+        "  Input: AI provenance metadata was stripped and decoded pixels were preserved.\n"
+        "  Scope: supported OpenAI SynthID only. A not_detected result is not proof\n"
+        "  that the image is human-created or contains no other watermark."
+    )
+
+
 # ── Provenance identification ──
 @main.command("identify")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))

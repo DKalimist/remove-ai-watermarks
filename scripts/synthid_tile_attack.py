@@ -25,15 +25,26 @@ log = logging.getLogger(__name__)
 
 def subtract_tiled_template(pixels: np.ndarray, template: np.ndarray, *, strength: float) -> np.ndarray:
     """Subtract STRENGTH times TEMPLATE repeated over PIXELS."""
-    if strength < 0.0:
-        raise ValueError("strength must be nonnegative")
+    if not np.isfinite(strength) or strength < 0.0:
+        raise ValueError("strength must be finite and nonnegative")
+    if pixels.ndim != 3 or pixels.shape[2] != 3:
+        raise ValueError("pixels must have shape (height, width, 3)")
+    if template.ndim != 3 or template.shape[2] != 3:
+        raise ValueError("template must have shape (tile height, tile width, 3)")
     height, width = pixels.shape[:2]
     tile_height, tile_width = template.shape[:2]
-    if template.shape[2:] != (3,) or height % tile_height != 0 or width % tile_width != 0:
-        raise ValueError("template does not tile the pixel geometry")
-    repeated = np.tile(template, (height // tile_height, width // tile_width, 1))
-    result = pixels.astype(np.float64) - strength * repeated
-    return np.clip(np.rint(result), 0, 255).astype(np.uint8)
+    if tile_height == 0 or tile_width == 0:
+        raise ValueError("template dimensions must be positive")
+
+    result = np.empty_like(pixels, dtype=np.uint8)
+    repeats_x = (width + tile_width - 1) // tile_width
+    for top in range(0, height, 256):
+        bottom = min(top + 256, height)
+        template_rows = template[np.arange(top, bottom) % tile_height]
+        repeated = np.tile(template_rows, (1, repeats_x, 1))[:, :width]
+        stripe = pixels[top:bottom].astype(np.float64) - strength * repeated
+        result[top:bottom] = np.clip(np.rint(stripe), 0, 255).astype(np.uint8)
+    return result
 
 
 def parse_positive_floats(value: str, *, option_name: str) -> tuple[float, ...]:

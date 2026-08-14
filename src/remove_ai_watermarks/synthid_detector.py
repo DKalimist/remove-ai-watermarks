@@ -26,6 +26,7 @@ SynthIDDetectionStatus = Literal["detected", "not_detected", "unsupported"]
 
 DETECTOR_ID = "synthid-periodic-tile-v2"
 REGISTERED_DETECTOR_ID = "synthid-periodic-tile-registered-v2"
+LARGE_DETECTOR_ID = "synthid-periodic-tile-large-v1"
 MODEL_FILENAME = "synthid_periodic_tile_2048_v1.npz"
 # The template remains frozen at this model geometry. Runtime images are never
 # resized. The supported pixel-count interval is the separately challenged domain:
@@ -42,6 +43,20 @@ REGISTERED_MIN_SIDE = 64
 # The registered score is the minimum normalized margin across its amplitude,
 # spectral-candidate, and high-frequency agreement gates.
 REGISTERED_THRESHOLD = 1.0
+# The large-image score combines all-window fixed and spatial opponent gates
+# with an any-window signed opponent mid-band gate. The one vulnerable portrait
+# geometry has an additional Green mid-band upper gate.
+LARGE_THRESHOLD = 1.0
+LARGE_MIN_PIXELS = 10_000_000
+LARGE_MAX_PIXELS = 18_000_000
+LARGE_WINDOW = 2_048
+LARGE_PHASE = 16
+LARGE_FIXED_SCORE_MIN = 0.14
+LARGE_RED_GREEN_SPATIAL_MIN = 0.90
+LARGE_BLUE_YELLOW_SPATIAL_MIN = 0.70
+LARGE_BLUE_YELLOW_MID_BAND_MAX = -0.15
+LARGE_PORTRAIT_GEOMETRY = (3_072, 5_504)
+LARGE_PORTRAIT_GREEN_MID_BAND_MAX = 0.06
 INSTALL_HINT = "install the pixel extra: uv add 'remove-ai-watermarks[pixels]'"
 
 
@@ -71,6 +86,32 @@ class SynthIDDetection:
             "threshold": self.threshold,
             "detector": self.detector,
         }
+
+
+@dataclass(frozen=True)
+class LargeImageComponents:
+    """Auditable margins for the calibrated large-image carrier branch."""
+
+    width: int
+    height: int
+    minimum_fixed_score: float
+    minimum_red_green_spatial: float
+    minimum_blue_yellow_spatial: float
+    minimum_blue_yellow_mid_band: float
+    maximum_green_mid_band: float
+
+    @property
+    def decision_score(self) -> float:
+        """Return the minimum normalized gate margin; one is the boundary."""
+        margins = [
+            self.minimum_fixed_score / LARGE_FIXED_SCORE_MIN,
+            self.minimum_red_green_spatial / LARGE_RED_GREEN_SPATIAL_MIN,
+            self.minimum_blue_yellow_spatial / LARGE_BLUE_YELLOW_SPATIAL_MIN,
+            self.minimum_blue_yellow_mid_band / LARGE_BLUE_YELLOW_MID_BAND_MAX,
+        ]
+        if (self.width, self.height) == LARGE_PORTRAIT_GEOMETRY:
+            margins.append(1.0 + LARGE_PORTRAIT_GREEN_MID_BAND_MAX - self.maximum_green_mid_band)
+        return min(margins)
 
 
 def is_available() -> bool:
@@ -222,6 +263,12 @@ def _registered_geometry_supported(width: int, height: int) -> bool:
     )
 
 
+def _large_geometry_supported(width: int, height: int) -> bool:
+    """Whether fixed phase-aligned windows cover the calibrated large range."""
+    pixels = width * height
+    return min(width, height) >= LARGE_WINDOW and LARGE_MIN_PIXELS < pixels <= LARGE_MAX_PIXELS
+
+
 def folded_template_score(
     pixels: NDArray[Any],
     template: NDArray[Any],
@@ -237,6 +284,98 @@ def folded_template_score(
     )
     normalized, _norm = unit_tile(folded)
     return float((template * normalized).sum()), folded
+
+
+def _large_window_starts(length: int) -> tuple[int, ...]:
+    """Return phase-aligned starts that cover both edges without resampling."""
+    if length < LARGE_WINDOW:
+        raise ValueError("large-image sides must be at least 2,048 pixels")
+    last = ((length - LARGE_WINDOW) // LARGE_PHASE) * LARGE_PHASE
+    starts = list(range(0, last + 1, LARGE_WINDOW))
+    if starts[-1] != last:
+        starts.append(last)
+    return tuple(starts)
+
+
+def _correlation(left: NDArray[Any], right: NDArray[Any]) -> float:
+    import numpy as np
+
+    denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+    return float(np.real(np.vdot(right, left)) / denominator) if denominator > 0.0 else 0.0
+
+
+def _large_window_components(
+    folded: NDArray[Any],
+    template: NDArray[Any],
+) -> tuple[float, float, float, float]:
+    """Measure the four color-phase features used by the large branch."""
+    import numpy as np
+
+    folded_red_green = folded[:, :, 0] - folded[:, :, 1]
+    template_red_green = template[:, :, 0] - template[:, :, 1]
+    folded_blue_yellow = folded[:, :, 2] - 0.5 * (folded[:, :, 0] + folded[:, :, 1])
+    template_blue_yellow = template[:, :, 2] - 0.5 * (template[:, :, 0] + template[:, :, 1])
+
+    height, width = folded.shape[:2]
+    y_coordinates = np.minimum(np.arange(height), height - np.arange(height))
+    x_coordinates = np.minimum(np.arange(width), width - np.arange(width))
+    radius = np.sqrt(y_coordinates[:, None] ** 2 + x_coordinates[None, :] ** 2)
+    mid_band = (radius >= 4.5) & (radius < 6.5)
+    blue_yellow_mid = _correlation(
+        np.fft.fft2(folded_blue_yellow)[mid_band],
+        np.fft.fft2(template_blue_yellow)[mid_band],
+    )
+    green_mid = _correlation(
+        np.fft.fft2(folded[:, :, 1])[mid_band],
+        np.fft.fft2(template[:, :, 1])[mid_band],
+    )
+    return (
+        _correlation(folded_red_green, template_red_green),
+        _correlation(folded_blue_yellow, template_blue_yellow),
+        blue_yellow_mid,
+        green_mid,
+    )
+
+
+def large_image_components(
+    pixels: NDArray[Any],
+    template: NDArray[Any],
+    denoise_sigma: float,
+) -> LargeImageComponents:
+    """Score all phase-aligned 2,048-pixel windows of one large RGB image."""
+    if pixels.ndim != 3 or pixels.shape[2] != 3:
+        raise ValueError("pixels must have shape (height, width, 3)")
+    height, width = pixels.shape[:2]
+    if not _large_geometry_supported(width, height):
+        raise ValueError("image geometry is outside the calibrated large-image range")
+
+    minimum_fixed = float("inf")
+    minimum_red_green = float("inf")
+    minimum_blue_yellow = float("inf")
+    minimum_blue_yellow_mid = float("inf")
+    maximum_green_mid = -float("inf")
+    for y in _large_window_starts(height):
+        for x in _large_window_starts(width):
+            window = pixels[y : y + LARGE_WINDOW, x : x + LARGE_WINDOW]
+            fixed_score, folded = folded_template_score(window, template, denoise_sigma)
+            red_green, blue_yellow, blue_yellow_mid, green_mid = _large_window_components(
+                folded,
+                template,
+            )
+            minimum_fixed = min(minimum_fixed, fixed_score)
+            minimum_red_green = min(minimum_red_green, red_green)
+            minimum_blue_yellow = min(minimum_blue_yellow, blue_yellow)
+            minimum_blue_yellow_mid = min(minimum_blue_yellow_mid, blue_yellow_mid)
+            maximum_green_mid = max(maximum_green_mid, green_mid)
+    return LargeImageComponents(
+        width=width,
+        height=height,
+        minimum_fixed_score=minimum_fixed,
+        minimum_red_green_spatial=minimum_red_green,
+        minimum_blue_yellow_spatial=minimum_blue_yellow,
+        minimum_blue_yellow_mid_band=minimum_blue_yellow_mid,
+        maximum_green_mid_band=maximum_green_mid,
+    )
 
 
 def detect_synthid(
@@ -258,11 +397,19 @@ def detect_synthid(
         if image.ndim != 3 or image.shape[2] != 3:
             raise ValueError("image must be a three-channel BGR array")
         height, width = image.shape[:2]
-    geometry_supported = (
-        _registered_geometry_supported(width, height) if register_scale else _geometry_supported(width, height)
-    )
-    threshold = REGISTERED_THRESHOLD if register_scale else TILE_THRESHOLD
-    detector_id = REGISTERED_DETECTOR_ID if register_scale else DETECTOR_ID
+    large_mode = not register_scale and width * height > LARGE_MIN_PIXELS
+    if register_scale:
+        geometry_supported = _registered_geometry_supported(width, height)
+        threshold = REGISTERED_THRESHOLD
+        detector_id = REGISTERED_DETECTOR_ID
+    elif large_mode:
+        geometry_supported = _large_geometry_supported(width, height)
+        threshold = LARGE_THRESHOLD
+        detector_id = LARGE_DETECTOR_ID
+    else:
+        geometry_supported = _geometry_supported(width, height)
+        threshold = TILE_THRESHOLD
+        detector_id = DETECTOR_ID
     if not geometry_supported:
         return SynthIDDetection(
             status="unsupported",
@@ -290,6 +437,8 @@ def detect_synthid(
         from remove_ai_watermarks._synthid_registered import registered_score
 
         score = registered_score(pixels, template, sigma)
+    elif large_mode:
+        score = large_image_components(pixels, template, sigma).decision_score
     else:
         score, _folded = folded_template_score(pixels, template, sigma)
     return SynthIDDetection(

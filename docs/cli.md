@@ -15,6 +15,7 @@ defaults. This page focuses on choosing the right command.
 | --- | --- |
 | `metadata` and metadata-only `identify` | Default package |
 | `detect-synthid` and the calibrated-size SynthID pixel signal in `identify` | `remove-ai-watermarks[pixels]` |
+| `verify-openai-synthid` | `remove-ai-watermarks[verify]`, API access, and `OPENAI_API_KEY` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
 | Adobe TrustMark signals in `identify` | `remove-ai-watermarks[trustmark]` |
@@ -70,16 +71,47 @@ remove-ai-watermarks detect-synthid resized.png --register-scale
 The command returns one of `detected`, `not_detected`, or `unsupported`. The
 runtime detector covers one frozen periodic carrier family in the
 [calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier)
-and needs the `pixels` extra. The default never resizes the input and does not
+and needs the `pixels` extra. The native default uses the fixed fold from
+1,000,000 through 10,000,000 decoded pixels and the separately challenged
+opponent-color large branch above 10,000,000 through 18,000,000 pixels when
+both sides are at least 2,048 pixels. It never resizes the input and does not
 register a carrier whose sampling period changed through spatial resampling.
 `--register-scale` enables a substantially slower bounded search over measured
 carrier periods for images from 250,000 through 10,000,000 decoded pixels, with
 both sides at least 64 pixels. It is opt-in and is not used by `identify`.
 The measured positive scale range is approximately 0.65 through 1.5; 0.5x
 resizes are not reliably detected.
+The native large branch is also codec-sensitive: same-size JPEG-95 and JPEG-90
+re-encoding reduced its seven official large positives from 7/7 to 0/7. A miss
+on a lossy re-encode is therefore inconclusive.
 It is positive-only: `not_detected` means the score stayed below this detector's
 threshold, while `unsupported` means the image geometry is outside its scope.
 Neither result proves that another SynthID epoch or payload is absent.
+
+## Verify OpenAI SynthID from pixels
+
+```bash
+uv tool install --force "remove-ai-watermarks[verify]"
+remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload
+remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload --json
+```
+
+This is an explicit remote check against OpenAI's official Content Provenance
+API, not the incomplete local OpenAI carrier research model. Before upload, the
+command writes a temporary copy with AI provenance metadata removed and aborts
+unless the decoded RGBA pixels are identical to the source. It then reads only
+the API's independent `synthid` entry; a C2PA-only response cannot become a
+SynthID detection. The source is never modified.
+
+The API supports PNG, JPEG, and WebP files up to 50 MiB. The command requires
+`OPENAI_API_KEY` and an organization with endpoint access. Because the sanitized
+raster is uploaded to OpenAI and the endpoint is not eligible for Zero Data
+Retention, `--acknowledge-upload` is mandatory. This command is never called by
+`identify`. `not_detected` means only that OpenAI's verifier did not recognize a
+supported watermark in this file; it is not proof of human authorship.
+
+The Python API enforces the same boundary with the required explicit intent
+flag `verify_openai_synthid(path, acknowledge_upload=True)`.
 
 ## Remove known visible marks
 

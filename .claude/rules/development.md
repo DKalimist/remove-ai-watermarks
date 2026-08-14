@@ -79,6 +79,10 @@ rules follow, and both were broken in practice before they were written down:
 - Detection and the removal mask must read ONE sweep. The winning box travels on
   `TextMarkDetection.match_box` and the registry threads the detection into the mask
   builder; a mask path that re-runs its own sweep is how the two drift apart.
+- When the default SynthID detector routes by image geometry, preserve the returned
+  `SynthIDDetection.detector` in score manifests and downstream routers. Record an
+  inactive expert as explicitly unsupported; never attribute a routed large-image
+  score to the fixed expert.
 
 The C2PA manifest-store JSON is NOT stable across reads: the reader regenerates manifest
 URNs and instance ids. Compare the derived `c2pa_info`, never the raw store.
