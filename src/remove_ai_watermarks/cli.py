@@ -1323,15 +1323,22 @@ def cmd_video_batch(
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--json", "as_json", is_flag=True, help="Emit the detector result as JSON.")
 @click.option(
-    "--register-scale",
-    is_flag=True,
-    help="Search the slower calibrated range of spatial carrier scales.",
+    "--register-scale/--fixed-period",
+    default=None,
+    help="Force registered production search or the legacy fixed-period diagnostic.",
 )
-def cmd_detect_synthid(source: Path, as_json: bool, register_scale: bool) -> None:
-    """Detect the SynthID periodic pixel carrier at calibrated image sizes.
+def cmd_detect_synthid(source: Path, as_json: bool, register_scale: bool | None) -> None:
+    """Detect a generation-pipeline pixel lattice at calibrated image sizes.
 
-    A negative result means this detector did not find its supported carrier; it
-    is not proof that the image contains no SynthID watermark.
+    EXPERIMENTAL. The supported route for SynthID is signed provenance, which
+    `identify` reads and `verify-openai-synthid` confirms against the provider.
+    This command does NOT detect the SynthID watermark. The statistic it reports is
+    destroyed by a seven-pixel crop, while SynthID's published evaluation keeps
+    99.97% of its detection rate under aggressive crop and resize, so what
+    crosses the threshold identifies the generation pipeline rather than the
+    mark. Read a positive as "these pixels came from a pipeline that leaves this
+    lattice", never as "this image is watermarked", and read an indeterminate
+    result as neither.
     """
     from remove_ai_watermarks.synthid_detector import detect_synthid
 
@@ -1346,18 +1353,28 @@ def cmd_detect_synthid(source: Path, as_json: bool, register_scale: bool) -> Non
         return
 
     _banner()
-    console.print(f"\n  SynthID pixel carrier: {result.status}")
+    console.print(f"\n  Generation-pipeline lattice (experimental): {result.status}")
     console.print(f"  Geometry: {result.width}x{result.height}")
     if result.score is not None:
         console.print(f"  Score: {result.score:.6f}  (threshold: {result.threshold:.6f})")
     console.print(f"  Detector: {result.detector}")
-    scale_scope = (
-        "  Bounded spatial-scale registration was enabled. A negative or\n"
-        if register_scale
-        else "  Arbitrary spatial resampling was not registered. A negative or\n"
-    )
+    if result.reason is not None:
+        console.print(f"  Reason: {result.reason}")
+    if register_scale is True:
+        scale_scope = "  Bounded spatial-scale registration was explicitly enabled. An indeterminate or\n"
+    elif register_scale is False:
+        scale_scope = "  The legacy fixed-period diagnostic was explicitly enabled. An indeterminate or\n"
+    else:
+        scale_scope = (
+            "  The production router selected the calibrated registered or large-image expert. An indeterminate or\n"
+        )
     console.print(
-        "  Scope: one confirmed periodic carrier family in a calibrated image-size range.\n"
+        "  Scope: experimental. One periodic lattice family in a calibrated image-size range,\n"
+        "  secondary to signed provenance, which remains the supported SynthID route. This is a\n"
+        "  generation-pipeline signature, not the SynthID watermark: it disappears when the\n"
+        "  image is cropped off the tile grid, and it changes when the generator's pipeline\n"
+        "  changes. A positive says the pixels came from such a pipeline. It does not say the\n"
+        "  image carries a watermark, and it does not say it lacks one.\n"
         + scale_scope
         + "  unsupported result is not proof that SynthID is absent."
     )

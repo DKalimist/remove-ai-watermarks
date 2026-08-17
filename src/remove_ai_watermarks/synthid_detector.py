@@ -2,8 +2,8 @@
 
 This is a positive-only detector for one measured carrier epoch, not Google's
 private payload decoder. A positive result is strong local evidence for the
-carrier. A negative result means only that the selected detector did not find
-it; image sizes outside that mode's calibrated range are reported separately.
+carrier. An indeterminate result means only that the selected detector did not
+find it; image sizes outside that mode's calibrated range are reported separately.
 
 The numeric runtime requires the ``pixels`` extra. Imports remain lazy so the
 package's metadata-only paths stay dependency-light.
@@ -22,10 +22,12 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-SynthIDDetectionStatus = Literal["detected", "not_detected", "unsupported"]
+SynthIDDetectionStatus = Literal["detected", "indeterminate", "unsupported"]
 
 DETECTOR_ID = "synthid-periodic-tile-v2"
-REGISTERED_DETECTOR_ID = "synthid-periodic-tile-registered-v2"
+REGISTERED_DETECTOR_ID = "synthid-periodic-tile-registered-v3"
+OPPONENT_REGISTERED_DETECTOR_ID = "synthid-periodic-tile-opponent-registered-v1"
+FINE_OPPONENT_REGISTERED_DETECTOR_ID = "synthid-periodic-tile-opponent-fine-registered-v1"
 LARGE_DETECTOR_ID = "synthid-periodic-tile-large-v1"
 MODEL_FILENAME = "synthid_periodic_tile_2048_v1.npz"
 # The template remains frozen at this model geometry. Runtime images are never
@@ -39,10 +41,25 @@ MAX_SUPPORTED_PIXELS = 18_000_000
 TILE_THRESHOLD = 0.17357069773071196
 REGISTERED_MIN_SUPPORTED_PIXELS = 250_000
 REGISTERED_MAX_SUPPORTED_PIXELS = 10_000_000
-REGISTERED_MIN_SIDE = 64
-# The registered score is the minimum normalized margin across its amplitude,
-# spectral-candidate, and high-frequency agreement gates.
+# Registered-v3 can confirm a positive only when both disjoint checkerboard
+# groups contain a complete frozen 256-pixel patch. Narrower geometries need a
+# separately calibrated adaptive-patch expert and must not masquerade as misses.
+REGISTERED_MIN_SIDE = 256
+# The registered score preserves the minimum normalized v2 margin only after
+# independent split-patch phase, amplitude, and held-out codeword confirmation.
 REGISTERED_THRESHOLD = 1.0
+# The opponent-color fallback is a narrower precision-first route for lossless
+# scale changes. Smaller rasters retained a natural period-10 false positive.
+OPPONENT_REGISTERED_THRESHOLD = 1.0
+OPPONENT_REGISTERED_MIN_PIXELS = 1_000_000
+OPPONENT_REGISTERED_MIN_SIDE = 768
+# Fine-period registration is separately frozen for the dense 0.47-0.55
+# lossless-resize challenge. Its more expensive selector is bounded to the
+# geometry range covered by the locked and reserve negative sets.
+FINE_OPPONENT_REGISTERED_THRESHOLD = 1.05
+FINE_OPPONENT_REGISTERED_MIN_PIXELS = 1_000_000
+FINE_OPPONENT_REGISTERED_MAX_PIXELS = 5_000_000
+FINE_OPPONENT_REGISTERED_MIN_SIDE = 768
 # The large-image score combines all-window fixed and spatial opponent gates
 # with an any-window signed opponent mid-band gate. The one vulnerable portrait
 # geometry has an additional Green mid-band upper gate.
@@ -62,7 +79,15 @@ INSTALL_HINT = "install the pixel extra: uv add 'remove-ai-watermarks[pixels]'"
 
 @dataclass(frozen=True)
 class SynthIDDetection:
-    """One local periodic-carrier verdict."""
+    """One local periodic-lattice verdict.
+
+    The family this reports is NOT the watermark, and the field names say so. The
+    statistic is destroyed by a crop of seven pixels, while SynthID's published
+    evaluation retains 99.97% TPR under aggressive crop and resize, so what
+    crosses the threshold is a generation-pipeline lattice anchored at the image
+    origin. It identifies the pipeline, not the mark, and `docs/synthid.md`
+    carries the measurement.
+    """
 
     status: SynthIDDetectionStatus
     width: int
@@ -70,13 +95,23 @@ class SynthIDDetection:
     score: float | None
     threshold: float
     detector: str = DETECTOR_ID
+    reason: str | None = None
+    signal_family: str = "generation-pipeline-lattice"
+    provider_scope: str = "provider-neutral"
+    backend: str = "local-pixel"
+    metadata_used_for_verdict: bool = False
+    pixels_preserved: bool = True
+    # Consumers cannot be expected to read a caveat in prose, so the two measured
+    # failure modes travel with every verdict.
+    tile_aligned_crop_required: bool = True
+    identifies_watermark: bool = False
 
     @property
     def detected(self) -> bool:
         """Whether the supported carrier crossed its frozen threshold."""
         return self.status == "detected"
 
-    def to_dict(self) -> dict[str, str | int | float | None]:
+    def to_dict(self) -> dict[str, str | int | float | bool | None]:
         """Return a JSON-safe result without a local file path."""
         return {
             "status": self.status,
@@ -85,6 +120,14 @@ class SynthIDDetection:
             "score": self.score,
             "threshold": self.threshold,
             "detector": self.detector,
+            "reason": self.reason,
+            "signal_family": self.signal_family,
+            "provider_scope": self.provider_scope,
+            "backend": self.backend,
+            "metadata_used_for_verdict": self.metadata_used_for_verdict,
+            "pixels_preserved": self.pixels_preserved,
+            "tile_aligned_crop_required": self.tile_aligned_crop_required,
+            "identifies_watermark": self.identifies_watermark,
         }
 
 
@@ -269,6 +312,24 @@ def _large_geometry_supported(width: int, height: int) -> bool:
     return min(width, height) >= LARGE_WINDOW and LARGE_MIN_PIXELS < pixels <= LARGE_MAX_PIXELS
 
 
+def _opponent_registered_geometry_supported(width: int, height: int) -> bool:
+    """Whether the opponent-color fallback passed its frozen geometry challenge."""
+    pixels = width * height
+    return (
+        min(width, height) >= OPPONENT_REGISTERED_MIN_SIDE
+        and OPPONENT_REGISTERED_MIN_PIXELS <= pixels <= REGISTERED_MAX_SUPPORTED_PIXELS
+    )
+
+
+def _fine_opponent_registered_geometry_supported(width: int, height: int) -> bool:
+    """Whether the fine-period selector passed its frozen geometry challenge."""
+    pixels = width * height
+    return (
+        min(width, height) >= FINE_OPPONENT_REGISTERED_MIN_SIDE
+        and FINE_OPPONENT_REGISTERED_MIN_PIXELS <= pixels <= FINE_OPPONENT_REGISTERED_MAX_PIXELS
+    )
+
+
 def folded_template_score(
     pixels: NDArray[Any],
     template: NDArray[Any],
@@ -382,13 +443,16 @@ def detect_synthid(
     image_path: str | Path,
     *,
     image: NDArray[Any] | None = None,
-    register_scale: bool = False,
+    register_scale: bool | None = None,
 ) -> SynthIDDetection:
     """Detect the supported periodic carrier in IMAGE_PATH.
 
-    ``not_detected`` is not a clean-image guarantee. It means only that the
-    frozen periodic carrier did not cross its calibrated threshold. Set
-    ``register_scale`` for the slower, separately calibrated resize search.
+    ``indeterminate`` means that the frozen periodic carrier did not cross its
+    calibrated threshold; it is not a clean-image guarantee. The default
+    production router uses scale registration through 10 megapixels and the
+    native large-image expert above that boundary. Set ``register_scale`` to
+    ``True`` to force registration or ``False`` to run the legacy fixed-period
+    diagnostic below the large-image boundary.
     """
     path = Path(image_path)
     if image is None:
@@ -397,19 +461,28 @@ def detect_synthid(
         if image.ndim != 3 or image.shape[2] != 3:
             raise ValueError("image must be a three-channel BGR array")
         height, width = image.shape[:2]
-    large_mode = not register_scale and width * height > LARGE_MIN_PIXELS
-    if register_scale:
+    large_mode = register_scale is not True and width * height > LARGE_MIN_PIXELS
+    registered_mode = register_scale is True or (register_scale is None and not large_mode)
+    if registered_mode:
         geometry_supported = _registered_geometry_supported(width, height)
         threshold = REGISTERED_THRESHOLD
         detector_id = REGISTERED_DETECTOR_ID
+        unsupported_reason = (
+            "registered-v3 requires 250,000-10,000,000 decoded pixels and both dimensions to be at least 256 pixels"
+        )
     elif large_mode:
         geometry_supported = _large_geometry_supported(width, height)
         threshold = LARGE_THRESHOLD
         detector_id = LARGE_DETECTOR_ID
+        unsupported_reason = (
+            "large-v1 requires more than 10,000,000 through 18,000,000 decoded pixels "
+            "and at least two phase-aligned 2048-pixel windows"
+        )
     else:
         geometry_supported = _geometry_supported(width, height)
         threshold = TILE_THRESHOLD
         detector_id = DETECTOR_ID
+        unsupported_reason = "fixed-v2 requires 1,000,000-18,000,000 decoded pixels"
     if not geometry_supported:
         return SynthIDDetection(
             status="unsupported",
@@ -418,6 +491,7 @@ def detect_synthid(
             score=None,
             threshold=threshold,
             detector=detector_id,
+            reason=unsupported_reason,
         )
     if not is_available():
         raise RuntimeError(f"SynthID pixel detection needs numpy and OpenCV; {INSTALL_HINT}")
@@ -433,19 +507,37 @@ def detect_synthid(
         pixels = np.asarray(image[:, :, ::-1], dtype=np.uint8)
     if pixels.shape != (height, width, 3):
         raise RuntimeError("decoded image geometry does not match its header")
-    if register_scale:
-        from remove_ai_watermarks._synthid_registered import registered_score
+    if registered_mode:
+        from remove_ai_watermarks._synthid_registered import (
+            fine_opponent_registered_score,
+            opponent_registered_score,
+            registered_score,
+        )
 
         score = registered_score(pixels, template, sigma)
+        if score < REGISTERED_THRESHOLD and _opponent_registered_geometry_supported(width, height):
+            opponent_score = opponent_registered_score(pixels, template, sigma)
+            if opponent_score >= OPPONENT_REGISTERED_THRESHOLD:
+                score = opponent_score
+                threshold = OPPONENT_REGISTERED_THRESHOLD
+                detector_id = OPPONENT_REGISTERED_DETECTOR_ID
+        if score < threshold and _fine_opponent_registered_geometry_supported(width, height):
+            fine_score = fine_opponent_registered_score(pixels, template, sigma)
+            if fine_score >= FINE_OPPONENT_REGISTERED_THRESHOLD:
+                score = fine_score
+                threshold = FINE_OPPONENT_REGISTERED_THRESHOLD
+                detector_id = FINE_OPPONENT_REGISTERED_DETECTOR_ID
     elif large_mode:
         score = large_image_components(pixels, template, sigma).decision_score
     else:
         score, _folded = folded_template_score(pixels, template, sigma)
+    detected = score >= threshold
     return SynthIDDetection(
-        status="detected" if score >= threshold else "not_detected",
+        status="detected" if detected else "indeterminate",
         width=width,
         height=height,
         score=score,
         threshold=threshold,
         detector=detector_id,
+        reason=None if detected else "the selected carrier expert did not cross every calibrated gate",
     )

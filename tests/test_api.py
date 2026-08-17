@@ -25,6 +25,7 @@ class TestTopLevelExports:
         assert raiw.detect_synthid is synthid_detector.detect_synthid
         assert raiw.SynthIDDetection is synthid_detector.SynthIDDetection
         assert raiw.verify_openai_synthid is openai_provenance.verify_openai_synthid
+        assert raiw.OpenAIProvenanceError is openai_provenance.OpenAIProvenanceError
         assert raiw.OpenAISynthIDDetection is openai_provenance.OpenAISynthIDDetection
 
     def test_unknown_attribute_raises(self):

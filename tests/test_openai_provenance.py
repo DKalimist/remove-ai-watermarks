@@ -20,7 +20,8 @@ class _Checks:
         self.response = response
         self.calls: list[tuple[str, bytes, str]] = []
 
-    def create(self, *, file: tuple[str, Any, str]) -> Any:
+    def create(self, *, file: tuple[str, Any, str], timeout: float) -> Any:
+        assert timeout == provenance.REQUEST_TIMEOUT_SECONDS
         filename, stream, media_type = file
         self.calls.append((filename, stream.read(), media_type))
         return self.response
@@ -94,6 +95,8 @@ def test_detected_result_uses_only_synthid_fields(tmp_clean_png: Path) -> None:
     assert result.generated_at == "2026-07-28T18:34:12Z"
     assert result.api_created_at == 1_778_000_000
     assert "c2pa" not in result.to_dict()
+    assert result.to_dict()["metadata_used_for_verdict"] is False
+    assert result.to_dict()["provider_scope"] == "openai"
 
 
 def test_sdk_model_response_is_normalized(tmp_clean_png: Path) -> None:
@@ -107,6 +110,28 @@ def test_sdk_model_response_is_normalized(tmp_clean_png: Path) -> None:
     result = _verify(tmp_clean_png, client=client)
 
     assert result.status == "detected"
+
+
+def test_unexpected_response_object_is_an_error(tmp_clean_png: Path) -> None:
+    response = _response(synthid="detected")
+    response["object"] = "future_response"
+    client, _checks = _client(response)
+
+    with pytest.raises(RuntimeError, match="unexpected 'object'"):
+        _verify(tmp_clean_png, client=client)
+
+
+@pytest.mark.parametrize("entry", [None, {"outcome": "detected"}, {"type": 3, "outcome": "detected"}])
+def test_malformed_result_entry_is_an_error(tmp_clean_png: Path, entry: Any) -> None:
+    client, _checks = _client(
+        {
+            "object": "content_provenance_check",
+            "results": [entry],
+        }
+    )
+
+    with pytest.raises(RuntimeError, match=r"invalid result entry|valid type"):
+        _verify(tmp_clean_png, client=client)
 
 
 @pytest.mark.parametrize(
@@ -138,7 +163,7 @@ def test_all_documented_image_formats_preserve_decoded_pixels(
 
 @pytest.mark.parametrize("results", [[], [{"type": "c2pa", "outcome": "detected"}]])
 def test_missing_synthid_result_is_an_error(tmp_clean_png: Path, results: list[dict[str, str]]) -> None:
-    client, _checks = _client({"results": results})
+    client, _checks = _client({"object": "content_provenance_check", "results": results})
 
     with pytest.raises(RuntimeError, match="0 SynthID results"):
         _verify(tmp_clean_png, client=client)
@@ -147,10 +172,11 @@ def test_missing_synthid_result_is_an_error(tmp_clean_png: Path, results: list[d
 def test_duplicate_synthid_results_are_an_error(tmp_clean_png: Path) -> None:
     client, _checks = _client(
         {
+            "object": "content_provenance_check",
             "results": [
                 {"type": "synthid", "outcome": "detected"},
                 {"type": "synthid", "outcome": "not_detected"},
-            ]
+            ],
         }
     )
 
@@ -223,6 +249,28 @@ def test_upload_limit_is_checked_after_sanitizing(
     assert checks.calls == []
 
 
+def test_upload_limit_allows_exact_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_clean_png: Path,
+) -> None:
+    from remove_ai_watermarks import metadata
+
+    client, checks = _client(_response(synthid="not_detected"))
+
+    def copy_clean(source: Path, output: Path, *, keep_standard: bool) -> tuple[Path, dict[str, str]]:
+        assert keep_standard is True
+        output.write_bytes(source.read_bytes())
+        return output, {}
+
+    monkeypatch.setattr(metadata, "strip_and_verify", copy_clean)
+    monkeypatch.setattr(provenance, "MAX_UPLOAD_BYTES", tmp_clean_png.stat().st_size)
+
+    result = _verify(tmp_clean_png, client=client)
+
+    assert result.status == "not_detected"
+    assert len(checks.calls) == 1
+
+
 def test_missing_optional_sdk_has_install_hint(
     monkeypatch: pytest.MonkeyPatch,
     tmp_clean_png: Path,
@@ -237,7 +285,7 @@ def test_client_configuration_error_is_actionable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_clean_png: Path,
 ) -> None:
-    def fail() -> None:
+    def fail(**_kwargs: Any) -> None:
         raise ValueError("OPENAI_API_KEY is missing")
 
     monkeypatch.setattr(provenance, "is_available", lambda: True)
@@ -247,9 +295,36 @@ def test_client_configuration_error_is_actionable(
         _verify(tmp_clean_png)
 
 
+def test_default_client_bounds_one_acknowledged_upload(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    expected = SimpleNamespace(content_provenance_checks=object())
+
+    def factory(**kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(provenance, "is_available", lambda: True)
+    monkeypatch.setattr(provenance.importlib, "import_module", lambda _name: SimpleNamespace(OpenAI=factory))
+
+    assert provenance._default_client() is expected
+    assert calls == [
+        {
+            "timeout": provenance.REQUEST_TIMEOUT_SECONDS,
+            "max_retries": 0,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("status_code", "message"),
-    [(400, "rejected"), (404, "does not have"), (429, "rate limit")],
+    [
+        (400, "rejected"),
+        (401, "authentication failed"),
+        (403, "not permitted"),
+        (404, "does not have"),
+        (429, "rate limit"),
+        (500, "temporary server error"),
+    ],
 )
 def test_documented_api_errors_are_actionable(
     tmp_clean_png: Path,
@@ -263,10 +338,92 @@ def test_documented_api_errors_are_actionable(
     error.status_code = status_code  # type: ignore[attr-defined]
 
     class FailingChecks:
-        def create(self, *, file: tuple[str, Any, str]) -> None:
+        def create(self, *, file: tuple[str, Any, str], timeout: float) -> None:
+            assert timeout == provenance.REQUEST_TIMEOUT_SECONDS
             raise error
 
     client = SimpleNamespace(content_provenance_checks=FailingChecks())
 
     with pytest.raises(RuntimeError, match=message):
         _verify(tmp_clean_png, client=client)
+
+
+@pytest.mark.parametrize(
+    ("error_name", "message"),
+    [("APITimeoutError", "timed out"), ("APIConnectionError", "could not be reached")],
+)
+def test_transport_errors_are_actionable(
+    tmp_clean_png: Path,
+    error_name: str,
+    message: str,
+) -> None:
+    error_type = type(error_name, (Exception,), {})
+
+    class FailingChecks:
+        def create(self, *, file: tuple[str, Any, str], timeout: float) -> None:
+            assert timeout == provenance.REQUEST_TIMEOUT_SECONDS
+            raise error_type("details")
+
+    client = SimpleNamespace(content_provenance_checks=FailingChecks())
+
+    with pytest.raises(RuntimeError, match=message):
+        _verify(tmp_clean_png, client=client)
+
+
+def test_rate_limit_error_preserves_retry_context(tmp_clean_png: Path) -> None:
+    class RateLimitError(Exception):
+        status_code = 429
+        code = "rate_limit_exceeded"
+        request_id = "req_test"
+        response = SimpleNamespace(headers={"retry-after": "7"})
+
+    class FailingChecks:
+        def create(self, *, file: tuple[str, Any, str], timeout: float) -> None:
+            assert timeout == provenance.REQUEST_TIMEOUT_SECONDS
+            raise RateLimitError("details")
+
+    client = SimpleNamespace(content_provenance_checks=FailingChecks())
+
+    with pytest.raises(provenance.OpenAIProvenanceError, match="Retry-After: 7") as raised:
+        _verify(tmp_clean_png, client=client)
+    assert raised.value.status_code == 429
+    assert raised.value.error_code == "rate_limit_exceeded"
+    assert raised.value.request_id == "req_test"
+    assert raised.value.retry_after == "7"
+    assert raised.value.retryable is True
+
+
+def test_client_error_is_not_marked_retryable(tmp_clean_png: Path) -> None:
+    class BadRequestError(Exception):
+        status_code = 400
+        code = "invalid_image"
+
+    class FailingChecks:
+        def create(self, *, file: tuple[str, Any, str], timeout: float) -> None:
+            assert timeout == provenance.REQUEST_TIMEOUT_SECONDS
+            raise BadRequestError("details")
+
+    client = SimpleNamespace(content_provenance_checks=FailingChecks())
+
+    with pytest.raises(provenance.OpenAIProvenanceError) as raised:
+        _verify(tmp_clean_png, client=client)
+    assert raised.value.status_code == 400
+    assert raised.value.error_code == "invalid_image"
+    assert raised.value.retryable is False
+
+
+def test_keyboard_interrupt_is_not_wrapped_or_retried(tmp_clean_png: Path) -> None:
+    class InterruptingChecks:
+        calls = 0
+
+        def create(self, *, file: tuple[str, Any, str], timeout: float) -> None:
+            assert timeout == provenance.REQUEST_TIMEOUT_SECONDS
+            self.calls += 1
+            raise KeyboardInterrupt
+
+    checks = InterruptingChecks()
+    client = SimpleNamespace(content_provenance_checks=checks)
+
+    with pytest.raises(KeyboardInterrupt):
+        _verify(tmp_clean_png, client=client)
+    assert checks.calls == 1

@@ -47,6 +47,63 @@ def registered_scale_positive(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
+@pytest.fixture(scope="module")
+def opponent_registered_positive(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create a strong period-10 opponent-color fallback fixture."""
+    import cv2
+
+    directory = tmp_path_factory.mktemp("synthid-opponent-registered")
+    template, *_model = detector._load_template()
+    scaled_tile = template / np.max(np.abs(template)) * 40.0
+    source = np.tile(scaled_tile, (128, 128, 1)) + 128.0
+    pixels = cv2.resize(
+        np.clip(np.rint(source), 0, 255).astype(np.uint8),
+        (1280, 1280),
+        interpolation=cv2.INTER_AREA,
+    )
+    path = directory / "period-10-positive.png"
+    Image.fromarray(pixels, "RGB").save(path)
+    return path
+
+
+@pytest.fixture(scope="module")
+def opponent_period8_positive(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create a strong period-8 fallback fixture without native JPEG block edges."""
+    import cv2
+
+    directory = tmp_path_factory.mktemp("synthid-opponent-period8")
+    template, *_model = detector._load_template()
+    scaled_tile = template / np.max(np.abs(template)) * 40.0
+    source = np.tile(scaled_tile, (128, 128, 1)) + 128.0
+    pixels = cv2.resize(
+        np.clip(np.rint(source), 0, 255).astype(np.uint8),
+        (1024, 1024),
+        interpolation=cv2.INTER_AREA,
+    )
+    path = directory / "period-8-positive.png"
+    Image.fromarray(pixels, "RGB").save(path)
+    return path
+
+
+@pytest.fixture(scope="module")
+def fine_opponent_registered_positive(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create a strong period-7.68 carrier missed by the coarse period grid."""
+    import cv2
+
+    directory = tmp_path_factory.mktemp("synthid-fine-opponent-registered")
+    template, *_model = detector._load_template()
+    scaled_tile = template / np.max(np.abs(template)) * 40.0
+    source = np.tile(scaled_tile, (144, 144, 1)) + 128.0
+    pixels = cv2.resize(
+        np.clip(np.rint(source), 0, 255).astype(np.uint8),
+        (1106, 1106),
+        interpolation=cv2.INTER_AREA,
+    )
+    path = directory / "period-7.68-positive.png"
+    Image.fromarray(pixels, "RGB").save(path)
+    return path
+
+
 def test_bundled_model_is_the_frozen_calibrated_artifact() -> None:
     model = Path(detector.__file__).parent / "assets" / detector.MODEL_FILENAME
 
@@ -79,9 +136,11 @@ def test_geometry_outside_the_challenged_pixel_count_range_is_unsupported(
     [
         (500, 500, True),
         (4000, 2500, True),
-        (64, 3907, True),
+        (256, 977, True),
         (499, 500, False),
         (4001, 2500, False),
+        (255, 981, False),
+        (64, 3907, False),
         (32, 7813, False),
     ],
 )
@@ -91,6 +150,42 @@ def test_registered_geometry_uses_its_measured_pixel_count_range(
     supported: bool,
 ) -> None:
     assert detector._registered_geometry_supported(width, height) is supported
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "supported"),
+    [
+        (1000, 1000, True),
+        (4000, 2500, True),
+        (767, 1304, False),
+        (1000, 999, False),
+        (4001, 2500, False),
+    ],
+)
+def test_opponent_registered_geometry_uses_its_frozen_domain(
+    width: int,
+    height: int,
+    supported: bool,
+) -> None:
+    assert detector._opponent_registered_geometry_supported(width, height) is supported
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "supported"),
+    [
+        (1000, 1000, True),
+        (2500, 2000, True),
+        (767, 1304, False),
+        (1000, 999, False),
+        (2501, 2000, False),
+    ],
+)
+def test_fine_opponent_registered_geometry_uses_its_frozen_domain(
+    width: int,
+    height: int,
+    supported: bool,
+) -> None:
+    assert detector._fine_opponent_registered_geometry_supported(width, height) is supported
 
 
 @pytest.mark.parametrize(
@@ -162,7 +257,7 @@ def test_large_red_green_gate_mutation_changes_the_real_verdict(
 
     assert baseline.status == "detected"
     assert baseline.detector == detector.LARGE_DETECTOR_ID
-    assert mutated.status == "not_detected"
+    assert mutated.status == "indeterminate"
 
 
 def test_uncalibrated_narrow_large_geometry_is_unsupported() -> None:
@@ -189,7 +284,7 @@ def test_registered_mode_rejects_a_side_too_short_for_quadrants(tmp_path: Path) 
 def test_detects_supported_periodic_carrier(supported_images: tuple[Path, Path]) -> None:
     positive, _negative = supported_images
 
-    result = detector.detect_synthid(positive)
+    result = detector.detect_synthid(positive, register_scale=False)
 
     assert result.status == "detected"
     assert result.detected is True
@@ -209,7 +304,7 @@ def test_detects_unregistered_non_divisible_geometry_in_size_range(tmp_path: Pat
     path = tmp_path / "non-divisible-positive.png"
     Image.fromarray(pixels, "RGB").save(path)
 
-    result = detector.detect_synthid(path)
+    result = detector.detect_synthid(path, register_scale=False)
 
     assert result.status == "detected"
     assert (result.width, result.height) == (width, height)
@@ -218,15 +313,178 @@ def test_detects_unregistered_non_divisible_geometry_in_size_range(tmp_path: Pat
 
 
 def test_registered_mode_detects_a_rescaled_carrier(registered_scale_positive: Path) -> None:
+    fixed = detector.detect_synthid(registered_scale_positive, register_scale=False)
     default = detector.detect_synthid(registered_scale_positive)
     registered = detector.detect_synthid(registered_scale_positive, register_scale=True)
 
-    assert default.status == "unsupported"
+    assert fixed.status == "unsupported"
+    assert default == registered
     assert registered.status == "detected"
     assert registered.score is not None
     assert registered.score > registered.threshold
     assert registered.threshold == detector.REGISTERED_THRESHOLD
     assert registered.detector == detector.REGISTERED_DETECTOR_ID
+
+
+def test_registered_mode_falls_back_to_the_opponent_color_expert(
+    monkeypatch: pytest.MonkeyPatch,
+    opponent_registered_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
+
+    result = detector.detect_synthid(opponent_registered_positive, register_scale=True)
+
+    assert result.status == "detected"
+    assert result.detector == detector.OPPONENT_REGISTERED_DETECTOR_ID
+    assert result.score is not None
+    assert result.score >= result.threshold
+
+
+def test_opponent_registered_threshold_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    opponent_registered_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
+    baseline = detector.detect_synthid(opponent_registered_positive, register_scale=True)
+    assert baseline.score is not None
+    assert baseline.detector == detector.OPPONENT_REGISTERED_DETECTOR_ID
+    monkeypatch.setattr(
+        detector,
+        "OPPONENT_REGISTERED_THRESHOLD",
+        float(np.nextafter(baseline.score, np.inf)),
+    )
+
+    mutated = detector.detect_synthid(opponent_registered_positive, register_scale=True)
+
+    assert mutated.status == "indeterminate"
+    assert mutated.detector == detector.REGISTERED_DETECTOR_ID
+
+
+def test_opponent_fallback_recovers_period8_without_codec_grid(
+    monkeypatch: pytest.MonkeyPatch,
+    opponent_period8_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
+
+    result = detector.detect_synthid(opponent_period8_positive, register_scale=True)
+
+    assert result.status == "detected"
+    assert result.detector == detector.OPPONENT_REGISTERED_DETECTOR_ID
+
+
+def test_fine_opponent_fallback_recovers_off_grid_period(
+    monkeypatch: pytest.MonkeyPatch,
+    fine_opponent_registered_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
+    monkeypatch.setattr(registered_detector, "opponent_registered_score", lambda *_args: 0.0)
+
+    result = detector.detect_synthid(fine_opponent_registered_positive, register_scale=True)
+
+    assert result.status == "detected"
+    assert result.detector == detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID
+    assert result.score is not None
+    assert result.score >= detector.FINE_OPPONENT_REGISTERED_THRESHOLD
+
+
+def test_fine_opponent_threshold_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    fine_opponent_registered_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
+    monkeypatch.setattr(registered_detector, "opponent_registered_score", lambda *_args: 0.0)
+    baseline = detector.detect_synthid(fine_opponent_registered_positive, register_scale=True)
+    assert baseline.score is not None
+    assert baseline.detector == detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID
+    monkeypatch.setattr(
+        detector,
+        "FINE_OPPONENT_REGISTERED_THRESHOLD",
+        float(np.nextafter(baseline.score, np.inf)),
+    )
+
+    mutated = detector.detect_synthid(fine_opponent_registered_positive, register_scale=True)
+
+    assert mutated.status == "indeterminate"
+    assert mutated.detector == detector.REGISTERED_DETECTOR_ID
+
+
+def test_fine_opponent_selector_recovers_the_fractional_period(
+    fine_opponent_registered_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    template, sigma, *_model = detector._load_template()
+    pixels = np.asarray(Image.open(fine_opponent_registered_positive).convert("RGB"), dtype=np.uint8)
+    components = registered_detector.fine_opponent_registered_components(pixels, template, sigma)
+
+    assert components.selected_period == pytest.approx(7.68, abs=0.01)
+    assert components.fine_decision_score >= detector.FINE_OPPONENT_REGISTERED_THRESHOLD
+    assert components.candidate_count >= 100
+
+
+def test_period8_codec_veto_threshold_mutation_changes_real_components(
+    monkeypatch: pytest.MonkeyPatch,
+    opponent_period8_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    template, sigma, *_model = detector._load_template()
+    pixels = np.asarray(Image.open(opponent_period8_positive).convert("RGB"), dtype=np.uint8)
+    components = registered_detector.opponent_registered_components(pixels, template, sigma)
+    assert components.decision_score >= detector.OPPONENT_REGISTERED_THRESHOLD
+    assert components.red_green_p8_edge_ratio is not None
+    assert components.blue_yellow_p8_edge_ratio is not None
+    monkeypatch.setattr(registered_detector, "OPPONENT_REGISTERED_MAX_P8_EDGE_RATIO", 0.9)
+
+    assert components.decision_score == 0.0
+
+
+def test_opponent_registered_period_band_and_codec_veto_are_required() -> None:
+    from remove_ai_watermarks._synthid_registered import OpponentRegisteredComponents
+
+    values = {
+        "spectral_score": 0.8,
+        "fixed_score": 0.32,
+        "red_green_spatial": 0.9,
+        "blue_yellow_spatial": 0.8,
+        "candidate_count": 3,
+        "red_green_p8_edge_ratio": None,
+        "blue_yellow_p8_edge_ratio": None,
+    }
+    matching = OpponentRegisteredComponents(10.0, 10.0, **values)
+    period8 = OpponentRegisteredComponents(
+        8.0,
+        8.0,
+        **{
+            **values,
+            "red_green_p8_edge_ratio": 1.0,
+            "blue_yellow_p8_edge_ratio": 1.0,
+        },
+    )
+    codec_alias = OpponentRegisteredComponents(
+        8.0,
+        8.0,
+        **{
+            **values,
+            "red_green_p8_edge_ratio": 1.2,
+            "blue_yellow_p8_edge_ratio": 1.2,
+        },
+    )
+
+    assert matching.decision_score > detector.OPPONENT_REGISTERED_THRESHOLD
+    assert period8.decision_score > detector.OPPONENT_REGISTERED_THRESHOLD
+    assert codec_alias.base_decision_score > detector.OPPONENT_REGISTERED_THRESHOLD
+    assert codec_alias.decision_score == 0.0
 
 
 def test_registered_threshold_mutation_changes_the_real_verdict(
@@ -240,7 +498,7 @@ def test_registered_threshold_mutation_changes_the_real_verdict(
 
     mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
 
-    assert mutated.status == "not_detected"
+    assert mutated.status == "indeterminate"
     assert mutated.threshold == mutated_threshold
 
 
@@ -270,17 +528,22 @@ def test_registered_amplitude_threshold_mutation_changes_the_real_verdict(
 
     mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
 
-    assert mutated.status == "not_detected"
+    assert mutated.status == "indeterminate"
 
 
 def test_registered_spectral_candidate_disagreement_blocks_decision() -> None:
+    from remove_ai_watermarks._synthid_confirmation import RegisteredConfirmationComponents
     from remove_ai_watermarks._synthid_registered import RegisteredComponents
 
-    matching = RegisteredComponents(0.5, 0.25, 12.8, 12.8, 0.15)
-    mismatching = RegisteredComponents(0.5, 0.25, 12.8, 12.9, 0.15)
+    confirmation = RegisteredConfirmationComponents(12.8, 0.5, 0.2, 0.5, 8, 8)
+    matching = RegisteredComponents(0.5, 0.25, 12.8, 12.8, 0.15, confirmation)
+    mismatching = RegisteredComponents(0.5, 0.25, 12.8, 12.9, 0.15, confirmation)
+    unconfirmed = RegisteredComponents(0.5, 0.25, 12.8, 12.8, 0.15)
 
     assert matching.decision_score == pytest.approx(2.0)
     assert mismatching.decision_score == pytest.approx(0.0)
+    assert unconfirmed.base_decision_score == pytest.approx(2.0)
+    assert unconfirmed.decision_score == pytest.approx(0.0)
 
 
 def test_registered_high_band_mutation_changes_the_real_verdict(
@@ -303,15 +566,40 @@ def test_registered_high_band_mutation_changes_the_real_verdict(
 
     mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
 
-    assert mutated.status == "not_detected"
+    assert mutated.status == "indeterminate"
+
+
+def test_registered_confirmation_mutation_changes_the_real_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    registered_scale_positive: Path,
+) -> None:
+    import remove_ai_watermarks._synthid_confirmation as confirmation_detector
+    import remove_ai_watermarks._synthid_registered as registered_detector
+
+    components = registered_detector.registered_components(
+        np.asarray(Image.open(registered_scale_positive).convert("RGB"), dtype=np.uint8),
+        detector._load_template()[0],
+        detector._load_template()[1],
+    )
+    assert components.confirmation is not None
+    assert components.decision_score >= detector.REGISTERED_THRESHOLD
+    monkeypatch.setattr(
+        confirmation_detector,
+        "MIN_COHERENCE",
+        float(np.nextafter(components.confirmation.joint_coherence, np.inf)),
+    )
+
+    mutated = detector.detect_synthid(registered_scale_positive, register_scale=True)
+
+    assert mutated.status == "indeterminate"
 
 
 def test_supported_negative_does_not_claim_clean(supported_images: tuple[Path, Path]) -> None:
     _positive, negative = supported_images
 
-    result = detector.detect_synthid(negative)
+    result = detector.detect_synthid(negative, register_scale=False)
 
-    assert result.status == "not_detected"
+    assert result.status == "indeterminate"
     assert result.detected is False
     assert result.score == pytest.approx(0.0)
 
@@ -321,16 +609,16 @@ def test_threshold_mutation_changes_the_real_verdict(
     supported_images: tuple[Path, Path],
 ) -> None:
     positive, _negative = supported_images
-    baseline = detector.detect_synthid(positive)
+    baseline = detector.detect_synthid(positive, register_scale=False)
     assert baseline.score is not None
     assert baseline.status == "detected"
     mutated_threshold = float(np.nextafter(baseline.score, np.inf))
     assert mutated_threshold > baseline.score
 
     monkeypatch.setattr(detector, "TILE_THRESHOLD", mutated_threshold)
-    mutated = detector.detect_synthid(positive)
+    mutated = detector.detect_synthid(positive, register_scale=False)
 
-    assert mutated.status == "not_detected"
+    assert mutated.status == "indeterminate"
     assert mutated.threshold == mutated_threshold
 
 
@@ -338,11 +626,14 @@ def test_unsupported_geometry_is_distinct_from_negative(tmp_path: Path) -> None:
     path = tmp_path / "small.png"
     Image.new("RGB", (64, 32), "white").save(path)
 
-    result = detector.detect_synthid(path)
+    result = detector.detect_synthid(path, register_scale=False)
 
     assert result.status == "unsupported"
     assert result.score is None
     assert (result.width, result.height) == (64, 32)
+    assert result.reason is not None
+    assert result.to_dict()["metadata_used_for_verdict"] is False
+    assert result.to_dict()["provider_scope"] == "provider-neutral"
 
 
 def test_shared_bgr_decode_matches_file_decode(supported_images: tuple[Path, Path]) -> None:
@@ -352,8 +643,8 @@ def test_shared_bgr_decode_matches_file_decode(supported_images: tuple[Path, Pat
     bgr = cv2.imread(str(positive))
     assert bgr is not None
 
-    from_file = detector.detect_synthid(positive)
-    from_array = detector.detect_synthid(positive, image=bgr)
+    from_file = detector.detect_synthid(positive, register_scale=False)
+    from_array = detector.detect_synthid(positive, image=bgr, register_scale=False)
 
     assert from_array == from_file
 
@@ -366,7 +657,7 @@ def test_supported_geometry_requires_pixel_dependencies(
     monkeypatch.setattr(detector, "is_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="pixel extra"):
-        detector.detect_synthid(negative)
+        detector.detect_synthid(negative, register_scale=False)
 
 
 def test_fold_accepts_non_divisible_geometry_without_resampling() -> None:
@@ -435,3 +726,53 @@ def test_fold_rejects_tile_larger_than_image() -> None:
             tile_width=16,
             denoise_sigma=1.0,
         )
+
+
+def test_verdict_does_not_claim_the_watermark() -> None:
+    """The result must not assert SynthID, because the statistic is not SynthID.
+
+    This was unguarded until 2026-08-16, and the claim had been wrong for months
+    without a single test noticing. The fields are pinned by value rather than by
+    presence so that a rename back to a watermark claim fails here.
+    """
+    result = detector.SynthIDDetection(
+        status="detected",
+        width=4096,
+        height=2560,
+        score=1.0,
+        threshold=1.0,
+    )
+
+    payload = result.to_dict()
+
+    assert payload["signal_family"] == "generation-pipeline-lattice"
+    assert payload["identifies_watermark"] is False
+    assert payload["tile_aligned_crop_required"] is True
+    assert "synthid" not in str(payload["signal_family"]).lower()
+
+
+def test_the_statistic_is_locked_to_the_image_origin() -> None:
+    """A crop off the tile grid must destroy the score, and that must stay visible.
+
+    SynthID's published evaluation retains 99.97% TPR under aggressive crop and
+    resize. This statistic loses everything to a seven-pixel shift, measured on
+    the real runtime at 4096x2560 where aligned crops scored up to 1.069 and
+    shifted ones reached -0.438. The property is asserted here so that any future
+    expert claiming to read the watermark has to survive the same shift first.
+    """
+    template, sigma, *_model = detector._load_template()
+    tile = template / np.max(np.abs(template))
+    pixels = np.full((1024, 1024, 3), 128.0)
+    pixels += 6.0 * np.tile(tile, (64, 64, 1))
+    aligned = np.clip(np.rint(pixels), 0, 255).astype(np.uint8)
+
+    aligned_score, _folded = detector.folded_template_score(aligned, template, sigma)
+    # Seven is deliberately coprime with the 16-pixel tile, so no residual phase survives.
+    shifted_score, _shifted_folded = detector.folded_template_score(
+        aligned[7:, 7:],
+        template,
+        sigma,
+    )
+
+    assert aligned_score > 0.5
+    assert shifted_score < 0.1 * aligned_score

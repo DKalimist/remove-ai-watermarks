@@ -886,30 +886,38 @@ class TestIdentifyVisibleTextMarks:
 # ── Caveats and serialization ───────────────────────────────────────
 
 
-class TestSynthIDPixelCarrier:
-    def test_positive_pixel_carrier_is_high_confidence_ai_evidence(self, tmp_clean_png: Path):
+class TestGenerationPipelineLattice:
+    def test_positive_lattice_is_ai_evidence_but_never_a_watermark(self, tmp_clean_png: Path):
+        """The lattice may support an AI verdict; it may not enter the watermark list.
+
+        It accepts 24% of Adobe Firefly output and dies on a seven-pixel crop, so
+        reporting it beside C2PA watermark assertions would misrepresent both. The
+        watermark assertion is checked by absence, because that is the failure that
+        actually shipped.
+        """
         with (
             patch("remove_ai_watermarks.identify._invisible_watermark", return_value=None),
-            patch("remove_ai_watermarks.identify._synthid_pixel_watermark", return_value=True),
+            patch("remove_ai_watermarks.identify._pipeline_lattice", return_value=True),
             patch("remove_ai_watermarks.identify._trustmark", return_value=None),
         ):
             report = identify(tmp_clean_png, check_visible=False, check_invisible=True)
 
         assert report.is_ai_generated is True
-        assert report.confidence == "high"
-        assert any(signal.name == "synthid_pixel" for signal in report.signals)
-        assert any("positive-only" in caveat for caveat in report.caveats)
+        assert any(signal.name == "pipeline_lattice" for signal in report.signals)
+        assert not any("synthid" in watermark.lower() for watermark in report.watermarks)
+        assert not any("watermark" in watermark.lower() for watermark in report.watermarks)
+        assert any("not a watermark" in caveat for caveat in report.caveats)
 
-    def test_negative_pixel_carrier_does_not_claim_clean(self, tmp_clean_png: Path):
+    def test_negative_lattice_does_not_claim_clean(self, tmp_clean_png: Path):
         with (
             patch("remove_ai_watermarks.identify._invisible_watermark", return_value=None),
-            patch("remove_ai_watermarks.identify._synthid_pixel_watermark", return_value=False),
+            patch("remove_ai_watermarks.identify._pipeline_lattice", return_value=False),
             patch("remove_ai_watermarks.identify._trustmark", return_value=None),
         ):
             report = identify(tmp_clean_png, check_visible=False, check_invisible=True)
 
         assert report.is_ai_generated is None
-        assert not any(signal.name == "synthid_pixel" for signal in report.signals)
+        assert not any(signal.name == "pipeline_lattice" for signal in report.signals)
 
 
 @pytest.mark.skipif(not SAMPLES_DIR.exists(), reason="data/fixtures/provenance not present")

@@ -18,6 +18,7 @@ import importlib
 import json
 import logging
 import tempfile
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,10 @@ OpenAISynthIDStatus = Literal["detected", "not_detected"]
 DETECTOR_ID = "openai-content-provenance-synthid-v1"
 INSTALL_HINT = "install the verification extra: uv add 'remove-ai-watermarks[verify]'"
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+REQUEST_TIMEOUT_SECONDS = 120.0
+# One acknowledgement authorizes one upload. The SDK otherwise retries some
+# failures by default, which can transmit the same media more than once.
+MAX_AUTOMATIC_RETRIES = 0
 _FORMAT_DETAILS = {
     "JPEG": ("image/jpeg", ".jpg"),
     "PNG": ("image/png", ".png"),
@@ -48,6 +53,10 @@ class OpenAISynthIDDetection:
     detector: str = DETECTOR_ID
     ai_metadata_stripped: bool = True
     pixels_preserved: bool = True
+    signal_family: str = "synthid"
+    provider_scope: str = "openai"
+    backend: str = "official-openai-api"
+    metadata_used_for_verdict: bool = False
 
     @property
     def detected(self) -> bool:
@@ -64,7 +73,32 @@ class OpenAISynthIDDetection:
             "detector": self.detector,
             "ai_metadata_stripped": self.ai_metadata_stripped,
             "pixels_preserved": self.pixels_preserved,
+            "signal_family": self.signal_family,
+            "provider_scope": self.provider_scope,
+            "backend": self.backend,
+            "metadata_used_for_verdict": self.metadata_used_for_verdict,
         }
+
+
+class OpenAIProvenanceError(RuntimeError):
+    """An official verification failure, with retry and support context."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        request_id: str | None = None,
+        retry_after: str | None = None,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.request_id = request_id
+        self.retry_after = retry_after
+        self.retryable = retryable
 
 
 def is_available() -> bool:
@@ -116,16 +150,22 @@ def _optional_string(entry: Mapping[str, Any], field: str) -> str | None:
 
 def _parse_synthid_result(payload: Mapping[str, Any]) -> OpenAISynthIDDetection:
     """Read exactly one SynthID entry and deliberately ignore C2PA entries."""
+    if payload.get("object") != "content_provenance_check":
+        raise RuntimeError("OpenAI Content Provenance response has an unexpected 'object' field")
     raw_results = payload.get("results")
     if not isinstance(raw_results, list):
         raise RuntimeError("OpenAI Content Provenance response has no results list")
     results = cast("list[Any]", raw_results)
     synthid_entries: list[Mapping[str, Any]] = []
     for raw_entry in results:
-        if isinstance(raw_entry, Mapping):
-            entry = cast("Mapping[str, Any]", raw_entry)
-            if entry.get("type") == "synthid":
-                synthid_entries.append(entry)
+        if not isinstance(raw_entry, Mapping):
+            raise RuntimeError("OpenAI Content Provenance response has an invalid result entry")
+        entry = cast("Mapping[str, Any]", raw_entry)
+        result_type = entry.get("type")
+        if not isinstance(result_type, str):
+            raise RuntimeError("OpenAI Content Provenance response has a result without a valid type")
+        if result_type == "synthid":
+            synthid_entries.append(entry)
     if len(synthid_entries) != 1:
         raise RuntimeError(f"OpenAI Content Provenance returned {len(synthid_entries)} SynthID results; expected one")
 
@@ -148,9 +188,12 @@ def _default_client() -> Any:
     if not is_available():
         raise RuntimeError(f"OpenAI SynthID verification needs the OpenAI SDK; {INSTALL_HINT}")
     openai_module = importlib.import_module("openai")
-    client_factory = cast("Callable[[], Any]", openai_module.OpenAI)
+    client_factory = cast("Callable[..., Any]", openai_module.OpenAI)
     try:
-        client = client_factory()
+        client = client_factory(
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            max_retries=MAX_AUTOMATIC_RETRIES,
+        )
     except Exception as exc:
         raise RuntimeError(f"could not initialize the OpenAI client: {exc}") from exc
     if not hasattr(client, "content_provenance_checks"):
@@ -158,17 +201,74 @@ def _default_client() -> Any:
     return client
 
 
-def _request_error(exc: Exception) -> RuntimeError:
-    status_code = getattr(exc, "status_code", None)
-    if status_code == 400:
+def _string_attribute(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _response_header(exc: Exception, name: str) -> str | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        return _string_attribute(headers.get(name))
+    except (AttributeError, TypeError):
+        return None
+
+
+def _request_error(exc: Exception) -> OpenAIProvenanceError:
+    raw_status_code = getattr(exc, "status_code", None)
+    status_code = (
+        raw_status_code if isinstance(raw_status_code, int) and not isinstance(raw_status_code, bool) else None
+    )
+    error_code = _string_attribute(getattr(exc, "code", None))
+    if error_code is None:
+        body = getattr(exc, "body", None)
+        # The SDK types the exception body as Any, so narrowing it leaves a
+        # Mapping with unknown parameters. The same cast the module already uses
+        # for response payloads keeps the gate clean here.
+        if isinstance(body, Mapping):
+            error_code = _string_attribute(cast("Mapping[str, Any]", body).get("code"))
+    request_id = _string_attribute(getattr(exc, "request_id", None)) or _response_header(exc, "x-request-id")
+    retry_after = _response_header(exc, "retry-after")
+    error_name = type(exc).__name__
+    if error_name == "APITimeoutError":
+        detail = "the OpenAI Content Provenance request timed out"
+    elif error_name == "APIConnectionError":
+        detail = "the OpenAI Content Provenance API could not be reached"
+    elif status_code == 400:
         detail = "OpenAI rejected the image as malformed, unsupported, or blocked"
+    elif status_code == 401:
+        detail = "OpenAI Content Provenance authentication failed"
+    elif status_code == 403:
+        detail = "the OpenAI project is not permitted to use Content Provenance"
     elif status_code == 404:
         detail = "the OpenAI organization does not have Content Provenance API access"
     elif status_code == 429:
         detail = "the OpenAI Content Provenance API rate limit was exceeded"
+    elif status_code is not None and status_code >= 500:
+        detail = "the OpenAI Content Provenance API returned a temporary server error"
     else:
         detail = f"OpenAI Content Provenance request failed: {exc}"
-    return RuntimeError(detail)
+    if retry_after is not None:
+        detail += f"; Retry-After: {retry_after}"
+    if error_code is not None:
+        detail += f"; error code: {error_code}"
+    if request_id is not None:
+        detail += f"; request id: {request_id}"
+    retryable = (
+        error_name in ("APITimeoutError", "APIConnectionError")
+        or status_code == 429
+        or (status_code is not None and status_code >= 500)
+    )
+    return OpenAIProvenanceError(
+        detail,
+        status_code=status_code,
+        error_code=error_code,
+        request_id=request_id,
+        retry_after=retry_after,
+        retryable=retryable,
+    )
 
 
 def verify_openai_synthid(
@@ -215,18 +315,37 @@ def verify_openai_synthid(
             "filename": sanitized.name,
             "media_type": media_type,
             "bytes": upload_bytes,
-            "pixel_sha256": source_fingerprint,
+            "automatic_retries": MAX_AUTOMATIC_RETRIES,
+            "timeout_seconds": REQUEST_TIMEOUT_SECONDS,
         }
         log.info("OpenAI Content Provenance request: %s", json.dumps(request_context, sort_keys=True))
+        started_at = time.monotonic()
         try:
             with stripped.open("rb") as upload:
                 response = api_client.content_provenance_checks.create(
                     file=(sanitized.name, upload, media_type),
+                    timeout=REQUEST_TIMEOUT_SECONDS,
                 )
         except Exception as exc:
-            log.exception("OpenAI Content Provenance request failed: %s", json.dumps(request_context, sort_keys=True))
+            failure_context = {
+                **request_context,
+                "duration_ms": round((time.monotonic() - started_at) * 1000),
+                "error_code": _string_attribute(getattr(exc, "code", None)),
+                "request_id": _string_attribute(getattr(exc, "request_id", None))
+                or _response_header(exc, "x-request-id"),
+                "status_code": getattr(exc, "status_code", None),
+            }
+            log.exception(
+                "OpenAI Content Provenance request failed: %s",
+                json.dumps(failure_context, default=str, sort_keys=True),
+            )
             raise _request_error(exc) from exc
 
         payload = _response_mapping(response)
-        log.info("OpenAI Content Provenance response: %s", json.dumps(payload, default=str, sort_keys=True))
+        response_context = {
+            "duration_ms": round((time.monotonic() - started_at) * 1000),
+            "payload": payload,
+            "request_id": _string_attribute(getattr(response, "_request_id", None)),
+        }
+        log.info("OpenAI Content Provenance response: %s", json.dumps(response_context, default=str, sort_keys=True))
         return _parse_synthid_result(payload)

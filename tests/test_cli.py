@@ -742,6 +742,7 @@ class TestDetectSynthIDCommand:
         assert result.exit_code == 0
         assert "calibrated image sizes" in result.output
         assert "--register-scale" in result.output
+        assert "--fixed-period" in result.output
 
     def test_unsupported_geometry_is_machine_readable(self, runner, tmp_clean_png):
         result = runner.invoke(main, ["detect-synthid", str(tmp_clean_png), "--json"])
@@ -782,7 +783,7 @@ class TestDetectSynthIDCommand:
         )
 
         assert result.exit_code == 0, result.output
-        assert "Bounded spatial-scale registration was enabled" in result.output
+        assert "Bounded spatial-scale registration was explicitly enabled" in result.output
 
 
 class TestVerifyOpenAISynthIDCommand:

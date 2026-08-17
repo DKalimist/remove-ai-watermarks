@@ -40,6 +40,7 @@ __all__ = [
     "BatchSummary",
     "InvisibleOptions",
     "MetadataStripIncomplete",
+    "OpenAIProvenanceError",
     "OpenAISynthIDDetection",
     "RemoveAllResult",
     "SynthIDDetection",
@@ -70,7 +71,11 @@ if TYPE_CHECKING:
         remove_visible,
         visible_provenance,
     )
-    from remove_ai_watermarks.openai_provenance import OpenAISynthIDDetection, verify_openai_synthid
+    from remove_ai_watermarks.openai_provenance import (
+        OpenAIProvenanceError,
+        OpenAISynthIDDetection,
+        verify_openai_synthid,
+    )
     from remove_ai_watermarks.synthid_detector import SynthIDDetection, detect_synthid
     from remove_ai_watermarks.video import (
         identify_video,
@@ -115,7 +120,7 @@ def __getattr__(name: str) -> object:
         from remove_ai_watermarks import synthid_detector
 
         return getattr(synthid_detector, name)
-    if name in ("OpenAISynthIDDetection", "verify_openai_synthid"):
+    if name in ("OpenAIProvenanceError", "OpenAISynthIDDetection", "verify_openai_synthid"):
         from remove_ai_watermarks import openai_provenance
 
         return getattr(openai_provenance, name)

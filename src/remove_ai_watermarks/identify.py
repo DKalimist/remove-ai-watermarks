@@ -114,10 +114,12 @@ _SYNTHID_CAVEAT = (
     "covers one measured carrier family in a calibrated image-size range; confirm other cases with "
     "the provider oracle."
 )
-_SYNTHID_PIXEL_CAVEAT = (
-    "The local SynthID pixel result is a positive-only match to one measured periodic carrier family "
-    "in a calibrated image-size range, not a proprietary payload decode. A negative or unsupported "
-    "result is not proof of absence."
+_PIPELINE_LATTICE_CAVEAT = (
+    "EXPERIMENTAL. Signed provenance is the primary route for SynthID; this pixel result is not a "
+    "watermark at all but a generation-pipeline lattice: it is destroyed by a "
+    "crop of seven pixels, while the published SynthID evaluation survives aggressive crop and resize. "
+    "It accepted 29 of 223 images from other generators, 24% of Adobe Firefly, so it does not identify "
+    "the provider. A negative or unsupported result is not proof of absence."
 )
 _IPTC_ONLY_CAVEAT = "The IPTC 'Made with AI' tag flags AI provenance but does not identify the specific platform."
 _INVISIBLE_WM_CAVEAT = (
@@ -956,8 +958,14 @@ def _trustmark(image_path: Path) -> str | None:
     return detect_trustmark(image_path)
 
 
-def _synthid_pixel_watermark(image_path: Path, decode: _SharedDecode) -> bool:
-    """Whether the supported positive-only SynthID carrier is detected."""
+def _pipeline_lattice(image_path: Path, decode: _SharedDecode) -> bool:
+    """Whether the supported generation-pipeline lattice is detected.
+
+    Named for what it measures. The underlying expert is still called a SynthID
+    detector in its own module, but its statistic is a lattice anchored at the
+    image origin that a seven-pixel crop removes, so nothing here may present it
+    as a watermark.
+    """
     from remove_ai_watermarks.synthid_detector import detect_synthid, is_available
 
     if not is_available() or (image := decode.get()) is None:
@@ -1309,16 +1317,17 @@ def _identify_from_evidence(
         if platform is None:
             platform = f"{scheme} (open DWT-DCT watermark)"
 
-    # ── Positive-only SynthID periodic carrier ──────────────────────
-    # This is deliberately separate from C2PA provenance. It survives lossless
-    # metadata stripping, but covers only one carrier family and a calibrated
-    # image-size range.
-    if check_invisible and pixel_path is not None and _synthid_pixel_watermark(pixel_path, decode):
-        signals.append(Signal("synthid_pixel", "calibrated periodic carrier", "high"))
-        watermarks.append("SynthID periodic pixel carrier (calibrated image size)")
-        caveats.append(_SYNTHID_PIXEL_CAVEAT)
+    # ── Generation-pipeline lattice, experimental ───────────────────
+    # Signed provenance above is the primary SynthID route; this is a secondary
+    # pixel observation and is kept out of the watermark inventory on purpose. This reads a periodic
+    # lattice anchored at the image origin, which identifies the pipeline that
+    # produced the pixels; it is not SynthID and not any watermark, so listing
+    # it beside C2PA watermark assertions would misrepresent both.
+    if check_invisible and pixel_path is not None and _pipeline_lattice(pixel_path, decode):
+        signals.append(Signal("pipeline_lattice", "generation-pipeline lattice (experimental)", "medium"))
+        caveats.append(_PIPELINE_LATTICE_CAVEAT)
         if platform is None:
-            platform = "SynthID carrier detected (provider not attributed locally)"
+            platform = "generation-pipeline lattice detected (provider not attributed locally)"
 
     # ── Adobe TrustMark invisible watermark (open decoder, no key) ───
     # The watermark behind Adobe Durable Content Credentials. Decoded locally,
@@ -1331,7 +1340,8 @@ def _identify_from_evidence(
             platform = "Adobe (TrustMark / Content Credentials)"
 
     # ── Verdict so far (metadata + embedded watermark) ──────────────
-    invisible_wm = any(s.name in {"invisible_watermark", "synthid_pixel"} for s in signals)
+    invisible_wm = any(s.name == "invisible_watermark" for s in signals)
+    pipeline_lattice = any(s.name == "pipeline_lattice" for s in signals)
     exif_gen = any(s.name == "exif_generator" for s in signals)
     xai_sig = any(s.name == "xai_signature" for s in signals)
     ai_from_metadata = bool(
@@ -1341,6 +1351,7 @@ def _identify_from_evidence(
         or aigc
         or local_keys
         or invisible_wm
+        or pipeline_lattice
         or exif_gen
         or xai_sig
     )

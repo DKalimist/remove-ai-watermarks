@@ -61,7 +61,7 @@ def score_pixels(pixels: NDArray[np.uint8]) -> list[ExpertScore]:
     if pixels.ndim != 3 or pixels.shape[2] != 3 or pixels.dtype != np.uint8:
         raise ValueError("pixels must be an RGB uint8 array")
     bgr_pixels = np.ascontiguousarray(pixels[:, :, ::-1])
-    native = synthid_detector.detect_synthid("decoded-image", image=bgr_pixels)
+    native = synthid_detector.detect_synthid("decoded-image", image=bgr_pixels, register_scale=False)
     registered = synthid_detector.detect_synthid("decoded-image", image=bgr_pixels, register_scale=True)
     fixed = _observation(FIXED_EXPERT_NAME, False, None)
     large = _observation(LARGE_EXPERT_NAME, False, None)
