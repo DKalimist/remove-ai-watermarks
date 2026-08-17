@@ -585,21 +585,32 @@ codecs, video, or future epochs. The evidence and gates are documented in
 
 ### 3.2 How our tool detects the supported carrier
 
-`remove-ai-watermarks detect-synthid image.png` folds the image residual modulo
-16x16 and compares it with a frozen float64 template. It evaluates only native
-input, without resize. Exact-multiple dimensions retain the original folding
-path; non-divisible dimensions use count-correct modulo folding. The model and
+The heading is kept because README, `cli.md` and `python-api.md` link to this
+anchor, but the name is inherited and inaccurate. What the local experts read
+is a periodic lattice anchored at the image origin, measured on 2026-08-16 to
+vanish under a seven-pixel crop that the published SynthID evaluation survives
+at 99.97% TPR. Everything in this section describes that pipeline signature,
+not watermark recovery; the measurement is in the empirical log of
+[`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
+
+`remove-ai-watermarks detect-synthid image.png --fixed-period` exposes the
+legacy fixed-v2 diagnostic. It folds the image residual modulo 16x16 and
+compares it with a frozen float64 template. It evaluates only native input,
+without resize. Exact-multiple dimensions retain the original folding path;
+non-divisible dimensions use count-correct modulo folding. The model and
 threshold remain frozen from the 2048x2048 experiment. Through 10 megapixels,
 the fixed threshold
 accepted none of 5,000 public COCO views balanced across every observed target
 geometry. A separate 5,000-view challenge used 256 generated geometries from one
 through 18 megapixels and covered every pair of width/height remainders modulo
-16; it also produced no accepted view. Fixed-branch support is therefore the
-challenged interval of 1,000,000 through 10,000,000 decoded pixels rather than
-an enumerated width-by-height registry. The original 2048x2048 scores remain
-exactly unchanged.
+16; it also produced no accepted view. Later fresh-source challenges invalidated
+that precision claim: fixed-v2 accepted 5/211 supported controls in one Open
+Images cohort, and a proposed `0.28` threshold still accepted 1/213 in the
+second. The branch is therefore diagnostic only and is never unioned into the
+production positive route. The original 2048x2048 scores remain exactly
+unchanged.
 
-Above 10,000,000 through 18,000,000 decoded pixels, the native default selects
+Above 10,000,000 through 18,000,000 decoded pixels, the production default selects
 the separate `synthid-periodic-tile-large-v1` branch when both sides are at
 least 2,048 pixels. It scores every phase-aligned 2,048-square window without
 resizing. Every window must retain the combined template, Red-minus-Green, and
@@ -646,15 +657,19 @@ less conservative per-period thresholds accepted five final controls. The
 runtime therefore detects arbitrary decoded dimensions only when the carrier
 retains its measured 16-pixel scale.
 
-`remove-ai-watermarks detect-synthid image.png --register-scale` opts into the
-separately calibrated scale-registered detector. It samples the 30 strongest
+Through 10,000,000 decoded pixels, `remove-ai-watermarks detect-synthid
+image.png` selects the registered-v3 detector by default. `--register-scale`
+forces this branch even where the router would otherwise select large-v1. The
+registered expert samples the 30 strongest
 template harmonics over fractional periods, reconstructs the three strongest
 canonical candidates, and combines full-frame correlation with quadrant and
 three-level scale-space consistency. A positive result additionally requires
 the canonical winner to be the strongest spectral candidate, a calibrated
 threshold for its recovered period, and agreement in two independent
-high-frequency template bands. The reported score is the minimum normalized
-margin across these requirements; its threshold is `1.0`.
+high-frequency template bands. Registered-v3 then confirms base crossings on
+disjoint patch groups using origin-corrected harmonic phase, cyclic amplitude,
+and a held-out unknown-codeword statistic. The reported score preserves the
+base normalized margin only after confirmation; its threshold is `1.0`.
 
 The final rule retained 229 of 355 source-disjoint transformed positives and
 accepted none of 499 previously untouched Open Images controls. It retained
@@ -662,8 +677,9 @@ accepted none of 499 previously untouched Open Images controls. It retained
 A separate period-8 rescue was rejected because symmetric 0.5x control resizing
 reproduced the same lattice and fully overlapped the positive feature range.
 The measured input range is 250,000 through 10,000,000 decoded pixels.
-Both dimensions must also be at least 64 pixels so every canonical quadrant can
-retain one 16-by-16 carrier tile.
+Both dimensions must also be at least 256 pixels because the frozen positive
+confirmation requires complete disjoint 256-pixel patch groups. Narrower
+geometries need a separately calibrated adaptive-patch expert.
 
 A later frozen 1,000-image Open Images reserve preserved zero registered
 detections. Only 81 of those images were large enough for the fixed expert, and
@@ -673,12 +689,151 @@ is the validated decision and a fixed-only crossing remains ambiguous. The
 fixed expert is retained as a separately scoped carrier diagnostic, not as an
 independent recall addition to registered mode.
 
-The research router in `scripts/synthid_routed_expert_bank.py` makes this policy
-explicit and always abstains on fixed-only evidence. It records fixed,
-registered, and large observations separately: the registered threshold is the
-positive route in its measured scale-search range, while the large threshold is
-the positive route in its disjoint native large-image range. It never claims
-absence because encoder-version coverage remains incomplete.
+Registered-v2 later accepted 4/2,997 supported controls in a source-fresh Open
+Images test cohort. The frozen v3 confirmation rejected all four while retaining
+147/148 base-accepted source-diverse positives and all 359 base-accepted views
+in a dense 0.65-1.50 scale matrix. Without changing the rule, v3 then accepted
+0/2,996 controls from a second nonoverlapping Open Images cohort and 0/2,366
+supported controls from a 3,000-image COCO second-family challenge. The two Open
+Images cohorts give a one-sided 95% zero-error false-positive upper bound of
+about 0.050%. These results qualify a precision-first positive route, not an
+absence verdict; the v2 sensitivity benchmark and scale-0.5 exclusion remain.
+
+Those control rates are photographic. On 223 corpus images whose C2PA names a
+non-Google generator, the unchanged production entry point accepted 29, a rate
+of `0.130`, with `0.241` on Adobe Firefly and a highest foreign score of `3.01`
+against the `1.0` threshold. Every acceptance came from registered-v3. The
+lattice this branch reads is therefore shared across generation pipelines, and
+the photographic upper bound above does not describe the rate a user meets on
+AI-generated input. The branch is also phase-locked to the image origin: a
+two-pixel diagonal crop killed all 28 in-geometry foreign detections and all 8
+detected Google provenance positives, with the signal recovering only at
+offsets that are multiples of four. A mark that survived cropping would not do
+that; the route detects pipeline lattice on ordinary sizes as well as large
+ones.
+
+An exact runtime-parity check subsequently applied the recorded transform to
+each of the 226 source-diverse assignments before invoking registered-v3. Two
+half-scale outputs became too small for the research confirmation grid; 224
+were scored. Registered-v3 detected 147/224 overall. All 40 supported 0.5x
+views missed, while the measured 0.65x-1.5x range detected 147/184 (79.9%). The
+unchanged registered-v2 base accepted 148 of those 184; v3 confirmation removed
+only one true base crossing. The remaining sensitivity loss is therefore
+period selection, amplitude, or high-band failure after resampling, not an
+overly strict confirmation gate.
+
+A preregistered same-image-null follow-up compares the selected carrier on the
+two patch checkerboards with 16 neighboring periods from plus or minus 0.35 to
+2.0 pixels. On two combined Open Images development cohorts, a near-threshold
+base floor of 0.8, the existing frozen confirmation, and minimum joint
+coherence excess `0.05695968150082637` rescued 7 of the 36 sub-threshold
+0.65x-1.5x views. The frozen rule accepted none of the first 3,000 COCO
+controls. It remains research-only until the untouched final control partition
+and new positive parents pass unchanged. The final 2,000 COCO files contained
+1,598 registered-supported images and seven near-threshold candidates. Four
+candidates could not form the required two 256-pixel patch groups; the three
+scored candidates had same-image excess at most zero. The frozen recovery rule
+therefore accepted 0/1,598, as did registered-v3 itself. The negative-side gate
+passed, but the lack of unseen positive parents still keeps the rescue outside
+runtime.
+
+Same-image contrast also failed to rescue spatial/spectral period mismatches.
+Across the two 3,000-file Open Images cohorts, 469 controls passed the
+preregistered mismatch prefilters and 212 passed frozen split confirmation.
+Their maximum joint excess, `0.1762448251`, exceeded the `0.1464860382` maximum
+of the five eligible transformed positive mismatches. The requirement that the
+canonical and spectral period winners agree remains part of registered-v3.
+
+A later content-adaptive research branch uses the registered tile only as a
+synchronization basis. It standardizes every patch against all cyclic tile
+shifts, chooses one phase on a checkerboard of selection patches, and confirms
+the same phase on the disjoint checkerboard. A frozen joint standardized score
+of `2.5`, combined with matching periods, the existing confirmation, both base
+gate margins at least `0.45`, and one margin at least `1.0`, recovered 5 of 18
+scored amplitude/high-band failures. It accepted none of 88 first-cohort gate
+failures and none of 334 previously scored control candidates, but those are
+development results. Its separately started Picsum feature-holdout then
+accepted 0/350 decoded-pixel-unique controls unchanged. Only two controls
+reached the mechanism pre-gates and their maximum joint patch-shift score was
+`0.7029283` against `2.5`. The branch remains research-only pending unseen
+positive parents. That check then failed: 21 resized views at 0.65, 0.70, and
+0.75 from seven separate official pixel-positive large Gemini parents produced
+0/21 registered-v3 detections and 0/21 patch-phase rescues. Their surviving
+amplitude but inverted or weak RGB high-band response points to a different
+carrier epoch or representation. The patch branch is not promoted; the next
+test registers the separately measured large-v1 opponent-color signal.
+
+The first opponent-color registration experiment then recovered 21/21 of
+those views and selected the exact transformed period every time. It searches
+7.5-14.5 pixels in the Red-minus-Green and Blue-minus-Yellow spectrum, then
+requires fixed RGB, Red-minus-Green spatial, and Blue-minus-Yellow spatial
+scores of at least `0.16`, `0.60`, and `0.55`. The same frozen candidate
+accepted 0/21 symmetrically resized views from seven large Open Images
+controls. The frozen candidate then accepted 0/350 decoded-pixel-unique Picsum
+controls with a maximum decision margin of `0.7778322`.
+
+The unrestricted branch was not production-safe. It accepted 605/2,997 and
+587/2,996 controls from two wider Open Images cohorts; almost every crossing
+selected the period-8 or period-12.8 codec lattice. It also accepted one of
+3,964 COCO controls at period 10, below one megapixel, and 28/3,772
+non-Google/non-OpenAI Spaces controls, all at period 8 or 12.8. Lossy
+re-encoding destroyed the measured positive route: raw lossless resize retained
+21/21 views at scales 0.5, 0.625, and 0.75, while JPEG-95, JPEG-85, and WebP-95
+retained 0/63.
+
+Those failures defined a narrower precision-first expert before a new control
+holdout: 1-10 megapixels, both sides at least 768 pixels, and a selected period
+from 8.1 through 12.0. It keeps the original three score thresholds and does
+not require the strongest spectral alias to equal the spatially reranked
+period. The latter restriction was removed after a public-API test showed that
+it reduced the 0.55x cohort from 7/7 to 1/7 while the geometry gate already
+excluded its only reserve control crossing. The final rule then accepted
+0/1,000 untouched Picsum controls, with a maximum unrestricted decision margin
+of `0.7953734`, and the production API detected 42/42 lossless views at scales
+0.55 through 0.75 from the seven official-positive parents. It now ships as
+`synthid-periodic-tile-opponent-registered-v1` after registered-v3 abstains.
+
+A later period-8 codec-confound experiment extended that frozen expert without
+mistaking the JPEG grid for a watermark. Half-scale lossless views retained 7/7
+official positives at period 8, but ordinary JPEG controls produced the same
+large template correlation. Their decoded opponent-color edge geometry was
+different: every positive had both the Red-Green and Blue-Yellow native
+8-pixel edge ratio at or below `1.05`. The threshold was selected against 600
+development codec crossings, then rejected all 582 crossings in the held-out
+Open Images cohort, all 601 in the feature-unseen frozen reserve, and all seven
+in the heterogeneous Spaces challenge. Separately, 350 controls passed through
+the same lossless 0.5x resize had no base carrier crossing. The runtime now
+accepts periods 7.9-12.0 and applies this pixel-only veto through period 8.1.
+The production API consequently detects 49/49 measured lossless views at scales
+0.5-0.75 from the seven official-positive parents.
+
+The same work did not recover lossy retranscodes. JPEG 4:2:0 creates a strong
+inverted period-8 template in positives and natural controls alike. A
+matched-transform 512-feature codec-residual discriminant accepted up to
+86/525 holdout controls and did not generalize across positive parents. Eighty
+block-DCT coherence variants also failed the precision-first gate: the best
+zero-holdout-error statistic retained only 2/21 JPEG views. These are rejected
+hypotheses, not hidden fallback branches.
+
+The wider provider challenge produced a useful but non-attributive observation:
+the unrestricted score accepted 95/7,254 OpenAI files with an explicit SynthID
+provenance assertion, all at periods 10.70-10.80. It also accepted 4/287 OpenAI
+lineage files without that assertion, including three in the production period
+band. Missing assertion is not an oracle-negative watermark label, and the
+feature does not identify a provider. All 95 decoded rasters were unique and
+none overlapped the 94 hits from the earlier period-8 OpenAI candidate, so the
+union covered 189/7,259 asserted files. The new component was nevertheless
+codec-fragile: JPEG-95 and WebP-95 each reduced 95/95 native hits to 0/95.
+It may be a complementary carrier epoch or an associated export/resampling
+lattice; current labels cannot distinguish those causes. The local detector
+therefore remains provider-neutral; OpenAI-wide coverage still comes from the
+official pixel verifier.
+
+Runtime routing now applies these policies directly and always abstains on
+fixed-only evidence. The research bank in
+`scripts/synthid_routed_expert_bank.py` still records fixed, registered, and
+large observations separately for audits. No route claims absence because
+encoder-version coverage remains incomplete.
 
 Running the unchanged registered components directly above the declared range
 did not justify a larger ceiling. From 10 to 18 megapixels it accepted 1 of 37
@@ -931,10 +1086,12 @@ the aligned result. Together with the failed third-carrier fit, this exhausts
 the current linear native 16-by-16 Google hypothesis as two jointly controllable
 states. It still does not replace a matching-provider oracle result.
 
-This mode is not the default because the bounded search is materially slower;
-scale registration is explicit and `identify` keeps the native detector. The
-registered mode does not reliably detect 0.5x carriers and does not make the
-detector universal across crop, codecs, carrier states, or providers.
+The bounded search is materially slower, but registered-v3 is now the default
+ordinary-size route because fixed-v2 failed its fresh-source precision gate.
+Registered-v3 itself does not reliably detect 0.5x carriers. The later bounded
+opponent fallback covers the measured lossless 0.5x case with its codec-grid
+veto, but does not make the detector universal across crop, codecs, carrier
+states, or providers.
 
 A crop-specific follow-up tested cube-root LMS and OKLab projections, all six
 DTCWT orientations, and explicit FFT phase-lock metrics after period-and-phase
@@ -1185,8 +1342,9 @@ runtime until a new future holdout confirms it.
 A positive result identifies the carrier but does not attribute a provider.
 Provider identity still comes from provenance.
 
-The command reports `not_detected` separately from `unsupported`. Both are
-inconclusive outside the measured carrier family and calibrated image-size range.
+The command reports `indeterminate` separately from `unsupported`. Both are
+inconclusive: the first means no qualified local expert crossed its threshold,
+and the second means no local expert covers the geometry.
 
 The same modulo-folding method has been tested separately on a large,
 temporally split OpenAI-labeled corpus. Its strongest native-size template was
@@ -1543,6 +1701,23 @@ the signed OpenAI period-8 candidate accepted 4 of 417 unique positives and 1
 of 454 general-control groups, the OpenAI full-image noiseprint accepted 68 of
 417, and the Google runtime detector accepted 153 of 211 unique positives.
 
+A previously prepared image-level patch-bag hypothesis was then executed. It
+aggregates the mean, standard deviation, minimum, and maximum of nine learned
+embeddings from normalized high-pass luminance and opponent-color patches. The
+validation-selected model accepted 285 of 1,280 OpenAI rows above every
+validation control. Without changing its weights or threshold, it accepted 324
+of 1,364 development-test rows, 3 of 1,373 difficult controls, and 1 of 2,000
+COCO controls. The later August temporal challenge accepted 120 of 486 OpenAI
+rows, 8 of 504 general controls, and 5 of 33 same-provider rows without a
+watermark assertion. Assertion enrichment over that same-provider stratum was
+not independently significant (`p = 0.151`, one-sided exact test). Content
+grouping reduced those counts to 107 of 417, 4 of 453, and 4 of 30,
+respectively. A JPEG-95 conjunction retained only 1 of 486
+OpenAI rows and no controls. Its native hits did not overlap the frozen signed
+period-8 temporal hits. The model therefore reveals a complementary OpenAI
+export noiseprint, not a codec-robust or watermark-specific decoder, and does
+not enter runtime.
+
 ### 3.3 Official OpenAI pixel verification
 
 `remove-ai-watermarks verify-openai-synthid image.png
@@ -1558,6 +1733,11 @@ exactly one independent `type == "synthid"` response entry and ignores the C2PA
 entry. The source is not modified. Tests deliberately cover C2PA-only positive
 responses, pixel mutation, surviving metadata, malformed response shapes, and
 documented access and rate-limit failures.
+
+The default SDK client fixes a 120-second request timeout and disables
+automatic retries. One explicit acknowledgement therefore cannot silently
+transmit the sanitized raster more than once. Timeout and connection failures
+are errors, and request logs omit source paths and decoded-pixel hashes.
 
 A live 2026-08-14 web-verifier smoke used the same sanitization invariant. Two
 metadata-stripped, pixel-identical OpenAI images at 1536 by 1024 and 1024 by

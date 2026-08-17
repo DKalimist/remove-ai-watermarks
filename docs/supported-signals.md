@@ -79,7 +79,9 @@ The inspection and stripping code handles signals in these groups:
 - xAI and Grok EXIF signature fields;
 - Samsung AI editing markers;
 - Hugging Face job metadata;
-- one positive-only SynthID periodic pixel carrier in a calibrated image-size range;
+- one positive-only generation-pipeline pixel lattice in a calibrated image-size
+  range, experimental, which identifies the pipeline and not the SynthID
+  watermark; signed provenance remains the supported SynthID route;
 - open Stable Diffusion style DWT-DCT watermarks with the `detect` extra;
 - Adobe TrustMark with the `trustmark` extra.
 
@@ -127,32 +129,51 @@ The `controlnet`, `sdxl`, `qwen` and `default` values were removed. A retired na
 is rejected at parse time rather than remapped onto a surviving profile.
 
 Google does not publish the SynthID payload decoder. This project ships a
-positive-only detector for one measured periodic image-carrier family in a
+positive-only detector for one measured periodic image-lattice family in a
 calibrated image-size range, available through `detect-synthid`
 and the default pixel pass in `identify` when the `pixels` extra is installed.
-The unchanged fixed threshold accepted none of the public COCO views in both
-an observed-geometry challenge and a generated-geometry challenge covering all
-modulo-16 edge cases. Above 10 through 18 megapixels, the native default uses a
+That lattice is not the watermark. It is anchored at the image origin: a
+seven-pixel crop removes it from the large branch and a two-pixel crop removes
+it from registered-v3 (all 36 tested detections across foreign-generator and
+Google images), while the published SynthID evaluation survives aggressive crop
+and resize, so every control rate below describes a generation-pipeline
+signature and not watermark detection. Every rate quoted
+below was also measured on photographs; on 223 signed non-Google generator
+images the same runtime accepted 29, a rate of 13.0%. Sensitivity outside the
+calibration distribution was measured once, on 11 fresh 5632x3072 images from
+`gemini-3.1-flash-image`: 8 detected, 72.7%, one-sided 95% lower bound 43.6%.
+The same images cropped seven pixels off the tile grid returned 0 of 6.
+The default ordinary-size route uses registered-v3, including independent
+split-patch phase and codeword confirmation. It accepted none of 5,993
+supported controls across two nonoverlapping Open Images test cohorts and none
+of 2,366 supported controls in a second-family COCO challenge. A precision-first
+opponent-registered-v1 fallback covers 1 through 10 megapixels, sides of at
+least 768 pixels, and carrier periods 7.9 through 12.0. Period-8 candidates must
+also pass an opponent-color block-edge codec veto. It recovered 49/49 lossless
+0.5x-0.75x views from seven separate official positives. The veto rejected all
+1,790 measured period-8 codec crossings, 350 matched 0.5x controls had no base
+crossing, and the earlier period-band rule accepted 0/1,000 post-freeze
+controls. Above 10 through
+18 megapixels, the production router uses a
 separately challenged large branch over phase-aligned windows and opponent-color
 phase agreement; both sides must be at least 2,048 pixels. It retained all seven
 officially verified large Google pixel positives and accepted none of 2,637
 feature-unseen, decoded-pixel-unique natural controls. A smaller post-freeze
-Open Images acquisition also produced 0/41 detections. Arbitrary dimensions in
-the default calibrated ranges are accepted, but the input must retain the
-measured 16-pixel carrier scale. The large branch retained 0/7 official
-positives after either JPEG-95 or JPEG-90 re-encoding, so its native-size scope
-does not include lossy retranscodes. The
-opt-in `detect-synthid --register-scale` mode performs a slower bounded scale
-search over its separately measured 250,000-through-10,000,000-pixel range and
-requires both sides to be at least 64 pixels. Its measured positive scale range
-is approximately 0.65 through 1.5; 0.5x resizes are not reliably detected.
-`identify` does not enable that search. Neither detector attributes a provider
-locally.
+Open Images acquisition also produced 0/41 detections. Registered-v3 has a
+measured scale range of approximately 0.65 through 1.5; the narrower fallback
+adds the measured lossless 0.5x-0.75x range. The large branch retained 0/7
+official positives after either
+JPEG-95 or JPEG-90 re-encoding, and the opponent-registered fallback retained
+0/63 JPEG-95, JPEG-85, and WebP-95 views. Their scope does not include lossy
+retranscodes. `detect-synthid --fixed-period` exposes
+fixed-v2 only as a legacy diagnostic; its fresh-source false-positive rate
+disqualified it as a production positive route. No local production expert
+attributes a provider.
 
 The tool also recognizes presence from supported provenance: Google AI C2PA
 under Google's all-media watermark policy, and current OpenAI C2PA carrying an
 explicit `c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action
-does not assert SynthID. A pixel result of `not_detected` or `unsupported`
+does not assert SynthID. A local pixel result of `indeterminate` or `unsupported`
 remains inconclusive for other sizes, epochs, codecs, and payloads.
 
 The optional `verify-openai-synthid` command is a separate official remote

@@ -451,7 +451,7 @@ metadata extraction from verdict logic:
   both extractors reach the same answer. It did not, and the record path silently
   reported no SynthID for images the file path flagged.
 - `identify` preserves the path-based API and adds the optional registered
-  visible-mark, open invisible-watermark, and supported SynthID carrier
+  visible-mark, open invisible-watermark, and generation-pipeline lattice
   detectors after extraction.
 
 ### SynthID periodic carrier detector
@@ -468,17 +468,29 @@ ceiling does not require multiple three-channel float workspaces. The model hash
 is pinned by a test, and the unchanged operating threshold is
 `0.17357069773071196` through 10 megapixels.
 
-The direct API returns `detected`, `not_detected`, or `unsupported`; the last is
-distinct because no resize is performed. The fixed branch is selected from
-1,000,000 through 10,000,000 decoded pixels. The frozen threshold accepted
+That fixed threshold is not production-qualified. A later source-fresh
+Open Images test-split challenge produced 5 crossings among the 211 images in
+its supported geometry. A precision-first `0.28` replacement is frozen as a
+research candidate after retaining all 12 available source-diverse native
+positives and rejecting those five crossings. It then failed the second
+untouched holdout at 1/213, with score `0.322542963`. The replacement is
+rejected and fixed-v2 remains an explicit diagnostic only.
+
+The direct API returns `detected`, `indeterminate`, or `unsupported`. Passing
+`register_scale=False` selects fixed-v2 from 1,000,000 through 10,000,000
+decoded pixels as an explicit diagnostic. Its frozen threshold accepted
 none of 5,000 public COCO views balanced across every observed target geometry,
 and none of a separate 5,000-view challenge over 256 generated geometries
 covering every pair of modulo-16 edge remainders. The original 2048x2048
 verdicts and exact scores remain unchanged. Runtime matches do not attribute a
 provider. `identify` adds only positive matches as high-confidence
 evidence and never turns a local negative into a clean verdict.
+The result envelope also names the signal family, provider scope, backend,
+whether metadata contributed to the verdict, whether pixels were preserved,
+and an explicit reason for unsupported or indeterminate results. These fields
+are shared with the official OpenAI verifier's JSON boundary.
 
-The native default selects `synthid-periodic-tile-large-v1` above 10 through 18
+The production router selects `synthid-periodic-tile-large-v1` above 10 through 18
 megapixels when both dimensions are at least 2,048 pixels. It evaluates all
 phase-aligned 2,048-square windows and combines the minimum fixed-template,
 Red-minus-Green, and Blue-minus-Yellow spatial correlations with the most
@@ -532,7 +544,67 @@ final controls. Multiplying the canonical score by spectral-period confidence
 also accepted two. That baseline was rejected rather than shipped at its
 discovery threshold.
 
-The opt-in `register_scale=True` path is the later calibrated successor. It
+The research-only
+[`synthid_affine_lattice_probe.py`](../scripts/synthid_affine_lattice_probe.py)
+adds split-confirm synchronization. It estimates complex harmonic coherence on
+one checkerboard of patches, confirms the selected period on the other, and
+reports amplitude-aware confirmation, a locally content-whitened multichannel
+code match, and phase-preserving and cyclically registered template scores. A
+0.1-pixel grid recovered the expected
+12.8, 14.4, 17.6, and 19.2 periods in 20/20 transformed views from five official
+positive parents. A provisional conjunction accepted none of 800 corresponding
+views from 200 oracle-negative parents, none of 469 OpenAI-labeled rows, and
+three of 276 broad non-Google rows whose TC260 or Samsung provenance prevents
+treating them as clean oracle negatives. This probe is not runtime routing:
+positive diversity is still inadequate, period 8 remains rejected, and the
+amplitude stage currently handles isotropic scale at zero rotation only. Full
+protocol and caveats are in the detector research plan.
+
+The whitened match uses neighboring noncarrier bins to estimate complex
+Green/opponent-color covariance around every selected harmonic. It corrected a
+period-24 alias on one native official positive, giving the broad native search
+the correct period 16 on all five ordinary-size positives. It was retained only
+as a candidate reranker: its positive-to-negative margin was smaller than the
+existing spatial-template margin in both the native pilot and a locked 0.8
+resize challenge. Two of the three TC260/Samsung-provenance challenge crossings
+also matched the full whitened code more strongly than the weakest official
+large positive, so the pixel result identifies a compatible signal family, not
+a provider.
+
+The same probe also exposes a payload-agnostic H5 confirmation. It estimates a
+complex harmonic vector independently on the two checkerboards and measures
+their fixed relative-phase inner product; the codeword need not match the known
+template. Free cyclic-shift selection was rejected because natural phase aliases
+overlapped the controls. The fixed all-harmonic statistic separated five native
+official positives from 130 controls with margin `0.1619`, and five 0.8-resized
+views from 200 fresh-parent controls with margin `0.1541`; all seven large
+official positives also passed the observed gap. It remains research-only
+because these tests supplied the period, reuse one negative source family, and
+contain only 12 independent positive parents.
+
+The separate research-only
+[`synthid_cyclostationary_probe.py`](../scripts/synthid_cyclostationary_probe.py)
+measures full complex cross-channel spectral correlation at carrier shifts
+against neighboring-shift same-image nulls. It recognizes synthetic amplitude
+modulation and rejects both independent noise and a purely additive carrier.
+The real native pilot overlapped completely: five official-positive joint
+contrasts ranged from `-0.0027` to `0.0337`, while 130 controls reached `0.0593`.
+The cyclostationary branch is rejected rather than tuned on new frequency bands.
+
+The affine-lattice research CLI also supports symmetric in-memory JPEG and
+top-left crop challenges. At fixed native period 16, codec-specific
+phase-preserving template thresholds retained all five repeated positive views
+and accepted none of 80 locked controls at JPEG qualities 95, 90, and 80. The
+locked margins declined from `0.1054` to `0.0257`; whitened and unknown-codeword
+scores were rejected for lossy JPEG. A separate registered crop conjunction
+retained all five views and accepted none of 80 controls after both 5% and 10%
+top-left crops, with registered-template margins above `0.22`. These are
+research pilots, not runtime experts: the period was supplied, positive parents
+were reused, and only one codec implementation and one negative family were
+tested.
+
+The `register_scale=True` path is the calibrated ordinary-size production
+expert. It
 keeps the harmonic search, adds three-level scale-space consistency and quadrant
 agreement. Its calibrated decision requires the canonical winner to be the
 strongest spectral-period candidate, its three-way amplitude to cross the
@@ -556,11 +628,51 @@ accepted seven, so fixed and registered results cannot safely be unioned. In
 overlapping geometry the registered decision remains the validated path;
 fixed-only evidence is a diagnostic rather than a universal-cascade positive.
 
-The research-only router in `scripts/synthid_routed_expert_bank.py` encodes that
-precedence and always abstains on fixed-only evidence. Its three-observation
-schema keeps the fixed, registered, and large identities explicit. Registered
-and large crossings are positive routes only in their disjoint calibrated
-ranges; the bank never returns a clean-image verdict.
+A later source-fresh 3,000-image Open Images test-split challenge superseded the
+registered-v2 precision claim: it accepted 4 of 2,997 supported controls. The
+registered-v3 confirmation uses disjoint patch groups for phase, cyclic
+amplitude, and held-out-codeword evidence. It rejected all four crossings,
+retained 147 of 148 base-accepted source-diverse positives, and retained all 359
+base-accepted views in a dense 0.65-1.50 transform matrix over 12 independent
+parents. Frozen unchanged, it then accepted 0/2,996 controls from a second
+nonoverlapping Open Images cohort and 0/2,366 supported controls from a
+3,000-image COCO second-family challenge. Registered-v3 is now the default
+ordinary-size positive route. The exact gates, acquisition hashes, and rejected
+weak-signal rescue are recorded in the detector research plan.
+
+Every one of those control rates is photographic. Against 223 corpus images
+whose C2PA names a non-Google generator, the unchanged entry point accepted 29
+(`0.130`, Adobe Firefly `0.241`, highest foreign score `3.01`), all from
+registered-v3. The branch reads a lattice shared across generation pipelines,
+which is why `identify` reports it as the experimental `pipeline_lattice`
+signal and never as a watermark.
+
+The branch is also phase-locked to the image origin, exactly like the large
+expert. A two-pixel diagonal crop killed all 28 in-geometry foreign detections
+and all 8 detected Google provenance positives (maximum remaining scores
+`0.779` and `0.311` against the `1.0` threshold); the signal recovers only at
+offsets that are multiples of four. Registered-v3 therefore detects the same
+crop-destroyed generation-pipeline lattice as `large-v1`, on ordinary sizes.
+
+When registered-v3 abstains, opponent-registered-v1 searches the same frozen
+template in Red-minus-Green and Blue-minus-Yellow space. It reranks three
+separated scale candidates with fixed RGB and two spatial opponent-color gates,
+then accepts only periods 7.9-12.0 on 1-10 megapixel rasters whose sides are at
+least 768 pixels. Period-8 candidates additionally require Red-Green and
+Blue-Yellow 8-pixel edge ratios no greater than `1.05`; this vetoes the
+deterministic JPEG block lattice without using container metadata. The final
+rule recovered 49/49 lossless 0.5x-0.75x views from seven official-positive
+parents. It rejected all 1,790 measured period-8 codec crossings, while 350
+identically resized controls had no base crossing and the earlier period-band
+rule accepted 0/1,000 post-freeze Picsum controls. Period 12.8 remains excluded,
+and lossy JPEG/WebP views remain inconclusive.
+
+The runtime precedence is registered-v3, the bounded opponent fallback, then
+large-v1 above 10 megapixels. Passing
+`register_scale=False`, or the CLI's `--fixed-period`, selects the legacy fixed
+diagnostic explicitly. The research bank in
+`scripts/synthid_routed_expert_bank.py` keeps all three observations for audits.
+Neither runtime nor research routing returns a clean-image verdict.
 
 An unchanged registered challenge from 10 to 18 megapixels retained only 1 of
 37 Google candidates and zero of 89 non-Google controls. Twenty-eight positives
@@ -635,6 +747,17 @@ period-8 model retained 5 of 158 and zero controls, then 1 of 40 fresh OpenAI
 rows and 1 of 50 fresh controls. They neither explain the known oracle-positive
 miss nor justify runtime routing.
 
+An image-level patch-bag model over nine normalized high-pass patches was the
+strongest later local OpenAI classifier. It accepted 324/1,364 development-test
+OpenAI rows with 4/3,373 heterogeneous controls, then transferred to 120/486
+OpenAI rows, 8/504 general controls, and 5/33 same-provider non-assertion rows
+in the later temporal challenge. Assertion enrichment over the same-provider
+stratum was not independently significant (`p = 0.151`, one-sided exact test).
+JPEG-95 reduced the unchanged conjunction to
+1/486 positives and zero controls. The native temporal hits were complementary
+to the signed period-8 hits, but the same-provider rate and codec collapse
+identify another export noiseprint rather than a runtime SynthID expert.
+
 The separate OpenAI period-8 DTCWT component is persistent rather than tied to
 one short rollout: exact-generator asserted hits were 3/16, 46/365, and 26/200
 from May through July, with 75/581 overall versus 1/52 same-generator rows
@@ -655,12 +778,12 @@ development positives and finished at 0/50 positives, 0/199 controls, and AUC
 0.374. Neither branch is part of runtime routing; full split and oracle details
 are in the detector research plan.
 
-The separately measured geometry range remains 250,000 through 10,000,000
-decoded pixels with both sides at least 64 pixels. The default path and
-`identify` remain native-only and select either the fixed or large branch by
-geometry; scale registration stays opt-in. A 20-image real-corpus drift check was
-byte-identical after integration. The calibration history and caveats are in the
-linked detector research plan.
+The separately measured registered geometry range remains 250,000 through
+10,000,000 decoded pixels with both sides at least 256 pixels. The default path
+and `identify` use registered-v3, then the narrower opponent-registered-v1
+fallback in its 1-10 megapixel domain, and large-v1 above 10 megapixels. A
+20-image real-corpus drift check was byte-identical after the earlier v2 integration.
+The calibration history and caveats are in the linked detector research plan.
 
 ### Official OpenAI SynthID verifier
 
@@ -680,6 +803,19 @@ multipart file to `content_provenance_checks.create` and parses exactly one
 `type == "synthid"` result. The independent C2PA entry is never returned or
 used as fallback evidence. Missing, duplicate, or unknown SynthID outcomes are
 errors rather than negative detections.
+
+The default SDK client has a 120-second request timeout and zero automatic
+retries. One upload acknowledgement therefore authorizes at most one media
+transmission rather than inheriting the SDK's retry default. Request logs keep
+the endpoint, temporary basename, media type, byte count, timeout, retry policy,
+duration, HTTP status, error code, and request id when available, but omit the
+source path, image bytes, credentials, and decoded-pixel fingerprint.
+
+`OpenAIProvenanceError` preserves the status, API error code, request id,
+`Retry-After` value, and a transient-only `retryable` flag. The library does not
+automatically act on that flag: an explicit caller invocation is required for
+every additional upload. Transport and schema failures remain errors rather
+than becoming `not_detected` or a local detector result.
 
 The result remains provider-scoped and positive-evidence-only. `not_detected`
 does not mean human-created, and the official endpoint's published prohibition
