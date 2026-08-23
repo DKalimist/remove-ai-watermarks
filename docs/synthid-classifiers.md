@@ -71,7 +71,58 @@ Open, if this head is ever considered for a product cut: a graphics/CGI
 abstain. CLIP treats non-camera imagery as generation; that is the remaining
 error, not Gemini contamination.
 
+### Wild extras, not SynthID
+
+| Hypothesis | 2026-08-23 | Use |
+| --- | --- | --- |
+| Missing camera PRNU | Gray `gpt-image-2` highpass RMS 0.25 vs COCO 14.6 | Texture confound. A Wiener PRNU residual on *photographs* vs Model 1 errors is the real test |
+| JPEG ELA | COCO 3.13, s1 1.97, gray stamp 0.49 | Export history, leaks PNG vs JPEG, not a provider |
+| CFA / Bayer presence | Untested as a *detector* | Camera photos demosaic; many generators do not. Inverse of the Bayer remover arm |
+| Double-JPEG ghosts | Untested | ChatGPT download codec fingerprint, not a payload |
+| Perfect-circle / text-edge rate | Untested | Graphics abstain for Model 1, not Gemini-vs-OpenAI |
+
+None of these should be named a SynthID score.
+
+## External literature (surveyed 2026-08-23)
+
+AWPD / FSNet ([arXiv:2603.06723](https://arxiv.org/abs/2603.06723)) is
+the published "is there any invisible watermark" task. Leave-one-algorithm-out
+SynthID Acc 0.894 is *not* Model 1 and *not* a payload decoder. UniFreq's
+SynthID split is 2,000 Imagen-API AIGC crops at 256x256, no photographs,
+no Firefly, no OpenAI. A head trained that way can pass as watermark
+presence while actually reading generator/size texture, which is the L1
+failure mode.
+
+Model 1 remains AI-versus-camera on CLIP-L-ft. That is a published
+task, not a watermark task. Adjacent papers:
+
+| Source | Claim | Map to Model 1 |
+| --- | --- | --- |
+| Ojha, Li, Lee, [arXiv:2302.10174](https://arxiv.org/abs/2302.10174) (CVPR 2023, UnivFD) | A classifier trained to see "fake" treats unseen generators as the real sink. Frozen CLIP + nearest neighbor / linear probe generalizes better than a trained CNN | This is the architecture. We finetuned the last two CLIP-L vision blocks instead of freezing, and put Firefly and a locked Open Images fresh set in the gate |
+| Cozzolino et al., [arXiv:2312.00195](https://arxiv.org/abs/2312.00195) | CLIP linear probe, few shots from one generator, holds on DALL-E 3 / Midjourney / Firefly | Firefly is the cell we required. Their paper is why Firefly belongs in the test, not as a surprise |
+| Corvi et al., [arXiv:2304.06408](https://arxiv.org/abs/2304.06408) | Spectral peaks and mid-high power differences, GAN and diffusion | Generator fingerprint, not a payload. Explains why a Fourier codebook lights up Google *and* Open Images |
+| Zhong, Xu, Zou, [arXiv:2601.22778](https://arxiv.org/abs/2601.22778) (DCCT) | Self-supervised color-channel prediction under a Bayer mask; theoretical gap between photo CFA correlations and AIGC | The published "CFA as a camera vote". Untested here. Inverse of the Bayer remover arm |
+| Klier and Baier, DFRWS EU 2026 | AI noise is not predominantly additive. Standard PCE vs smartphone PRNU: FPR 61% Firefly Image 4, 100% ChatGPT 5. Center crop kills those false positives without hurting true camera matches | Do not call missing PRNU a SynthID score. If we ever add a Wiener residual, crop and a recorded PCE threshold come with it |
+| Popescu and Farid, IEEE Trans. Signal Process. 2005 | CFA interpolation leaves neighbor correlations; splicing breaks them | Classical forgery localization, not generation detection |
+| Wang, Wang, Zhang, Owens, Efros, [arXiv:1912.11035](https://arxiv.org/abs/1912.11035) (CVPR 2020, CNNDetect) | Classifier on ProGAN + JPEG/crop aug transfers to many CNNs | The "one generator is enough" claim. Ojha is the correction once diffusion exists |
+| Wang et al., DIRE, [arXiv:2303.09295](https://arxiv.org/abs/2303.09295) (ICCV 2023) | Reconstruction error under a frozen diffusion model | Open Model 1 sibling. Needs a GPU diffusion pass per image. Not a watermark |
+
+They do not substitute for `verify-openai-synthid`.
+
+Krawetz's Gemini-chat TPR critique is a verifier-quality claim, not a
+feature we can ship. [Lead Stories, 2026-07](https://leadstories.com/analysis/2026/07/google-gemini-synthid-detector-confuses-results-within-same-chat.html)
+documented Gemini repeating the first file's SynthID verdict inside a
+chat; Google said that was fixed 2026-07-16. The OpenAI provenance API is
+a different endpoint.
+
 ## Closed: provider names from pixels
+
+After the keyless mark hunt closed, the remaining ask was: given a file
+with no metadata, is this OpenAI, Gemini, or not AI, with almost no
+errors on camera photographs. That is this section. It is not a SynthID
+detector. Firefly, PixelBin, and other generators have to sit in the
+test, because a head that only sees OpenAI versus Gemini versus COCO
+will call Firefly a provider.
 
 Three-way `openai` / `google` / `other` on Model 1 embeddings fails the
 Firefly gate. CLIP-L-ft test accuracy 0.53; Firefly 35/31/18. CLIP-H 0.57;
@@ -128,9 +179,9 @@ PixelBin and HuggingFace jobs lean `google` (shared renderer lineage).
 FLUX, NovelAI, and Reve stay `no_ai`. Local probe:
 `uv run python .local-eval/synthid/prc-oklab-attack-2026-08-15/classify_openai_gemini.py image.png`.
 
-## Production `pipeline_lattice` (google-lineage renderer)
+## Research lattice expert (google-lineage renderer)
 
-Experimental signal in `identify`, never a watermark. Production
+Not a watermark and not in `identify`. `scripts/synthid_runtime/`
 `detect_synthid` re-check on 628 frozen holdouts, seed 20260822, threshold
 1.0.
 

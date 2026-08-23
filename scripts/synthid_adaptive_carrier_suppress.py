@@ -10,22 +10,24 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import click
 from PIL import Image
 from synthid_pixel_attack import load_rgb, measure  # pyright: ignore[reportUnknownVariableType]
 from synthid_research_manifest import artifact_sha256
-from synthid_tile_attack import subtract_tiled_template
-
-from remove_ai_watermarks.synthid_detector import (
+from synthid_runtime.synthid_detector import (
     TILE_THRESHOLD,
     _geometry_supported,  # pyright: ignore[reportPrivateUsage]
     _load_template,  # pyright: ignore[reportPrivateUsage]
     folded_template_score,
 )
+from synthid_tile_attack import subtract_tiled_template
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

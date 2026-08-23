@@ -12,52 +12,18 @@ path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
 independently when path-based pixel APIs must decode HEIC, HEIF, or AVIF. See
 the complete [feature-extra matrix](installation.md#feature-extras).
 
-## Detect the generation-pipeline lattice (experimental)
-
-Install `remove-ai-watermarks[pixels]`, then call the lazy top-level API:
+## Verify OpenAI SynthID
 
 ```python
 import remove_ai_watermarks as raiw
 
-result = raiw.detect_synthid("input.png")
-print(result.status)     # "detected" | "indeterminate" | "unsupported"
-print(result.score)      # float for a supported image size, otherwise None
-print(result.threshold)  # frozen operating point
-print(result.reason)     # support or non-detection reason, otherwise None
-
-# Force the legacy native-period diagnostic only when auditing that expert.
-fixed_diagnostic = raiw.detect_synthid("native-period.png", register_scale=False)
+result = raiw.verify_openai_synthid("input.png", acknowledge_upload=True)
+print(result.status)
 ```
 
-This is experimental and is not a watermark detector. Signed provenance through
-`identify` is the supported SynthID route. Its statistic is destroyed by a seven-pixel
-crop while the published SynthID evaluation survives aggressive crop and
-resize, so a positive identifies the generation pipeline. The result exposes
-`identifies_watermark` and `tile_aligned_crop_required` so a caller cannot
-reach the wrong conclusion from `status` alone. It is positive-only and covers
-one measured periodic lattice family
-in the [calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier).
-The default and `identify` use registered-v3 over 250,000 through 10,000,000
-decoded pixels, with both sides at least 256 pixels. An opponent-registered-v1
-fallback covers 1 through 10 megapixels, sides of at least 768 pixels, and
-periods 7.9 through 12.0; period-8 candidates also require the opponent-color
-block-edge codec veto. Large-v1 covers 10 through 18 megapixels. Each score
-uses a threshold of `1.0`; registered-v3 also requires independent split-patch
-confirmation. The fallback is qualified for measured lossless 0.5x-0.75x
-views, not lossy retranscodes.
-`register_scale=True` forces the registered-v3 cascade, including its bounded
-opponent fallback, while `False` explicitly selects the legacy native-period
-fixed-v2 diagnostic below the large-image boundary.
-`indeterminate` means only that the selected local model did not find its
-carrier; `unsupported` means no local expert covers the input geometry. Neither
-is proof that the image contains no SynthID watermark.
-Both local and official OpenAI JSON results expose `signal_family`,
+Official OpenAI JSON results expose `signal_family`,
 `provider_scope`, `backend`, `metadata_used_for_verdict`, and
-`pixels_preserved`; the local result adds `identifies_watermark` and
-`tile_aligned_crop_required`, so callers do not need to infer the evidence boundary from
-the detector name.
-
-Remote transport and response failures raise `OpenAIProvenanceError`. Its
+`pixels_preserved`. Remote transport and response failures raise `OpenAIProvenanceError`. Its
 `status_code`, `error_code`, `request_id`, `retry_after`, and `retryable`
 attributes let a caller implement bounded backoff or a circuit breaker without
 turning an API outage into a false `not_detected` result. One function call still
@@ -353,8 +319,7 @@ such as a thumbnail and perceptual hash; aggregate feature families do not.
 
 `identify_from_evidence` does not reopen the source file by default: it evaluates
 metadata only, and the pixel-backed checks remain in the path-based `identify`
-call: registered visible marks, open invisible-watermark decoders, and the
-experimental generation-pipeline lattice signal.
+call: registered visible marks and open invisible-watermark decoders.
 
 Pass `image_path` together with `check_visible` or `check_invisible` to add those
 pixel detectors on top of the SAME evidence. That is how a caller asking one file

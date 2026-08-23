@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import numpy as np
 
-from remove_ai_watermarks.synthid_detector import fold_residual_template, unit_tile
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from synthid_runtime.synthid_detector import fold_residual_template, unit_tile
 
 __all__ = ["cyclic_tile_correlations", "fold_residual_template", "unit_tile"]
 

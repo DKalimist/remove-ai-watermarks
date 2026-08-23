@@ -18,6 +18,7 @@ from typing import Literal
 import click
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from synthid_conformal_cascade import (  # noqa: E402
@@ -25,8 +26,7 @@ from synthid_conformal_cascade import (  # noqa: E402
     load_observation_records,
 )
 from synthid_research_manifest import artifact_sha256  # noqa: E402
-
-from remove_ai_watermarks import synthid_detector  # noqa: E402
+from synthid_runtime import synthid_detector  # noqa: E402
 
 log = logging.getLogger(__name__)
 

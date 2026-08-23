@@ -13,7 +13,6 @@ High-level API (lazy, so ``import remove_ai_watermarks`` stays cheap)::
     raiw.remove_video_metadata("in.mp4", "out.mp4")     # verified metadata strip
     raiw.remove_video_invisible("in.mp4", "out.mp4")    # oracle-certified SynthID removal
     raiw.remove_video_visible("in.mp4", "out.mp4")      # stable visible video-mark removal
-    raiw.detect_synthid("in.png")                       # -> SynthIDDetection
     raiw.verify_openai_synthid("in.png", acknowledge_upload=True)  # remote
 
 For a provenance verdict use the ``identify`` submodule::
@@ -43,9 +42,7 @@ __all__ = [
     "OpenAIProvenanceError",
     "OpenAISynthIDDetection",
     "RemoveAllResult",
-    "SynthIDDetection",
     "__version__",
-    "detect_synthid",
     "identify_video",
     "inspect_video_metadata",
     "remove_all",
@@ -76,7 +73,6 @@ if TYPE_CHECKING:
         OpenAISynthIDDetection,
         verify_openai_synthid,
     )
-    from remove_ai_watermarks.synthid_detector import SynthIDDetection, detect_synthid
     from remove_ai_watermarks.video import (
         identify_video,
         inspect_video_metadata,
@@ -116,10 +112,6 @@ def __getattr__(name: str) -> object:
         from remove_ai_watermarks import video
 
         return getattr(video, name)
-    if name in ("SynthIDDetection", "detect_synthid"):
-        from remove_ai_watermarks import synthid_detector
-
-        return getattr(synthid_detector, name)
     if name in ("OpenAIProvenanceError", "OpenAISynthIDDetection", "verify_openai_synthid"):
         from remove_ai_watermarks import openai_provenance
 

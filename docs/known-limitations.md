@@ -64,73 +64,14 @@ identity or exact texture, and each then runs the same face stage.
 `qwen-zimage` is the higher fidelity of the two. Both are large, slow, and may
 still alter small text or difficult faces.
 
-### The experimental pixel route reads a pipeline lattice, not the watermark
+### There is no local SynthID pixel detector in the package
 
-Signed provenance is the primary and supported route for SynthID in this
-project; the pixel route described here is experimental. Google does not
-publish the proprietary SynthID payload decoder, and nothing
-in this project reproduces one. What the local pixel route detects is a
-periodic lattice anchored at the image origin: it is destroyed by a crop of
-seven pixels on the large branch and by a crop of two pixels on the
-ordinary-size registered-v3 route, whereas the published SynthID evaluation
-retains 99.97% of its detection rate under aggressive crop and resize. A
-positive therefore
-identifies the generation pipeline that leaves the lattice, and says nothing
-about whether the image carries a watermark. It also changes when a provider
-changes pipeline: output from `gemini-2.5-flash-image` scores at the level of
-unrelated photographs. The project additionally offers provenance-based
-recognition from Google AI C2PA or current OpenAI C2PA with an explicit
-watermark action, and that provenance route is the only one that speaks about
-a watermark at all.
-
-The ordinary-size route shares the same phase lock. On 2026-08-16 a two-pixel
-diagonal crop removed all 28 in-geometry foreign-generator detections and all 8
-detected Google provenance positives from registered-v3, with the statistic
-recovering only at crop offsets that are multiples of four. The route therefore
-fires on other vendors' images because those pipelines leave a matching
-origin-anchored lattice, not because a watermark is present.
-
-The published control rates for this route were all measured on photographs.
-Against other generators' output, which is the population a provenance tool is
-actually pointed at, the shipped runtime accepted 29 of 223 signed non-Google
-images on 2026-08-16: 13.0% overall, 24.1% on Adobe Firefly, with a top score
-of 3.01 against a threshold of 1.0. Treat a positive as evidence only when the
-alternative generators have been ruled out by other means.
-
-Sensitivity has only ever been reported on images the route was calibrated
-against. The first out-of-distribution measurement was taken on 2026-08-16: 11
-images generated at 5632x3072 by `gemini-3.1-flash-image`, a model that did not
-exist when the large branch was calibrated, written straight from the API with
-no lossy-codec history and watermarked by Google's documented policy that all
-generated images carry SynthID. Eight were detected and three returned
-indeterminate, a rate of 72.7% with a one-sided 95% lower bound of 43.6%. The
-sample is small and one provider wide, so read it as an order of magnitude
-rather than an operating point.
-
-Cropping the same images to 4096x2560 on the tile grid retained 4 of 6. Taking
-the identical crop seven pixels off the grid retained 0 of 6, with every score
-negative. A crop that is not tile-aligned removes the signal entirely, which is
-the sharpest way to see that this route does not read the watermark: the
-published SynthID evaluation keeps 99.97% of its detection rate under
-aggressive crop and resize.
-
-The route's declared scope is narrower still. It does not cover images outside
-the selected mode's size range, crop, strong
-JPEG compression, video, or future carrier epochs. The production default
-searches a bounded fractional-period range from 250,000 through 10,000,000
-pixels and requires both sides to be at least 256 pixels. Its measured positive
-range is approximately scale 0.65 through 1.5. A precision-first opponent-color
-fallback covers only 1 through 10 megapixels, sides of at least 768 pixels, and
-periods 7.9 through 12.0; it recovered the measured lossless 0.5x-0.75x cohort.
-At period 8, an additional block-edge veto rejects the ordinary JPEG lattice;
-this does not make arbitrary crops or codecs supported. The fallback retained
-0/63 lossy JPEG/WebP views, so a lossy miss remains inconclusive. Above 10
-through 18
-megapixels, the separate large-v1 route requires native, lossless pixels and
-both sides at least 2,048 pixels. The fixed-v2 branch is retained only behind
-the explicit `detect-synthid --fixed-period` diagnostic. A
-`indeterminate` or `unsupported` result is not a negative universal verdict, and
-removal still requires the matching provider oracle for confirmation.
+Google does not publish the proprietary SynthID payload decoder, and the
+package does not ship one. Signed provenance is the supported route:
+Google AI C2PA or current OpenAI C2PA with an explicit watermark action.
+`verify-openai-synthid` is the official remote pixel check for OpenAI.
+Research on a periodic lattice expert is in
+[synthid-detector-research.md](synthid-detector-research.md).
 
 For important outputs:
 

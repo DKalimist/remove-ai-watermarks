@@ -451,16 +451,20 @@ metadata extraction from verdict logic:
   both extractors reach the same answer. It did not, and the record path silently
   reported no SynthID for images the file path flagged.
 - `identify` preserves the path-based API and adds the optional registered
-  visible-mark, open invisible-watermark, and generation-pipeline lattice
-  detectors after extraction.
+  visible-mark and open invisible-watermark detectors after extraction.
 
-### SynthID periodic carrier detector
+### SynthID periodic carrier detector (research only)
 
-[`synthid_detector.py`](../src/remove_ai_watermarks/synthid_detector.py) is the
+The local lattice expert is not part of the public package. Runtime code lives
+in [`scripts/synthid_runtime/`](../scripts/synthid_runtime/) and the campaign
+log is [`synthid-detector-research.md`](synthid-detector-research.md). The
+notes below are the calibration history of that research expert.
+
+[`synthid_detector.py`](../scripts/synthid_runtime/synthid_detector.py) is the
 runtime form of the frozen 2048x2048 periodic-tile experiment. It folds a
 Gaussian high-pass residual modulo 16x16 within a calibrated pixel-count range
 and compares the normalized RGB tile with the bundled float64 template
-`assets/synthid_periodic_tile_2048_v1.npz`. Exact multiples use the original
+`scripts/synthid_runtime/synthid_periodic_tile_2048_v1.npz`. Exact multiples use the original
 reshape-and-mean path; other sizes use count-correct modulo folding,
 without resize. Channels are filtered and folded sequentially, and partial edge
 blocks are accumulated without a full-frame padding buffer so the 18-megapixel
@@ -644,8 +648,8 @@ Every one of those control rates is photographic. Against 223 corpus images
 whose C2PA names a non-Google generator, the unchanged entry point accepted 29
 (`0.130`, Adobe Firefly `0.241`, highest foreign score `3.01`), all from
 registered-v3. The branch reads a lattice shared across generation pipelines,
-which is why `identify` reports it as the experimental `pipeline_lattice`
-signal and never as a watermark.
+which is why it must not be reported as a watermark. The public `identify`
+path no longer calls this expert.
 
 The branch is also phase-locked to the image origin, exactly like the large
 expert. A two-pixel diagonal crop killed all 28 in-geometry foreign detections
@@ -668,9 +672,8 @@ rule accepted 0/1,000 post-freeze Picsum controls. Period 12.8 remains excluded,
 and lossy JPEG/WebP views remain inconclusive.
 
 The runtime precedence is registered-v3, the bounded opponent fallback, then
-large-v1 above 10 megapixels. Passing
-`register_scale=False`, or the CLI's `--fixed-period`, selects the legacy fixed
-diagnostic explicitly. The research bank in
+large-v1 above 10 megapixels. Passing `register_scale=False` selects the legacy
+fixed diagnostic explicitly. The research bank in
 `scripts/synthid_routed_expert_bank.py` keeps all three observations for audits.
 Neither runtime nor research routing returns a clean-image verdict.
 

@@ -14,8 +14,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import synthid_affine_lattice_probe as probe
-
-from remove_ai_watermarks._synthid_confirmation import RegisteredConfirmationComponents
+from synthid_runtime._synthid_confirmation import RegisteredConfirmationComponents
 
 
 def test_webp_lossless_round_trip_preserves_pixels() -> None:

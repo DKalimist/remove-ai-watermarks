@@ -14,7 +14,6 @@ defaults. This page focuses on choosing the right command.
 | Command or signal | Required installation |
 | --- | --- |
 | `metadata` and metadata-only `identify` | Default package |
-| `detect-synthid` and the calibrated-size SynthID pixel signal in `identify` | `remove-ai-watermarks[pixels]` |
 | `verify-openai-synthid` | `remove-ai-watermarks[verify]`, API access, and `OPENAI_API_KEY` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
@@ -57,58 +56,8 @@ remove-ai-watermarks identify image.png --no-visible
 ```
 
 Despite the historical option name, `--no-visible` skips all pixel detectors,
-including the pipeline lattice described below, visible marks, open DWT-DCT, and
-TrustMark. Metadata inspection still runs.
-
-## Detect the generation-pipeline pixel lattice (experimental)
-
-```bash
-remove-ai-watermarks detect-synthid image.png
-remove-ai-watermarks detect-synthid image.png --json
-remove-ai-watermarks detect-synthid native-period.png --fixed-period
-```
-
-This route is experimental. Signed provenance, read by `identify` and confirmed
-against the provider by `verify-openai-synthid`, remains the supported way to
-establish SynthID. The command returns one of `detected`, `indeterminate`, or
-`unsupported`, and it does not detect the SynthID watermark: its statistic disappears when the image
-is cropped off the tile grid, and it changes when the generator's pipeline
-changes, so read a positive as evidence about the pipeline and never as a
-watermark claim. The JSON carries `identifies_watermark` and
-`tile_aligned_crop_required` for exactly this reason. The
-runtime detector covers one frozen periodic lattice family in the
-[calibrated image-size range](synthid.md#32-how-our-tool-detects-the-supported-carrier)
-and needs the `pixels` extra. The production default uses registered-v3 from
-250,000 through 10,000,000 decoded pixels with both sides at least 256 pixels.
-An opponent-registered-v1 fallback covers 1 through 10 megapixels, both sides
-at least 768 pixels, and selected carrier periods 7.9 through 12.0. Period-8
-candidates must also pass an opponent-color block-edge veto for the native JPEG
-lattice. The
-separately challenged opponent-color large-v1 branch covers above 10,000,000
-through 18,000,000 pixels when both sides are at least 2,048 pixels.
-Registered-v3 performs a bounded carrier-period search and independent split-
-patch confirmation. Its measured positive
-scale range is approximately 0.65 through 1.5. The fallback recovered 49/49
-lossless 0.5x-0.75x views from seven official positives. Its period-8 veto
-rejected 1,790 codec-lattice crossings, and 350 matched 0.5x controls produced no
-base crossing. The earlier period-band rule accepted 0/1,000 post-freeze Picsum
-controls. `identify` uses this production router.
-
-`--fixed-period` explicitly selects the faster legacy fixed-v2 diagnostic below
-10 megapixels. It does not resize or register the carrier and is not a
-production positive route. `--register-scale` forces the registered-v3 cascade,
-including its opponent fallback, on geometry where the default would select
-large-v1.
-The native large and opponent-registered branches are codec-sensitive. The
-large branch fell from 7/7 to 0/7 after same-size JPEG-95 or JPEG-90; the
-fallback retained 0/63 JPEG-95, JPEG-85, and WebP-95 views. A miss on a lossy
-re-encode is therefore inconclusive.
-It is positive-only: `indeterminate` means the score stayed below this
-detector's threshold, while `unsupported` means the image geometry is outside
-its scope. Neither result proves that another SynthID epoch or payload is
-absent.
-JSON output includes the exact reason plus provider scope, backend, pixel
-preservation, and metadata-use audit fields.
+including visible marks, open DWT-DCT, and TrustMark. Metadata inspection still
+runs.
 
 ## Verify OpenAI SynthID from pixels
 
@@ -140,7 +89,7 @@ error code, request id, `Retry-After`, and whether an explicit caller-controlled
 retry is appropriate through `OpenAIProvenanceError`; the verifier itself never
 retries an upload.
 The JSON result uses the same provider-scope, backend, pixel-preservation, and
-metadata-use audit fields as the local detector.
+metadata-use audit fields as `verify_openai_synthid`.
 
 The Python API enforces the same boundary with the required explicit intent
 flag `verify_openai_synthid(path, acknowledge_upload=True)`.

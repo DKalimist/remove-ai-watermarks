@@ -24,7 +24,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, and release workflow. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |
-| [SynthID technical reference](synthid.md) | Mechanism, shipped lattice and provenance, robustness, regeneration. |
+| [SynthID technical reference](synthid.md) | Mechanism, provenance, robustness, regeneration. |
 
 ## Research archive
 

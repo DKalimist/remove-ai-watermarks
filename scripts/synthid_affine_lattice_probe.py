@@ -12,20 +12,22 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import click
 import cv2
 import numpy as np
 from synthid_pixel_attack import jpeg_round_trip, load_rgb
-
-from remove_ai_watermarks._synthid_confirmation import (
+from synthid_runtime._synthid_confirmation import (
     registered_confirmation_passes as runtime_registered_confirmation_passes,
 )
-from remove_ai_watermarks._synthid_registered import RegisteredComponents, registered_components
-from remove_ai_watermarks.synthid_detector import fold_residual_template, folded_template_score, unit_tile
+from synthid_runtime._synthid_registered import RegisteredComponents, registered_components
+from synthid_runtime.synthid_detector import fold_residual_template, folded_template_score, unit_tile
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

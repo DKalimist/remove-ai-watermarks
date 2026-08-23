@@ -736,54 +736,11 @@ class TestIdentifyCommand:
         assert result.exit_code != 0
 
 
-class TestDetectSynthIDCommand:
-    def test_help(self, runner):
+class TestDetectSynthIDCommandRemoved:
+    def test_command_is_not_registered(self, runner):
         result = runner.invoke(main, ["detect-synthid", "--help"])
-        assert result.exit_code == 0
-        assert "calibrated image sizes" in result.output
-        assert "--register-scale" in result.output
-        assert "--fixed-period" in result.output
-
-    def test_unsupported_geometry_is_machine_readable(self, runner, tmp_clean_png):
-        result = runner.invoke(main, ["detect-synthid", str(tmp_clean_png), "--json"])
-
-        assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
-        assert payload["status"] == "unsupported"
-        assert payload["score"] is None
-
-    def test_registered_scale_mode_is_machine_readable(self, runner, tmp_clean_png):
-        from remove_ai_watermarks.synthid_detector import (
-            REGISTERED_DETECTOR_ID,
-            REGISTERED_THRESHOLD,
-        )
-
-        result = runner.invoke(
-            main,
-            ["detect-synthid", str(tmp_clean_png), "--register-scale", "--json"],
-        )
-
-        assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
-        assert payload["status"] == "unsupported"
-        assert payload["threshold"] == REGISTERED_THRESHOLD
-        assert payload["detector"] == REGISTERED_DETECTOR_ID
-
-    def test_non_json_output_preserves_negative_scope(self, runner, tmp_clean_png):
-        result = runner.invoke(main, ["detect-synthid", str(tmp_clean_png)])
-
-        assert result.exit_code == 0, result.output
-        assert "unsupported" in result.output
-        assert "not proof that SynthID is absent" in result.output
-
-    def test_registered_non_json_output_names_the_bounded_search(self, runner, tmp_clean_png):
-        result = runner.invoke(
-            main,
-            ["detect-synthid", str(tmp_clean_png), "--register-scale"],
-        )
-
-        assert result.exit_code == 0, result.output
-        assert "Bounded spatial-scale registration was explicitly enabled" in result.output
+        assert result.exit_code != 0
+        assert "No such command" in result.output
 
 
 class TestVerifyOpenAISynthIDCommand:

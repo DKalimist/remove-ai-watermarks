@@ -30,7 +30,6 @@ removal.
 | Goal | Command | GPU |
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
-| Detect a generation-pipeline pixel lattice, experimental, not the watermark | `detect-synthid` | No |
 | Verify supported OpenAI SynthID from pixels with the official remote API | `verify-openai-synthid` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
@@ -50,7 +49,6 @@ removal.
 | Need | Install |
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
-| Local SynthID carrier detection in the calibrated size range | `remove-ai-watermarks[pixels]` |
 | Official remote OpenAI SynthID verification | `remove-ai-watermarks[verify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
@@ -79,56 +77,12 @@ remove-ai-watermarks identify image.png
 ```
 
 Signed provenance is the supported route for SynthID and `identify` reads it.
-The pixel route below is experimental and answers a different question. Install
-the pixel runtime first:
+There is no local SynthID pixel detector in the package. Research on a
+periodic lattice expert is in `scripts/synthid_runtime/` and
+[synthid-detector-research.md](docs/synthid-detector-research.md).
 
-```bash
-uv tool install --force "remove-ai-watermarks[pixels]"
-remove-ai-watermarks detect-synthid image.png
-remove-ai-watermarks detect-synthid native-period.png --fixed-period
-```
-
-This is experimental and does not detect the SynthID watermark. The statistic it reports is
-destroyed by cropping off the tile grid — a seven-pixel crop on the large branch
-and a two-pixel crop on the ordinary-size registered-v3 route — while SynthID's
-published evaluation keeps 99.97% of its detection rate under aggressive crop
-and resize, so a positive identifies the generation pipeline rather than the
-mark. Measured on 2026-08-16: it accepted 8 of 11 fresh large Google generations
-and 29 of 223 images from other generators, and 0 of 6 when the same positives
-were cropped off the tile grid; a two-pixel crop also removed all 36 tested
-registered-v3 detections across foreign-generator and Google images. It is
-positive-only
-and limited to one measured lattice family in
-the [calibrated image-size range](docs/synthid.md#32-how-our-tool-detects-the-supported-carrier).
-The production default uses registered-v3 from 250,000 through 10,000,000
-decoded pixels with both sides at least 256 pixels. When that route abstains,
-a narrower opponent-registered-v1 fallback covers 1 through 10 megapixels,
-both sides at least 768 pixels, and carrier periods 7.9 through 12.0. Period-8
-candidates additionally require a decoded-pixel block-edge veto that separates
-the measured carrier from ordinary JPEG lattices. The
-separately challenged opponent-color large-v1 branch runs
-above 10 through 18 megapixels; large-v1 requires both sides to be at least
-2,048 pixels. Registered-v3 is a bounded scale search with a measured positive
-scale range of approximately 0.65 through 1.5. The fallback recovered 49/49
-losslessly resized views at scales 0.5 through 0.75 from seven official
-pixel-positive parents. The period-8 veto rejected all 1,790 previously crossing
-codec-lattice controls, while 350 matched 0.5x Picsum controls had no base
-crossing; the earlier period-band rule also accepted 0/1,000 frozen controls.
-`--fixed-period` explicitly selects the faster legacy 16-pixel diagnostic; it
-is not a production positive route. `--register-scale` forces the registered
-expert, including on geometry where the default would choose large-v1.
-`identify` uses the production router. `indeterminate` means no qualified local
-expert crossed its threshold; `unsupported` means no expert covers the input.
-Neither is a clean-image guarantee.
-
-The large native and opponent-registered branches are not recompression-robust.
-The large branch lost all seven official positives after same-size JPEG-95 and
-JPEG-90; the fallback retained 0/63 JPEG-95, JPEG-85, and WebP-95 views. Use
-them for original or losslessly copied pixels, and treat a miss after lossy
-transcoding as inconclusive.
-
-For supported OpenAI images, the optional official verifier provides a broader
-pixel-watermark verdict than the incomplete local OpenAI research signal:
+For supported OpenAI images, the optional official verifier provides a pixel
+watermark verdict:
 
 ```bash
 uv tool install --force "remove-ai-watermarks[verify]"
@@ -398,9 +352,6 @@ import remove_ai_watermarks as raiw
 
 result, removed = raiw.remove_visible("watermarked.png", "clean.png")
 print(removed)
-
-synthid = raiw.detect_synthid("image.png")
-print(synthid.status, synthid.score)
 
 openai_synthid = raiw.verify_openai_synthid("image.png", acknowledge_upload=True)
 print(openai_synthid.status)

@@ -7,9 +7,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import synthid_runtime.synthid_detector as detector
 from PIL import Image
-
-import remove_ai_watermarks.synthid_detector as detector
 
 
 @pytest.fixture(scope="module")
@@ -105,7 +104,7 @@ def fine_opponent_registered_positive(tmp_path_factory: pytest.TempPathFactory) 
 
 
 def test_bundled_model_is_the_frozen_calibrated_artifact() -> None:
-    model = Path(detector.__file__).parent / "assets" / detector.MODEL_FILENAME
+    model = Path(detector.__file__).parent / detector.MODEL_FILENAME
 
     assert hashlib.sha256(model.read_bytes()).hexdigest() == (
         "ee7838da8542c206c3403284b68e98f0ac99429e82f262c1a438f50a638b488b"
@@ -330,7 +329,7 @@ def test_registered_mode_falls_back_to_the_opponent_color_expert(
     monkeypatch: pytest.MonkeyPatch,
     opponent_registered_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
 
@@ -346,7 +345,7 @@ def test_opponent_registered_threshold_mutation_changes_the_real_verdict(
     monkeypatch: pytest.MonkeyPatch,
     opponent_registered_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
     baseline = detector.detect_synthid(opponent_registered_positive, register_scale=True)
@@ -368,7 +367,7 @@ def test_opponent_fallback_recovers_period8_without_codec_grid(
     monkeypatch: pytest.MonkeyPatch,
     opponent_period8_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
 
@@ -382,7 +381,7 @@ def test_fine_opponent_fallback_recovers_off_grid_period(
     monkeypatch: pytest.MonkeyPatch,
     fine_opponent_registered_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
     monkeypatch.setattr(registered_detector, "opponent_registered_score", lambda *_args: 0.0)
@@ -399,7 +398,7 @@ def test_fine_opponent_threshold_mutation_changes_the_real_verdict(
     monkeypatch: pytest.MonkeyPatch,
     fine_opponent_registered_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     monkeypatch.setattr(registered_detector, "registered_score", lambda *_args: 0.0)
     monkeypatch.setattr(registered_detector, "opponent_registered_score", lambda *_args: 0.0)
@@ -421,7 +420,7 @@ def test_fine_opponent_threshold_mutation_changes_the_real_verdict(
 def test_fine_opponent_selector_recovers_the_fractional_period(
     fine_opponent_registered_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     template, sigma, *_model = detector._load_template()
     pixels = np.asarray(Image.open(fine_opponent_registered_positive).convert("RGB"), dtype=np.uint8)
@@ -436,7 +435,7 @@ def test_period8_codec_veto_threshold_mutation_changes_real_components(
     monkeypatch: pytest.MonkeyPatch,
     opponent_period8_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     template, sigma, *_model = detector._load_template()
     pixels = np.asarray(Image.open(opponent_period8_positive).convert("RGB"), dtype=np.uint8)
@@ -450,7 +449,7 @@ def test_period8_codec_veto_threshold_mutation_changes_real_components(
 
 
 def test_opponent_registered_period_band_and_codec_veto_are_required() -> None:
-    from remove_ai_watermarks._synthid_registered import OpponentRegisteredComponents
+    from synthid_runtime._synthid_registered import OpponentRegisteredComponents
 
     values = {
         "spectral_score": 0.8,
@@ -503,7 +502,7 @@ def test_registered_threshold_mutation_changes_the_real_verdict(
 
 
 def test_registered_period_thresholds_cover_the_bounded_search() -> None:
-    from remove_ai_watermarks._synthid_registered import _period_threshold
+    from synthid_runtime._synthid_registered import _period_threshold
 
     assert _period_threshold(7.5) == pytest.approx(0.3770629524888979)
     assert _period_threshold(12.0) == pytest.approx(0.19794247706938645)
@@ -516,7 +515,7 @@ def test_registered_amplitude_threshold_mutation_changes_the_real_verdict(
     monkeypatch: pytest.MonkeyPatch,
     registered_scale_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     baseline = detector.detect_synthid(registered_scale_positive, register_scale=True)
     assert baseline.status == "detected"
@@ -532,8 +531,8 @@ def test_registered_amplitude_threshold_mutation_changes_the_real_verdict(
 
 
 def test_registered_spectral_candidate_disagreement_blocks_decision() -> None:
-    from remove_ai_watermarks._synthid_confirmation import RegisteredConfirmationComponents
-    from remove_ai_watermarks._synthid_registered import RegisteredComponents
+    from synthid_runtime._synthid_confirmation import RegisteredConfirmationComponents
+    from synthid_runtime._synthid_registered import RegisteredComponents
 
     confirmation = RegisteredConfirmationComponents(12.8, 0.5, 0.2, 0.5, 8, 8)
     matching = RegisteredComponents(0.5, 0.25, 12.8, 12.8, 0.15, confirmation)
@@ -550,7 +549,7 @@ def test_registered_high_band_mutation_changes_the_real_verdict(
     monkeypatch: pytest.MonkeyPatch,
     registered_scale_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     components = registered_detector.registered_components(
         np.asarray(Image.open(registered_scale_positive).convert("RGB"), dtype=np.uint8),
@@ -573,8 +572,8 @@ def test_registered_confirmation_mutation_changes_the_real_verdict(
     monkeypatch: pytest.MonkeyPatch,
     registered_scale_positive: Path,
 ) -> None:
-    import remove_ai_watermarks._synthid_confirmation as confirmation_detector
-    import remove_ai_watermarks._synthid_registered as registered_detector
+    import synthid_runtime._synthid_confirmation as confirmation_detector
+    import synthid_runtime._synthid_registered as registered_detector
 
     components = registered_detector.registered_components(
         np.asarray(Image.open(registered_scale_positive).convert("RGB"), dtype=np.uint8),
@@ -656,7 +655,7 @@ def test_supported_geometry_requires_pixel_dependencies(
     _positive, negative = supported_images
     monkeypatch.setattr(detector, "is_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match="pixel extra"):
+    with pytest.raises(RuntimeError, match="needs numpy and OpenCV"):
         detector.detect_synthid(negative, register_scale=False)
 
 
