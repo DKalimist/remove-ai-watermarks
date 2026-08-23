@@ -229,18 +229,14 @@ conversion (the body text of Section 10 is absent from the HTML).
 
 A 2026-08-09 non-generative pilot found a promising Google phase-correlate,
 but did not establish a releasable local detector or pixel-only remover.
-The 2026-08-20/22 OpenAI campaign is split by purpose:
-[local detector](synthid-detector-research.md) (closed),
-[classifier models](synthid-classifiers.md) (Model 1 CLIP-L is the
-AI-versus-camera result), and
-[mark removal](synthid-removal-research.md) (quiet remover closed; 16-32
-phase scramble and blur sigma 7 still kill). JPEG q5 and 16-32 px phase
-structure survive as the official mark. `gpt-image-2` source-matched flat
-pairs exist; their residual does not transfer to photographs. Bayer and
-mild geometry do not flip the oracle. Model 1 is not a SynthID detector
-and is not in `identify`.
-
-Separately, the
+The 2026-08-20/22 OpenAI campaign is recorded in
+[synthid-detector-research.md](synthid-detector-research.md),
+[synthid-classifiers.md](synthid-classifiers.md), and
+[synthid-removal-research.md](synthid-removal-research.md).
+JPEG q5 and 16-32 px phase structure survive as the official mark; a
+quality-preserving local remover and a local SynthID detector for
+photographs were not found. `gpt-image-2` source-matched flat pairs exist;
+their residual does not transfer to photographs. The
 best independently fitted spectral model relearned phase and magnitude from four of our
 positives while using third-party candidate coordinates; its second frozen
 epoch had zero false positives on 279 new exact-size external images and
@@ -514,10 +510,6 @@ was false; the resistance was that region-rescrub shielding, since removed.
   "extreme" manipulation.
 
 ### 2.3 Removal attacks and forensic detectability
-
-This project's OpenAI oracle campaign, including closed quiet removers, is
-[synthid-removal-research.md](synthid-removal-research.md). The literature
-below is independent of that log.
 
 The paper arXiv:2605.09203 ("Removing the Watermark Is Not Enough",
 Goonatilake & Ateniese, 2026) evaluates 6 removal attacks against a ResNet-50

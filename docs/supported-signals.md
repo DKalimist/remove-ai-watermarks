@@ -139,9 +139,7 @@ Google images), while the published SynthID evaluation survives aggressive crop
 and resize, so every control rate below describes a generation-pipeline
 signature and not watermark detection. Every rate quoted
 below was also measured on photographs; on 223 signed non-Google generator
-images the same runtime accepted 29, a rate of 13.0%. A 2026-08-22 re-check
-on frozen holdouts was Firefly 15/84, PixelBin 11/80, OpenAI 1/80, Kodak
-0/24. Sensitivity outside the
+images the same runtime accepted 29, a rate of 13.0%. Sensitivity outside the
 calibration distribution was measured once, on 11 fresh 5632x3072 images from
 `gemini-3.1-flash-image`: 8 detected, 72.7%, one-sided 95% lower bound 43.6%.
 The same images cropped seven pixels off the tile grid returned 0 of 6.

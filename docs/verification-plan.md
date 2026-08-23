@@ -187,8 +187,7 @@ OpenAI's API documentation says not to use repeated queries to reverse-engineer,
 or evade a watermark. Using it as an adaptive research oracle therefore requires explicit
 authorization. Without that authorization it must not become a training loss, search loop,
 or automated removal gate. The provider-specific detector and pixel-only removal research
-protocol is in [`synthid-detector-research.md`](synthid-detector-research.md);
-the chronological archive is [`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
+protocol is in [`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
 
 Scope honestly: this tier certifies strength floors on a handful of images per vendor, and
 that is all it can do. See `docs/synthid.md`.
