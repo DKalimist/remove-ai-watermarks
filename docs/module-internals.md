@@ -645,7 +645,11 @@ whose C2PA names a non-Google generator, the unchanged entry point accepted 29
 (`0.130`, Adobe Firefly `0.241`, highest foreign score `3.01`), all from
 registered-v3. The branch reads a lattice shared across generation pipelines,
 which is why `identify` reports it as the experimental `pipeline_lattice`
-signal and never as a watermark.
+signal and never as a watermark. A 2026-08-22 production re-check on 628
+frozen holdouts repeated that family pattern (Google 45/80, Firefly 15/84,
+PixelBin 11/80, OpenAI 1/80, Kodak 0/24) and a two-pixel crop again removed
+every sampled positive. Classifier context:
+[synthid-classifiers.md](synthid-classifiers.md).
 
 The branch is also phase-locked to the image origin, exactly like the large
 expert. A two-pixel diagonal crop killed all 28 in-geometry foreign detections

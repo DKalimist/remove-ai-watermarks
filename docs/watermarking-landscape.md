@@ -68,8 +68,8 @@ payloads. Removal remuxes either container through ffmpeg with stream copy.
   Amazon Titan Image Generator + Nova Canvas (Bedrock
   `DetectGeneratedContent` API), Kakao (new SynthID image adopter, May 2026),
   and NVIDIA Cosmos (SynthID video). No public payload decoder is available;
-  unlike the project's calibrated-size SynthID carrier expert, these signals
-  have no measured local detector here.
+  unlike the project's calibrated-size generation-pipeline lattice expert,
+  these signals have no measured local payload decoder here.
 - **C2PA 2.4 "Durable Content Credentials" (April 2026; verified against the spec) raise the bar for metadata stripping.** 2.4 defines soft bindings (an invisible watermark or a content fingerprint) plus a server-side manifest repository and a new `c2pa.repository-receipt` assertion. Per the spec: "if a C2PA manifest is removed from an asset, but a copy of that manifest remains in a provenance store elsewhere, the manifest and asset may be matched using available soft bindings." So our local `metadata --remove` deletes the *embedded* manifest, but a fingerprint/watermark soft binding can still re-link the image to its manifest in a repository server-side. Stripping the file is becoming necessary-but-not-sufficient against durable provenance. (Our parsers target the stable embedded-manifest format documented in C2PA 2.1 §11; that format is unchanged in 2.4 -- the new pieces are repository/soft-binding infra, not the on-file box layout, so no parser change is implied.) Spec: https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html We now READ the soft-binding `alg` (`C2PA_SOFT_BINDINGS` / `soft_binding_vendors_in`) to name the forensic-watermark vendor, and locally DECODE the one open scheme, Adobe TrustMark (`trustmark_detector`); the rest (Digimarc/Imatag/Steg.AI/...) stay name-only (proprietary decoders).
 - **Built in the dated batch:** soft-binding vendor detection, IPTC Photo
   Metadata AI-disclosure fields, C2PA detection and stripping for supported

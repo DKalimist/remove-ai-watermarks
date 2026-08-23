@@ -1,8 +1,12 @@
 # SynthID: technical reference
 
-> Technical research reference. Current package behavior is defined by the
+> Technical research reference for the mark itself and for what this package
+> ships. Current package behavior is defined by the
 > [supported signals](supported-signals.md), [known limitations](known-limitations.md),
-> and [module internals](module-internals.md). Dated measurements below are
+> and [module internals](module-internals.md). Campaign results are split:
+> [local detector](synthid-detector-research.md),
+> [classifier models](synthid-classifiers.md),
+> [mark removal](synthid-removal-research.md). Dated measurements below are
 > historical evidence and should not be read as current CLI defaults.
 
 This document covers how Google SynthID for images works mechanically, what it
@@ -224,8 +228,20 @@ conversion (the body text of Section 10 is absent from the HTML).
 **What is known empirically from our own oracle-verified testing.**
 
 A 2026-08-09 non-generative pilot found a promising Google phase-correlate,
-but did not establish a releasable local detector or pixel-only remover. The
-best independently fitted model relearned phase and magnitude from four of our
+but did not establish a releasable local detector or pixel-only remover.
+The 2026-08-20/22 OpenAI campaign is split by purpose:
+[local detector](synthid-detector-research.md) (closed),
+[classifier models](synthid-classifiers.md) (Model 1 CLIP-L is the
+AI-versus-camera result), and
+[mark removal](synthid-removal-research.md) (quiet remover closed; 16-32
+phase scramble and blur sigma 7 still kill). JPEG q5 and 16-32 px phase
+structure survive as the official mark. `gpt-image-2` source-matched flat
+pairs exist; their residual does not transfer to photographs. Bayer and
+mild geometry do not flip the oracle. Model 1 is not a SynthID detector
+and is not in `identify`.
+
+Separately, the
+best independently fitted spectral model relearned phase and magnitude from four of our
 positives while using third-party candidate coordinates; its second frozen
 epoch had zero false positives on 279 new exact-size external images and
 detected the one new confirmed positive used for validation. An additional
@@ -498,6 +514,10 @@ was false; the resistance was that region-rescrub shielding, since removed.
   "extreme" manipulation.
 
 ### 2.3 Removal attacks and forensic detectability
+
+This project's OpenAI oracle campaign, including closed quiet removers, is
+[synthid-removal-research.md](synthid-removal-research.md). The literature
+below is independent of that log.
 
 The paper arXiv:2605.09203 ("Removing the Watermark Is Not Enough",
 Goonatilake & Ateniese, 2026) evaluates 6 removal attacks against a ResNet-50

@@ -64,6 +64,14 @@ identity or exact texture, and each then runs the same face stage.
 `qwen-zimage` is the higher fidelity of the two. Both are large, slow, and may
 still alter small text or difficult faces.
 
+Camera-pipeline tricks and mild geometry do not replace regeneration for
+OpenAI SynthID. On 2026-08-22 the official verifier still returned
+`detected` after Bayer mosaic plus bilinear or VNG demosaic, an upscale-
+then-Bayer round trip, barrel distortion, and scanline jitter. 16-32 px
+phase scramble still flipped the same seeds at similar or better PSNR.
+Those attacks are closed as quiet removers. Numbers:
+[synthid-removal-research.md](synthid-removal-research.md).
+
 ### The experimental pixel route reads a pipeline lattice, not the watermark
 
 Signed provenance is the primary and supported route for SynthID in this
@@ -94,8 +102,12 @@ The published control rates for this route were all measured on photographs.
 Against other generators' output, which is the population a provenance tool is
 actually pointed at, the shipped runtime accepted 29 of 223 signed non-Google
 images on 2026-08-16: 13.0% overall, 24.1% on Adobe Firefly, with a top score
-of 3.01 against a threshold of 1.0. Treat a positive as evidence only when the
-alternative generators have been ruled out by other means.
+of 3.01 against a threshold of 1.0. A 2026-08-22 re-check of the same
+production entry point on frozen holdouts found Firefly 15/84 and PixelBin
+11/80, with photographs at 0/24 Kodak and 0/60 Open Images, and a two-pixel
+crop removing every sampled positive. Treat a positive as evidence of the
+Google-lineage renderer family, not Gemini and not a watermark, and only
+when the alternative generators have been ruled out by other means.
 
 Sensitivity has only ever been reported on images the route was calibrated
 against. The first out-of-distribution measurement was taken on 2026-08-16: 11

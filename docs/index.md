@@ -24,8 +24,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, and release workflow. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |
-| [SynthID technical reference](synthid.md) | Mechanism, detector access, robustness, and implications for this project. |
-| [SynthID detector and removal plan](synthid-detector-removal-plan.md) | Gated research program for provider-specific local detection and pixel-only removal. |
+| [SynthID technical reference](synthid.md) | Mechanism, shipped lattice and provenance, robustness, regeneration. |
 
 ## Research archive
 
@@ -36,7 +35,12 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [ControlNet removal research](controlnet-removal-pipeline-research.md)
 - [Qwen improvement research](qwen-improvement-research.md)
 - [Doubao reverse-alpha research](research-doubao-distillation.md)
+- [SynthID local detector research](synthid-detector-research.md)
+- [Classifier models](synthid-classifiers.md) (Model 1 result)
+- [SynthID mark removal research](synthid-removal-research.md)
 - [SynthID identity research](synthid-robust-identity-research.md)
 - [SynthID identity follow-up](synthid-robust-identity-research-2026-06-08.md)
 - [Video SynthID quality research](video-synthid-quality-research.md)
+- [OpenAI SynthID oracle ladders](synthid-oracle-ladders.md) (routing hub)
+- [SynthID detector and removal plan](synthid-detector-removal-plan.md) (chronological mixed archive)
 - [Text protection research](text-protection-research.md)

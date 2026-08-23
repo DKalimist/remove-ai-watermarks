@@ -1,9 +1,18 @@
 # SynthID detector and pixel-only removal research plan
 
-> Research plan, not a statement of current product capability. The shipped
-> behavior remains documented in [supported signals](supported-signals.md),
+> Chronological mixed archive of detector, classifier, and removal work.
+> Not a statement of current product capability. Read the split pages
+> first:
+>
+> - [SynthID local detector research](synthid-detector-research.md)
+> - [Classifier models](synthid-classifiers.md)
+> - [SynthID mark removal research](synthid-removal-research.md)
+>
+> Shipped behavior remains in [supported signals](supported-signals.md),
 > [known limitations](known-limitations.md), and
-> [module internals](module-internals.md).
+> [module internals](module-internals.md). Keep this file for dated H-gates,
+> corpora, and session notes. Do not add new campaign results here; put
+> them on the matching split page.
 
 ## Objective
 
@@ -480,18 +489,19 @@ months and tested for the first time on 2026-08-15.
 | # | Hypothesis | Status | What moves it |
 | --- | --- | --- | --- |
 | L1 | A missing `watermarked.unbound` assertion means no watermark was embedded | `refuted` for both providers | Settled 2026-08-16. OpenAI: the official verifier called 65 of 94 non-asserted rows `detected`, a contamination rate of `69%`, with 9 of 9 interleaved health positives detected so the verifier was demonstrably answering throughout. Google: its own API emits watermarked images, per documentation that states so outright, carrying no assertion. Every corpus-labelled AUC in this document rests on a negative class that is roughly two-thirds positive |
-| L2 | A watermark assertion means a pixel watermark is actually present | `partial` | Ten source controls returned `detected` across both providers. Ten of twelve thousand is a smoke test, not a rate. The same runner extended to asserted rows would give one |
-| L3 | Date and model version do not carry the label | `supported` | The matched sets fix size, generator and codec but not date, and 57 of 70 Google controls fall in one month. Re-run the matched evaluation with date as a matching key, or as a covariate |
+| L2 | A watermark assertion means a pixel watermark is actually present | `partial` | Ten source controls returned `detected` across both providers. Ten of twelve thousand is a smoke test, not a rate. As of 2026-08-16 the verified-positive count is past thirty: Google web-verifier source arms across three accounts, the OpenAI provenance-API batches v1 and v2 (every asserted source detected), and 9 of 9 interleaved health positives. Still no denominator, so still not a rate. Extending the same runner to a frozen sample of asserted rows would give one. Update 2026-08-19: the first health miss (21/22) resolved as a bad label, not a verifier flip; the row `originals/2026-06-25/198ae69e...` is classified `openai/asserted` yet carries `claim_generator: Google C2PA Core Generator Library` and Google-side geometry, and the verifier's `not_detected` is the correct answer for it. The health design caught a corpus labeling error, which is the first direct evidence that assertion rows also carry at least one mislabeled member |
+| L3 | Date and model version do not carry the label | `supported` | The matched sets fix size, generator and codec but not date, and 57 of 70 Google controls fall in one month. Tested directly on 2026-08-16: a date-only classifier scores AUC 0.524/0.491, so date carries nothing and the covariate re-run is no longer load-bearing |
 
 ### Where the signal lives
 
 | # | Hypothesis | Status | What moves it |
 | --- | --- | --- | --- |
 | S1 | The periodic comb carries the watermark | `refuted` | Settled 2026-08-16. The structure every periodic expert reads is destroyed by a seven-pixel crop while the published mark retains 99.97% TPR under aggressive crop and resize, so it is a generation-pipeline lattice anchored at the image origin, not the watermark |
-| S2 | The signal is the broadband content between the comb lines | `open` | The frozen `comb-vs-broadband-v1` triples, blocked on provider quota. The local score cannot answer it by construction |
-| S3 | The signal is the shape of the normalized mid-band spectrum | `supported` for OpenAI, `open` for Google | Bands alone reach `0.608` on OpenAI against `0.510` shipped. Google is control-limited, so the same test there is underpowered until L1 and the control supply are settled |
+| S2 | The signal is the broadband content between the comb lines | `partial` | First direct oracle arm 2026-08-15: the equal-RMS broadband randomization (54.27 dB, local score unchanged by construction) remained `detected` by the Google verifier, as did every other arm of that account-isolated group. One image group at one perturbation class is a bound, not a sweep, but the between-lines content was randomized without moving the verdict, which is evidence against this scope. The local readout is blind between the comb lines by construction, so no local rerun can substitute; a wider amplitude ladder needs new provider quota |
+| S3 | The signal is the shape of the normalized mid-band spectrum | `supported` for OpenAI, `open` for Google | OpenAI confirmed under nested family and lambda selection on 2026-08-15: `0.510` shipped to `0.605`, CI [+0.045, +0.147], above the permutation null. The Google branch was tested the same way on 2026-08-16 and did not improve: `0.678` against `0.689` shipped, CI [-0.071, +0.046]; at 63 controls a 0.02-0.03 gain is unprovable there in principle, so Google stays control-limited |
 | S4 | The carrier is content-dependent, so no fixed key-derived pattern exists | `refuted` for Google, `supported` for OpenAI | Settled 2026-08-15 by cross-image tile correlation. Google carries one fixed phase-coherent pattern, present in the controls at about half the amplitude; OpenAI carries none at chance level. What remains open is whether the Google controls are unwatermarked at all, which is L1 |
-| S5 | The signal needs a learned nonlinear representation, not hand statistics | `open` | A small convolutional model on residual patches, where the data supports it, which today is OpenAI only |
+| S5 | The signal needs a learned nonlinear representation, not hand statistics | `refuted` at the tested capacity | First slice 2026-08-17: a 4-layer conv on opponent-residual patches, translation-invariant by construction (unaligned random patch offsets), leave-one-era-out. Against photographs it reaches 0.6-0.94, against foreign generators 0.44-0.56 with reversals to 0.11-0.15 on fresh eras, at a permutation null of 0.54-0.59: it learns "AI render versus photograph", nothing vendor-specific. A larger model remains free to try but inherits the same leave-one-era-out and leave-one-vendor acceptance gate |
+| S6 | Some hand-crafted statistic of the patch bank separates in every era, vendor and codec cell | `refuted` | Settled 2026-08-17 by the full-grid audit: of 124 features, zero clear minimum AUC 0.55 over 27 cells (best worst-cell 0.481), and a corpus-fitted ridge transfers to fresh eras at 0.388 native, 0.178 after JPEG-95 |
 
 ### Robustness
 
@@ -522,15 +532,15 @@ data is too small".
 
 | # | Hypothesis | Status | What moves it |
 | --- | --- | --- | --- |
-| M1 | The pipeline recovers a watermark we embedded ourselves | `supported` for a fixed-structure mark at SynthID's amplitude | Open watermarkers, VideoSeal, Watermark Anything, Stable Signature, give unlimited matched pairs. A pipeline that misses those has a method problem, not a data problem |
-| M2 | Matched pairs can be minted rather than mined | `refuted` | Imagen, whose `addWatermark` the plan was built on, is absent from the model garden and every id 404s. The `gemini-*-image` models that replaced it reject the parameter, and the documentation states that all generated images carry a SynthID watermark. No current Google path can emit an unwatermarked image |
-| M3 | `folded_template_score` is correct | `supported` | Removal and detection results share this one implementation, so a defect there explains both at once. An independent reimplementation scored over the same sample settles it |
+| M1 | The pipeline recovers a watermark we embedded ourselves | `supported` for a fixed-structure mark at SynthID's amplitude | Open watermarkers, VideoSeal, Watermark Anything, Stable Signature, give unlimited matched pairs. A pipeline that misses those has a method problem, not a data problem. The 2026-08-15 dwtDct ladder adds the boundary: full strength AUC `0.990`, quarter strength (RMS `0.563`, our SynthID measurement range) `0.936`, so the pipeline is sound at the amplitudes we work at. The M1b/M1c ablation the same day bounds every hand-statistic branch: at equal RMS a fixed mark scores `0.670`, a keyed mark `0.669`, and a keyed perceptually masked mark `0.546`, and demasking does not recover it (`0.538`). Masking, not keying or content dependence, is what defeats hand features |
+| M2 | Matched pairs can be minted rather than mined | `refuted` | Imagen, whose `addWatermark` the plan was built on, is absent from the model garden and every id 404s. The `gemini-*-image` models that replaced it reject the parameter, and the documentation states that all generated images carry a SynthID watermark. No current Google path can emit an unwatermarked image. Re-verified independently on 2026-08-16: `imagen-4.0-generate-001` and `imagen-3.0-generate-002` return 404 in us-central1 and us-east1 on both GCP projects, `gemini-2.5-flash-image` rejects `addWatermark` at request parsing (`Cannot find field`), and the current Gemini API documentation states for both the Gemini-image and Imagen paths that all generated images include a SynthID watermark, with no disable parameter documented. Settled on live API and documentation. Extended 2026-08-17 by the attack routes on the OpenAI side: pixel attacks to PSNR 20.1 (JPEG q40, 0.5 resize, sigma-8 noise plus JPEG q85, 0.35 resize plus JPEG q50) and a foreign-VAE decoder-substitution round-trip to PSNR 22.3 all left the official verifier answering detected, so attacking a verified positive cannot mint a verified negative on either provider by any mechanism tried |
+| M3 | `folded_template_score` is correct | `supported` | Settled 2026-08-15: an independent reimplementation of the fold scored over the same sample agrees with the shipped implementation to `3.7e-4`, the residual traced to float32 in the cv2 blur. Removal and detection results still share the one implementation, but it now matches an independent one |
 
 ### The shipped decision
 
 | # | Hypothesis | Status | What moves it |
 | --- | --- | --- | --- |
-| D1 | Some usable fraction of images can be decided at a precision-first threshold | `refuted` at one percent control acceptance | Never asked. Report the fraction decidable at one percent control acceptance, with abstention as an explicit third outcome, instead of ranking every image by AUC |
+| D1 | Some usable fraction of images can be decided at a precision-first threshold | `refuted` at one percent control acceptance | Asked and measured 2026-08-16: at one percent control acceptance the decidable positive fraction is 0-4.5%. A precision-first threshold that decides almost nothing is not a usable product surface |
 
 ## Empirical log
 
@@ -4278,6 +4288,1003 @@ branch: the entire local pixel route detects generation-pipeline lattice, and
 of it. Any future expert must pass the two-pixel shift test before calibration,
 per the R0 precondition.
 
+### 2026-08-16: hypothesis register audit
+
+A full pass over the register against the recorded evidence, closing what the
+log already settles:
+
+- M2 re-verified independently and settled. `imagen-4.0-generate-001` and
+  `imagen-3.0-generate-002` return 404 in us-central1 and us-east1 on both GCP
+  projects (`gen-lang-client-0926942364` and `raiw-cws-publish`);
+  `gemini-2.5-flash-image` rejects `addWatermark` at request parsing
+  (`Unknown name "addWatermark" at 'generation_config': Cannot find field`),
+  and the current Gemini API documentation states for both the Gemini-image
+  ("Nano Banana") and Imagen paths that all generated images include a SynthID
+  watermark, with no disable parameter documented. No current Google path can
+  emit an unwatermarked image.
+- S2 moves from `open` to `partial`: the equal-RMS broadband arm of the
+  account-isolated Google oracle group remained `detected`, first direct
+  evidence against the between-lines scope at the tested perturbation class.
+- S3 gains the Google nested test, which did not improve on the shipped score
+  (`0.678` vs `0.689`), so the Google branch stays control-limited.
+- L3 is settled by a direct date-only classifier (AUC 0.524/0.491).
+- M3 is settled by the independent fold reimplementation (`3.7e-4`).
+- D1 was asked and measured: 0-4.5% of positives decidable at one percent
+  control acceptance.
+- The ranked backlog gains an execution-state table: H1 executed and closed as
+  a watermark route (it locks onto the S1-refuted pipeline lattice), H2
+  rejected, H3 partially executed, H4 rejected as a standalone detector, H5
+  advanced as research confirmation only, H6/H7 blocked on the oracle-positive
+  corpus, H8 not started.
+
+Nothing in this pass reopens a closed hypothesis, and no status moved on an
+argument; every change cites a recorded measurement.
+
+### 2026-08-17: era, vendor and codec audit of the patch-local bank
+
+The power-spectrum bank cannot be blinded by translation, so the plain crop
+test that killed the phase-locked experts certifies nothing for it. The axes
+that can still separate a mark candidate from a pipeline signature are era
+(the statistic must fire on corpus-era June-July positives, fresh
+`gemini-2.5-flash-image` positives, and fresh `gemini-3.1-flash-image` 4K
+positives alike, since the documented policy watermarks all three), vendor
+(silence on C2PA-signed Firefly, Microsoft, PixelBin and fal-ai output), and
+codec (survival of JPEG-95 applied to both classes, which the published mark
+survives). `probe_era_vendor_codec.py` scored all 124 features over that grid:
+positives 533 corpus rows plus 10 fresh-2.5 plus 11 fresh-4K, negatives 218
+foreign-generator images, 300 seeded COCO photographs and 100 exact-1024 Open
+Images photographs, three conditions each.
+
+Result: zero features clear a minimum AUC of 0.55 over the 27 cells, zero
+clear 0.6, 0.65 or 0.7. The best worst-cell is 0.481. The strongest cells are
+the familiar ones, for example feature 47 at 0.9997 on corpus-native against
+photographs, and every such feature collapses below chance in some other era
+or codec cell. A ridge combination fitted on corpus-era positives transfers to
+the fresh eras at AUC 0.388 native and 0.178 after JPEG-95; fitted on fresh
+2.5-flash it transfers back to the corpus era at 0.243. The shipped folded
+baseline repeats the phase-lock story per era: corpus 0.8845 native against
+foreign generators falls to 0.4479 under a random 1-15 px crop, fresh 4K falls
+from 0.859 to 0.4508. The one weak exception is the ten fresh 2.5-flash images
+at 0.6114 under crop, which is also the set whose negatives are JPEG-stored
+while the positives are PNG, so the codec asymmetry is untested there and the
+sample is ten images.
+
+What this settles: every separating statistic in the hand-crafted bank is
+era-, vendor- or codec-bound, for the Google side measured directly and for the
+OpenAI side already implied by the reversed pre-registered band test of
+2026-08-16. Combined with the M1b masked-mark ceiling this closes the
+hand-crafted branch as a SynthID route for both providers. The one untested
+local route left is S5, a learned nonlinear model on residual patches, which
+now carries the additional requirement demonstrated here: leave-one-era-out
+transfer is the acceptance gate, because within-era separation is proven to be
+pipeline separation.
+
+### 2026-08-17: S5 first slice, learned patch detector under the era gate
+
+`probe_s5_patch_conv.py` trains a 4-layer convolutional model on opponent-plane
+Gaussian residual patches, eight unaligned random 128-px patches per image, so
+no phase anchor to the image origin can exist by construction. Positives span
+the eras available on disk: 535 corpus-era Google rows, 10 fresh
+`gemini-2.5-flash-image`, 11 fresh `gemini-3.1-flash-image` 4K, 853 corpus-era
+OpenAI rows and 151 fresh `gpt-image-1`. Negatives are 223 C2PA-signed foreign
+generator images and 400 photographs (300 seeded COCO, 100 exact-1024 Open
+Images). Each provider's model is trained on all eras but one and evaluated on
+the held-out era, native, after JPEG-95 on both classes, and after a two-pixel
+shift; the shift column equals the native one as designed, confirming the
+construction. Three image-level label permutations put the null at 0.552,
+0.553, 0.593 for Google and 0.540, 0.566, 0.554 for OpenAI.
+
+The verdict repeats the U2 result for a learned model. Against photographs the
+held-out eras score 0.711, 0.599 and 0.843 for Google and 0.791 and 0.767 for
+OpenAI. Against foreign generators the same models score 0.442, 0.153 and
+0.486 for Google and 0.455 and 0.153 for OpenAI: at or below the permutation
+null, with the fresh eras driven below chance, meaning the model ranks
+unwatermarked competitor output above freshly minted watermarked positives.
+A Google-versus-photographs model that never saw a foreign generator accepts
+94.6 to 100 percent of every foreign vendor at the photograph median, and
+scores fal-ai output above Google's own fresh 4K era (AUC 0.946 against it).
+One outlier cell, OpenAI fresh after JPEG-95 at 0.942 against photographs,
+carries a storage asymmetry: the positives are stored PNG and the photograph
+negatives JPEG, and re-encoding both does not equalize that history; it is
+recorded as an anomaly, not a signal.
+
+What this settles: the learned route at this capacity learns "AI render
+versus photograph" and nothing vendor-specific. With S6 refuting every
+hand-crafted feature across the same grid, R0 refuting the phase-locked
+experts, and M1b bounding what per-image statistics can do against a properly
+masked mark, three independent directions now agree: a per-image local
+SynthID detector is not reachable from these pixels by statistical means at
+any scale we can validate. Provider mark detection requires the provider
+decoder, which exists as an API for OpenAI and as an access-gated service for
+Google. The separable local signal that remains is the AI-render versus
+photograph distinction, whose honest product framing is generation detection,
+not watermark detection.
+
+### 2026-08-17: matched-pair manufacturing and the distillation screen
+
+Two measurements moved the "build our own detector" question:
+
+The attack ladder pilot (`build_attack_ladder_batch.py` +
+`run_attack_ladder_batch.py`, batch `attack-ladder-pilot-2026-08-17`, fifteen
+arms, every arm submitted exactly once) took three verifier-confirmed OpenAI
+positives through four attack mechanisms: JPEG q40, 0.5 bilinear resize,
+sigma-8 noise plus JPEG q85, and 0.35 resize plus JPEG q50. Every single arm
+returned `detected`, down to PSNR 20.1 dB and RMS 25.1. The OpenAI mark
+outlives distortions that destroy the image as a product, and MarkNull-severity
+attacks (which unwatermark Imagen-3 at PSNR 25.4 in their paper) do not flip
+this verifier. Matched pairs cannot be manufactured by attacking positives:
+the flip point sits beyond usable image quality, so same-content label
+contrast is unreachable on this provider by the attack route. All three
+re-verified sources stayed `detected`, so the run doubles as a health check.
+
+The distillation screen (`probe_distillation_screen.py`) took the other
+oracle-labeled contrast on disk, the 93 L1 control verdicts (65 detected, 28
+not detected; metadata says "no watermark" for all of them, the oracle
+supersedes it), and asked whether any local score reproduces those verdicts.
+The shipped folded score reaches AUC 0.613 against a permutation null of
+0.485 +/- 0.062, roughly two sigma. The best of 126 candidate scores reaches
+0.649 before selection correction. A ridge fitted on the test rows themselves
+(an explicit upper bound) reaches 0.693, while a ridge fitted on fresh mints
+against photographs and foreign generators transfers at 0.409, below chance:
+the mark-specific component does not survive provider-external training. The
+confound audit shows the two verdict groups matched on median size (1.573 MP
+both) and mixed across months and generators. Reading: a weak mark-specific
+trace exists in the natural no-assertion region, with a per-score ceiling
+around 0.61-0.65 at n=93. Tripling the labeled rows is the cheapest way to
+either confirm that ceiling or climb it, so the L1 runner resumed on its
+frozen 315-row plan the same day.
+
+The distillation harness (`probe_distillation_train.py`, feature cache keyed
+by content hash over all 329 factory-reachable rows, temporal folds by
+collection month, nested-penalty ridge, max-statistic null) ran its dry pass
+at the labels available that evening: 102 hard-contrast rows give temporal-CV
+AUC 0.632, the 110-row pooled contrast 0.652, and one feature of 124 exceeds
+the max-statistic null by two sigma (0.724 against 0.657 +/- 0.033). The
+harness is the acceptance instrument for the growing label set; the decision
+it will support at n near 280 is whether a weak-but-honest local component
+ships under an `indeterminate`-heavy contract or the ceiling is declared.
+
+### 2026-08-17 evening: decoder substitution and the state of Google access
+
+Access re-checks first, both negative. The Vertex publisher model
+`imagewatermarkdetector@001` returns "not servable in region us-central1" and
+404 "not found or your project does not have access" in us-east4,
+europe-west4 and asia-northeast1, on live credentials; nothing has opened
+since the 2026-08-15 verification sweep. The hypothesized open release of
+official image watermark weights ("synthid-suite") does not exist: GitHub,
+the google-deepmind organization and the Hugging Face registries expose only
+`synthid-text`. No official image detector or marker weights are public, so
+no local distillation of the official encoder is possible either.
+
+Decoder substitution was then tested as a matched-pair factory, on the
+MarkNull mechanism reading that the mark lives in the decoder's output
+distribution. `build_vae_pair_batches.py` froze five oracle-verified OpenAI
+sources plus their float32 encode/decode round-trips through
+`stabilityai/sd-vae-ft-mse` (latent mode, no noise, edge padding to a
+multiple of eight), PSNR 22.3-32.0 dB, and `run_vae_pairs_openai.py`
+submitted the five treated arms exactly once: every arm returned `detected`.
+The OpenAI mark is not decoder-bound. It has now survived, with verdicts
+unchanged, JPEG q40, 0.5 resize, sigma-8 noise plus JPEG q85, 0.35 resize
+plus JPEG q50 down to PSNR 20.1, and a foreign-VAE reconstruction down to
+PSNR 22.3. Every same-content pair-factory route is closed on this provider;
+natural verdicts remain the only label source, which is the L1 extension
+already running.
+
+The matching Google batch `vae-pairs-google-2026-08-17` (three fresh
+policy-watermarked generations, both arms, six submissions) is frozen for the
+Gemini web verifier. MarkNull reports its SD-proxy regeneration flipping
+Gemini verdicts at 25.4 dB, so this batch decides whether a plain
+reconstruction (no latent optimization) already breaks the Google mark, and
+with it whether the local negative factory is viable for Google. It requires
+a browser session and is the next oracle action when one is available.
+
+Resolved 2026-08-18 as `vae-pairs-google-v2-2026-08-18`, submitted manually by
+the user through the Gemini web verifier. The first v1 attempt exposed a
+known trap live: the source arm answered through C2PA Content Credentials
+(metadata), and the vae arm returned visual analysis with no watermark check;
+neither is a pixel verdict, and both were discarded. The v2 batch re-encoded
+every arm through PIL so all arms carry identical chunk sets with the sources'
+decoded pixels asserted identical, and added two attribution controls. All
+eight arms returned explicit SynthID pixel verdicts: the three stripped
+sources `detected`, the three VAE round-trips `detected` at 26.6-32.9 dB, the
+COCO photograph `not detected`, and the C2PA-signed Adobe Firefly image `not
+detected`. Two conclusions. First, the Google mark survives foreign-decoder
+substitution exactly as the OpenAI mark does, so the plain-reconstruction
+negative factory is dead on both providers; only MarkNull-style latent
+optimization remains untested, and it destroys product quality (25.4 dB,
+SSIM 0.80). Second, the controls give the web pixel verdict its first
+attribution validation: it stays silent on another generator's AI image, so
+within this session it read the Google mark or Google pipeline, not generic
+AI forensics. That makes the earlier comb-vs-broadband and replace-095
+verdicts, all answered on Google-generated pixels, retroactively cleaner as
+mark-presence evidence than they were when recorded.
+
+### 2026-08-18/19: the three-metadata-dataset program and the shared-component attribution
+
+The negative-factory hypotheses being dead, the working program switched to
+estimation on positives, organized as three datasets built only from
+unambiguous metadata: G, Google `created` rows (4,710, watermarked by
+documented policy); O, OpenAI `watermarked.unbound` rows (7,444, all oracle-
+sampled rows detected); N, images that cannot carry SynthID (C2PA-signed
+foreign generators plus C2PA-signed smartphone cameras; the 2026-08-18 web
+control answered `not_detected` on a Firefly member). The 287 OpenAI
+no-assertion rows and 70 Google non-`created` rows stay excluded (L1: 69% of
+no-assertion rows are actually watermarked), and the 19,792 rows with unknown
+provenance are not used as negatives.
+
+`probe_shared_component.py` estimates, per class, the mean origin-aligned
+opponent-residual pattern over up to six unit-RMS 256-px patches per image,
+with split-half convergence bounds and photographs as the estimator null
+(0.002 +/- 0.002, i.e. zero). Results: every AI class carries a strong shared
+component (Google corpus 0.922 at n=535, OpenAI corpus 0.723, OpenAI fresh
+0.978 at n=151, foreign generators 0.597, fresh Google 0.30-0.52 at n=10-11),
+photographs carry none. Corpus-era components are compression-dominated (50-98%
+of power on the period-8 comb); fresh-era components are not (4-10% comb).
+
+The attribution of the shared component settles the mark question. In chroma,
+Google eras correlate pairwise (R-G 0.29-0.59 full-field, 0.25-0.48 after
+removing the JPEG comb) while OpenAI eras correlate at zero and OpenAI versus
+Google at zero: the Google component is provider-specific but era-crossing.
+But it is not the mark. Per-generator decomposition against the fresh 3.1-flash
+mean shows Adobe Firefly at 0.572 and PixelBin at 0.406 full-band coherence
+while Microsoft generators sit at 0.03-0.19 and fal-ai at 0.05; band-resolved,
+Firefly tracks Google in every band including the high-frequency chroma bands
+where the two fresh Google eras correlate (0.87 in the period-4 render band,
+0.30-0.63 above 0.30 cyc/px). The 2026-08-18 oracle control verified Firefly
+carries no SynthID. Therefore the era-crossing shared chroma component is a
+renderer-architecture lineage shared by Google's decoders with Firefly and
+PixelBin, absent from Microsoft, fal-ai and OpenAI, and the era genealogy is
+visible directly (corpus and 3.1-flash share the period-4 band at 0.92 while
+2.5-flash does not, matching the model lineages). No frequency band exists
+where Google eras correlate and Firefly does not. A one-pixel diagonal shift
+erases the component completely (0.48 to -0.05), the origin lock already
+established for the lattice.
+
+This closes the fixed-signature program: every image-independent signature
+measurable from positives is renderer genealogy, and the mark itself presents
+no fixed cross-image signature at all, consistent with a content-dependent
+masked encoder (the M1b ceiling and the DeepMind patent model) and with S4's
+zero carrier finding for OpenAI. The era-mean patterns are saved as amplified
+PNGs (`shared-component/pattern-*.png`) so the pipeline signature is now
+literally visible. The remaining measurable routes are the OpenAI natural-
+verdict distillation (L1 at 227/315) and same-content differential analysis
+inside near-duplicate groups, where a `created`+`edited` pair of the same
+content is the one remaining place a mark-versus-mark contrast could exist;
+the group miner `probe_near_duplicates.py` records mixed-assertion groups
+explicitly for that.
+
+The near-duplicate miner completed over all 12,511 provider rows: 170 groups
+at Hamming 12, 21 cross-provider, 5 with mixed assertion, largest group 9.
+Every cross-provider pair is a re-render (all 21 differ in raster size; the
+closest, 896x1200 versus 895x1200, aligns at only 23.7 dB PSNR), so no
+same-raster cross-provider pair exists and the cross-provider groups cannot
+serve as same-content mark contrasts; they remain renderer-attribution
+controls. The local half of decoder substitution also finished (`decoder-
+substitution.json`, 287 photographs and 217 foreign round-trips completing
+the earlier sets): zero of 124 paired-delta features clear the pre-registered
+0.70 acceptance against both negative families (best 0.644), and the OpenAI
+deltas point the wrong way entirely (0.23-0.30). This agrees with the oracle
+outcome rather than contradicting it: since the mark survives the round-trip,
+no mark-destruction signature exists to find, and the null result is the
+expected shape.
+
+A first product-shaped use of the renderer signature was measured the same
+day: correlating an image's origin-aligned chroma residual against the frozen
+era-mean signatures (matched filter over the three Google era patterns) gives
+AUC 0.914 against foreign generators and 1.000 against OpenAI corpus images,
+with 0.68 TPR at 10% FPR against foreign. The highest-scoring foreign images
+are exclusively Adobe Firefly and PixelBin, the two generators that share the
+Google renderer lineage, so the honest claim is "diffusion-render-family
+generation detector" (Google, Firefly, PixelBin), not provider attribution,
+and it inherits the one-pixel origin lock. It is a candidate second pixel
+signal beside the pipeline lattice, to be frozen under the R0 gate before any
+product integration.
+
+The local half of the same probe (`probe_decoder_substitution.py`) runs the
+round-trip over fresh and corpus Google, corpus and fresh OpenAI, foreign
+generators and photographs, with a pre-registered acceptance rule: a paired
+feature delta separating Google from BOTH photographs and foreign generators
+at AUC 0.70 with a permutation null two sigma below. Separation from
+photographs alone repeats the render-versus-photo result and is not
+evidence. Its outcome is in `decoder-substitution.json`: zero of 124 features
+clear 0.70 against both negative families (best `google_min` 0.644).
+
+### 2026-08-19: aoxo/reverse-synthid scored against the frozen era bank
+
+The Hugging Face dump `aoxo/reverse-synthid` was downloaded in full to
+`.local-eval/synthid/reverse-synthid-hf` (2,197 files, 1,922 images) after
+the public `reverse-SynthID` repository had already been audited as a
+chance-level detector of our lattice, not of the mark. The question left
+open was whether their solid-color and low-content images were usable as
+independent copies of the Google-era signatures. `probe_aoxo_reverse_synthid.py`
+reuses the shared-component residual, the origin-aligned 256-px unit-RMS
+patches, and the frozen three-era matched filter. It does not call a
+provider API.
+
+Their Google-family means are the same renderer genealogy we already have.
+Chroma R-G of the family mean versus `google_corpus` is 0.805 on
+`gemini-3.1-flash-image-preview` (n=589, split-half 0.958), 0.905 on
+`nano-banana-pro-preview` (n=518, split-half 0.938), 0.941 on `gemini_random`
+(n=88), and 0.898 on `gemini_black_nb_pro` (n=91, split-half 0.964). The
+same means sit at 0.48-0.56 versus `google_fresh31` and near zero versus
+both OpenAI eras and photographs. A two-pixel crop on a `gemini_black_nb_pro`
+2048-px black kills the match (`0.408` to `-0.063` versus corpus). The
+amplified family mean is the period-8 vertical lattice. DALL-E 3 is a clean
+negative for that filter: 0/280 images above the frozen foreign 10% FPR cut
+(0.122), family-mean chroma 0.105 versus corpus, and the amplified mean is
+unstructured noise.
+
+Two of their folders are a different shared object and must not be mixed
+into the Google bank. `gemini_black` and `gemini_white` have split-half
+0.980-0.983, so they do share something, but chroma versus `google_corpus`
+is 0.046 and `-0.140`. They correlate with each other at 0.527 and with the
+Google-lineage aoxo families at 0.14 or below. The production folded
+template accepts 0/20 in each folder.
+
+The production lattice detector follows raster size, not folder label. It
+accepts 20/20 `gemini_black_nb_pro` (2048 px, median 0.593) and 20/20
+`gemini_random` (2816x1536, median 0.361), and rejects 20/20 of the leading
+1024-px solids in the structured Gemini 3.1 and nano-banana folders. That is
+the existing large-native scope, not a new carrier.
+
+Adding the four matching aoxo means as extra matched-filter templates makes
+the generation detector worse on the frozen holdout. Against foreign
+generators, AUC falls from 0.878 to 0.857 and TPR at 10% FPR from 0.471 to
+0.445 (n=535 vs 223). Against the DALL-E bank the same change drops TPR at
+10% FPR from 0.991 to 0.907. Foreign and DALL-E scores rise more than Google
+scores do. The frozen three-era bank is therefore left unchanged.
+`shared-component/era-means-extended.npz` keeps the aoxo means as labeled
+reference copies, including `aoxo_dalle3_solid` as a negative, and is not an
+input to the detector. Per-family numbers live in
+`aoxo-reverse-synthid/aoxo-reverse-synthid.json`.
+
+Substitution was checked next, because addition can only raise scores.
+Replacing `google_fresh31` with any aoxo Google-family mean does not beat
+`google_corpus` alone. On the full in-sample holdout the three-era max is
+already worse than the corpus mean by itself (full-field AUC 0.878 vs 0.892
+against foreign). The leaked in-sample number is only slightly optimistic:
+ten split-half re-estimates of the corpus mean, scored on the unused half,
+give AUC 0.880 +/- 0.003 and TPR at 10% FPR 0.480 +/- 0.017. Chroma R-G
+scoring is the one change that moves the needle on that honest split
+(0.904 +/- 0.003, TPR 0.597 +/- 0.020). It is a scoring change, not a new
+signature, and it is not frozen into the detector here.
+
+The dump's actual use is as held-out positives the corpus mean never saw.
+Against foreign generators, chroma correlation with the frozen corpus mean
+separates `gemini_black_nb_pro` at AUC 0.990 / TPR 0.989 (n=91) and
+`gemini_random` at 0.935 / 0.750 (n=88). The structured 1024-px solid
+folders are the same lineage at much lower per-image SNR: `nano_banana_solid`
+0.799 / 0.216 and `gemini31_solid` 0.801 / 0.153. `gemini_black` is chance
+(0.594 / 0.000) and `gemini_white` is anti-aligned (0.315). Those two
+folders are near-black and near-white Gemini dumps with a private shared
+texture (split-half 0.98, pixel std about 3.5), not the period-8 lattice.
+Numbers: `aoxo-reverse-synthid/generation-detector-aoxo-holdout.json` and
+`generation-detector-aoxo-substitute.json`.
+
+Deflation asks the remaining averaging question: after that lattice is
+projected out, does a second shared component look like a mark.
+Projecting a set's own mean out of itself forces split-half near `-1` and
+is discarded as a tautology. The independent case is the one that counts.
+Removing the frozen corpus mean from the aoxo Google families, or removing
+the aoxo `gemini_black_nb_pro` mean from the corpus, leaves a leftover
+chroma correlation of 0.74 between `nano_banana_solid` and
+`gemini31_solid`. That leftover dies at a one-pixel roll (`0.742` to
+`-0.005`) and returns at shifts 4/8/16 (`0.61` / `0.47` / `0.49`). It is
+uncorrelated with photographs (`-0.01`), DALL-E solids (`0.11`), and the
+OpenAI corpus (`0.09`). So rank-1 removal peels the JPEG-heavy corpus
+lattice and uncovers a cleaner origin-locked period of the same renderer
+family, which is why extra aoxo templates raised foreign scores instead of
+finding a mark. OpenAI split-half is unchanged by Google-lattice removal
+(0.723 / 0.978), as required if that component is a different renderer.
+`aoxo-deflate.json` and `aoxo-deflate-leftover.json`.
+
+### 2026-08-19: remaining local hypotheses
+
+Four locally testable leftovers were closed by
+`probe_remaining_hypotheses.py`. None of them is a mark.
+
+**Rank deflation.** The leftover chroma between held-out `nano_banana_solid`
+and `gemini31_solid` after removing the top K corpus chroma PCs stays at
+0.57 from K=2 through K=16 and still dies at a one-pixel roll (0.045). It
+is not in the corpus JPEG-era subspace. Fitting the PCs on `nano_banana_solid`
+itself does remove it from `gemini31_solid` (0.70 at rank 1, 0.18 at rank 5,
+0.12 at rank 8), so the leftover is a low-rank 3.1-family lattice the mixed
+corpus does not span. Photographs stay at 0.01. Extra ranks do not uncover a
+shift-robust residue.
+
+**Mixed-assertion near-duplicates.** All five groups were opened. Three are
+cross-provider re-renders at different rasters and cannot isolate a mark.
+The two same-provider OpenAI pairs are same-raster: 1254 px at 29.6 dB
+(RMS 8.4) and 1054x1492 at 22.1 dB (RMS 20.0). The pixel difference of
+either pair is uncorrelated with the Google lattice, the OpenAI corpus mean,
+and the OpenAI fresh mean (best 0.066). Both members of the 29.6 dB pair
+match the OpenAI corpus fingerprint equally (0.079 vs 0.081). Assertion
+metadata does not flip a shared residual, which matches the L1 finding that
+most OpenAI no-assertion rows are still watermarked.
+
+**OpenAI shared component.** The corpus-era OpenAI mean is origin-locked and
+periodic: chroma self-correlation 1.0 at shift 0, `-0.446` at 1 px, then
+0.57-0.68 at 2/4/8/16. Cross-era correlation with fresh `gpt-image-1` is
+~0 at every shift. The fresh mean itself is origin-locked but not the same
+period-8 object (self-shift 1 px `-0.083`, later shifts ~0). Both sit at
+zero against photographs. This is an era-specific renderer fingerprint of
+the same class as Google's, not a stable mark.
+
+**aoxo `gemini_black` / `gemini_white`.** Their private shared object is also
+origin-locked and periodic (black vs white 0.527 at 0 px, `-0.502` at 1 px,
+0.51-0.53 at 2/4/8/16) and is not the Google corpus lattice (0.046 /
+`-0.140`) nor `gemini_black_nb_pro` (0.139). It is a third phase-locked
+texture, not a crop-robust mark.
+
+Local averaging, deflation, near-duplicate contrast, and the OpenAI shared
+component are therefore exhausted as mark routes. What remains needs a
+provider oracle or a product decision: L1 distillation (OpenAI verifier),
+H6/H7 (oracle-positive training pairs), freezing chroma scoring under R0 as
+a generation detector, and H8 as a multi-image product mode. H3 is not a
+new carrier; a GLRT on the same origin-locked lattice would rediscover S1.
+Numbers: `aoxo-reverse-synthid/remaining-hypotheses.json`.
+
+### 2026-08-19: new search class, lattice death
+
+Hand-crafted templates and cross-image averages are exhausted because they
+read origin-locked renderer structure. The mark, by publication and by our
+oracle ladder, survives JPEG-95 and a few-pixel crop; the lattice does not.
+The next class is therefore: destroy the lattice first, then ask whether any
+statistic still separates Google from both Firefly and Microsoft.
+
+`probe_lattice_death.py` applies JPEG-95 and an 8-24 px crop, then scores the
+folded template, chroma correlation with the corpus mean, and the 124-feature
+bank. The lattice dies as required: chroma AUC falls to 0.49-0.56 against
+every family, and the folded template accept rate on Google falls from 0.88
+to 0.04. The feature bank does not die. Best-of-124 AUC is 0.796 against
+Firefly and 0.792 against Microsoft (n=149 vs 78/85). A 200-draw max-stat
+null on the Firefly comparison has mean 0.600, 95th percentile 0.633, and
+maximum 0.684; the observed 0.802 never occurs. Size and mean luma are not
+the confound (AUC 0.51 and 0.35).
+
+The shared winner is feature 106: median B-Y residual autocovariance at lag
+(2, 3). It is a short-range opponent covariance, not a period-8 comb. On a
+held-out scoring of that single feature the era gate fails. Corpus Google
+median `-0.015`; fresh `gemini-3.1` `-0.011` (same side); fresh
+`gemini-2.5-flash` `-0.073` (AUC 0.946 against the corpus, n=10). DALL-E 3
+and fresh OpenAI sit with the other generators (0.815 and 0.796). PixelBin,
+the other shared-lineage renderer, is the nearest foreign (0.663). A mark
+required by policy on every Gemini era cannot miss 2.5-flash. The leftover
+is therefore a crop-and-JPEG-stable renderer/era texture, a second pipeline
+signature beside the lattice, not SynthID.
+
+`lattice-death.json` and `feature-106-holdout.json`.
+
+A linear follow-up asks whether the rest of the bank can recover the era
+that feature 106 missed. Ridge on the 124 JPEG-plus-crop features, trained
+on 99 corpus Google versus 164 Firefly+Microsoft rows (lambda 100 chosen
+on an inner hold), reaches AUC 0.852 on the held-out 50 corpus Google
+images against that foreign pool. It does not transfer: fresh 2.5-flash
+0.306, fresh 3.1 0.403, DALL-E 3 0.485, fresh OpenAI 0.418. It does fire
+on aoxo 3.1 solids (nano 0.962, gemini31 0.978), so what it learned is
+corpus-era plus low-content 3.1 export texture, not a policy-wide mark.
+`post-lattice-ridge.json`.
+
+### 2026-08-19: L1 finished
+
+The OpenAI control-validation runner completed the 315-row plan. Controls:
+203 `detected` / 285 verdicts (contamination 0.712). Health positives: 27/28
+`detected`, one miss, the same corpus-label error recorded earlier. Two
+control rows remain `error` from an earlier unreachable-API window and were
+not retried, because a request that may have reached the model is not a
+second submission. The new key was accepted; a 429 after a burst slept 61
+minutes and then drained the tail.
+
+On provider-clean labels the frozen patch-local bank still does not separate
+(`patch_local_auc` 0.572, shipped OpenAI 0.439, n=283). Distillation on the
+full L1 set does move: temporal-CV ridge AUC 0.720 on the hard no-assertion
+contrast (311 rows) and 0.728 pooled, with 8 and 6 univariate features
+above a 2-sigma max-stat null (best 0.674 vs 0.595 +/- 0.016). In-sample
+ridge permutation stays at 0.78, so the in-sample fit is still overfit; the
+0.72 is the out-of-fold number. That is above the earlier 0.63 at n~110, and
+still not a production expert. `openai-control-validation.json`,
+`l1-snapshots.json`, `distillation-train.json`.
+
+### 2026-08-19/20: OpenAI identity ladder
+
+The 2026-08-17 attack ladder left crop, rotation, flip and grayscale unasked.
+`identity-ladder-2026-08-19` takes the already-verified s1 positive and submits
+ten frozen rungs once each. All ten returned `detected`:
+
+| Rung | Output | PSNR (resized-back) | Oracle |
+| --- | --- | --- | --- |
+| JPEG q80 | 1024x1536 | 37.3 | detected |
+| JPEG q20 | 1024x1536 | 31.4 | detected |
+| crop 2 px top-left | 1022x1534 | 26.0 | detected |
+| crop 8 px all sides | 1008x1520 | 21.0 | detected |
+| center keep 75% | 768x1152 | 11.8 | detected |
+| center keep 50% | 512x768 | 10.3 | detected |
+| rotate 90 deg | 1536x1024 | 10.9 | detected |
+| rotate 5 deg, expand | 1154x1620 | 13.6 | detected |
+| horizontal flip | 1024x1536 | 10.7 | detected |
+| grayscale | 1024x1536 | 26.1 | detected |
+
+Together with the earlier 3x4 ladder (JPEG q40, 0.5x, noise+JPEG q85,
+0.35x+JPEG q50, all detected, n=3) the official OpenAI mark, on this seed,
+survives every identity-class transform that kills the pipeline lattice.
+The two-pixel crop that zeroes the origin-locked chroma template is not a
+mark failure. A half-image center crop is not a mark failure. Grayscale is
+not a mark failure, so the decoder is not chroma-only. 90-degree rotation
+and a flip are not mark failures, so the decoder is not phase-locked to the
+original raster axes.
+
+This is n=1 for the new rungs. It is enough to reject several detector
+hypotheses and to constrain the embedding: a spatially redundant residual,
+readable from luminance, trained with geometric and JPEG augmentations, not
+a border, not a fixed tile, not the period-8 lattice. Local detection then
+has to be a crop-equivariant learned decoder, which is the M1b ceiling, not
+a better comb statistic. `identity-ladder-2026-08-19/manifest.json`.
+
+### 2026-08-20: how the OpenAI mark is applied
+
+The survival envelope plus the paper/patent plus the VAE pairs constrain the
+embedding method. It is not a new measurement; it is the intersection of the
+ones already taken.
+
+The encoder is post-hoc and additive in pixel space: after the generator has
+emitted an image, a separate network writes `x' = x + g(x)` and a separate
+network reads it back. That is the paper's definition and the patent's image
+example. Three oracle facts say the same thing in measurements. Metadata
+stripping does not change the verdict, so the mark is not a C2PA field. A
+VAE decoder substitution (`sd-vae-ft-mse`, 22.3-32.0 dB, 5/5 detected) does
+not remove it, so the mark is not a latent of that decoder. Replacing the
+generator would not remove the capability, which is why Google and OpenAI can
+share a SynthID family name and still fail each other's official decoder.
+
+Where it is written. Grayscale (PIL `L`, then RGB) stayed `detected`, so the
+decoder reads luminance: stacking `L,L,L` zeroes chroma, and a chroma-only
+carrier would have gone silent. JPEG q20 stayed `detected`, so the carrier
+is not the high-frequency DCT tail that classical DWT-DCT uses. A center
+crop keeping half the area stayed `detected`, so the residual is spatially
+redundant rather than a border or a single tile. A two-pixel crop stayed
+`detected` while our origin-locked lattice dies, so the written residual is
+not that lattice. 90-degree rotation and a horizontal flip stayed `detected`,
+so `g` is not a phase-locked overlay on the original raster axes.
+
+How `g` is shaped. M1b at matched RMS put a fixed mid-band mark at AUC 0.670,
+a keyed mid-band mark at 0.669, and a keyed perceptually masked mark at 0.546.
+Masking, not keying, is what hides it from hand statistics: amplitude tracks
+local texture, local SNR is flat, and there is no quiet region to average.
+The patent's U-Net with optional key injection is the architecture that
+produces exactly that residual. Content dependence (`g(x)` rather than a
+fixed `g`) is why averaging thousands of OpenAI images never yielded a mark
+template, only an era-specific renderer fingerprint.
+
+The working model of application is therefore: a provider-specific neural
+encoder, run after generation, adds a perceptually masked luminance residual
+in the mid-band, redundant across the frame, trained to survive JPEG, crop,
+resize, flip and small/90-degree rotation. The matching decoder holds the
+provider key as weights. Nothing in the local pixel statistics we can write
+by hand is that decoder.
+
+### 2026-08-20: census of embedding methods
+
+Every plausible way to write a SynthID-class mark, sorted by what the
+measurements already forbid. Identity-ladder rungs (crop, rotation, flip,
+grayscale, JPEG q20) are n=1 on OpenAI s1. Attack-ladder and VAE pairs are
+n=3 and n=5. Google VAE is n=3. A method that survives those tests is not
+proved; a method that dies on them is closed.
+
+**Ruled out**
+
+| Method | Why it is closed |
+| --- | --- |
+| C2PA, EXIF, filename, chunks, or any sidecar | Official OpenAI path strips AI metadata, proves pixels unchanged, still `detected` |
+| LSB / bit-plane steganography | JPEG q20 and `sd-vae-ft-mse` both destroy LSBs; both left the mark `detected` |
+| Classical DWT-DCT / `imwatermark` bins | That family dies near JPEG q90; SynthID stayed `detected` at q20 and at 0.35x+q50 |
+| Chroma-only residual | Grayscale zeroes R-G and B-Y; oracle still `detected` |
+| High-frequency-only tail | JPEG q20 and VAE keep mid-band and discard the tail; mark remained |
+| Border, corner, or single-tile stamp | Center keep-50% still `detected` |
+| Origin-locked periodic lattice (our S4/S1 object) | 2 px crop kills that lattice and not the oracle; Firefly shares the lattice and has no SynthID |
+| Axis-locked overlay on the original raster | 90 deg rotation and horizontal flip still `detected` |
+| Mark stored only in one generator's VAE latent | Decoder substitution through `sd-vae-ft-mse` left 5/5 OpenAI and 3/3 Google `detected` |
+| In-model watermark baked into diffusion weights | Paper: post-hoc `f: X -> X` on an already generated image; swapping the generator does not remove the capability |
+| One shared decoder for Google and OpenAI | OpenAI verifier returned `not_detected` on a Google positive and `detected` on OpenAI positives |
+| Fixed additive template shared across images | OpenAI corpus vs fresh split-half cross-era ~0; averaging recovered renderer genealogy, not a mark |
+| Keying alone as the reason hand features fail | M1b: fixed vs keyed mid-band 0.670 vs 0.669; masked keyed 0.546 |
+
+**Still possible, not forced**
+
+| Method | What would still fit |
+| --- | --- |
+| Additive `x' = x + g(x)` vs a learned invertible map | Additive is the patent example; a small invertible network is not ruled out if it is JPEG-and-crop stable |
+| Luma-only vs luma-plus-chroma | Luma is required; extra chroma is allowed because grayscale kept the luma copy |
+| Mid-band spatial residual vs mid-band learned latent of the watermarker itself | VAE test only kills *that* VAE; the encoder may still think in its own latent |
+| U-Net vs other conv/attention generators | Patent describes U-Net; any local-and-global residual net that masks to texture would survive the same tests |
+| Resize to a trained size, mark, resize back | Patent alternative; compatible with scale survival; decoder would canonicalize or be scale-trained |
+| Ensemble of encoder/decoder pairs per provider or epoch | Patent continuation; explains Google vs OpenAI silence and era-specific keys without changing the method class |
+| Per-image payload / secret injected into `g` | Presence detection does not need payload recovery; optional in the patent |
+| Training augmentations beyond the ones we hit | Elastic warp, extreme downscale, JPEG q5, 10% area crop are untested; they may be outside the trained set |
+| Slightly different Google vs OpenAI implementations of the same class | Same method, different weights, possibly different trained-size or mask strength |
+
+**Forced by the intersection**
+
+| Property | Forced by |
+| --- | --- |
+| Written in decoded pixels, after generation | Metadata strip; paper definition |
+| Readable from luminance | Grayscale `detected` |
+| Spatially redundant across the frame | Keep-50% `detected` |
+| Not phase-locked to the source origin or axes | 2 px crop, rot90, flip `detected` |
+| Mid-band, JPEG-stable | q20 and 0.35x+q50 `detected` |
+| Provider-specific decoder weights | Cross-provider `not_detected` |
+| Content-dependent residual, perceptually masked | No shared template under averaging; M1b mask gap |
+
+The method class is therefore one: a provider-keyed neural residual in luma
+mid-band, post-hoc, redundant, geometry-trained. Variants inside that class
+(U-Net vs other nets, optional payload, resize-to-canonical, ensemble of
+pairs) remain open and do not change the detector architecture. Everything
+outside that class is closed.
+
+### 2026-08-20: OpenAI kill ladder, first not_detected
+
+Identity and attack ladders never silenced the official decoder. The kill
+ladder on the same s1 seed asks which frozen destruction first does.
+
+| Rung | Output | PSNR | Oracle |
+| --- | --- | --- | --- |
+| JPEG q10 | 1024x1536 | 29.1 | detected |
+| JPEG q5 | 1024x1536 | 26.3 | detected |
+| center keep 25% | 256x384 | 9.9 | not_detected |
+| center keep 10% | 102x153 | 10.5 | not_detected |
+| Gaussian blur sigma 3 | 1024x1536 | 26.9 | detected |
+| Gaussian blur sigma 8 | 1024x1536 | 23.3 | not_detected |
+| scale 0.20 | 204x307 | 27.0 | detected |
+| median 7 | 1024x1536 | 28.6 | detected |
+| elastic alpha 12 | 1024x1536 | 40.7 | detected |
+| posterize 4 bits | 1024x1536 | 29.5 | detected |
+
+The flip is not pixel count. Scale 0.20 has fewer pixels than keep-25% and
+stayed `detected`, because it still holds the whole frame. Keep-50% was
+`detected` on the identity ladder; keep-25% is the first crop miss. Blur
+sigma 8 is the first full-frame miss; JPEG q5 is not. Mild elastic (40.7 dB)
+is not reverse-SynthID's 18-24 dB warp and did not flip.
+
+So the official decoder needs a large fraction of the original scene and is
+more sensitive to spatial low-pass than to DCT quantization. That is not a
+remover: blur-8 at 23 dB and a quarter-frame crop destroy the picture. It is
+the first oracle-negative envelope on OpenAI. n=1 seed.
+`kill-ladder-2026-08-20/manifest.json`.
+
+The in-between batch `flip-ladder-2026-08-20` on the same seed:
+
+| Rung | Output | PSNR | Oracle |
+| --- | --- | --- | --- |
+| blur sigma 5 | 1024x1536 | 25.1 | detected |
+| blur sigma 6 | 1024x1536 | 24.4 | detected |
+| blur sigma 7 | 1024x1536 | 23.8 | not_detected |
+| center keep 40% linear | 409x614 | 10.5 | not_detected |
+| center keep 33% linear | 337x506 | 10.1 | not_detected |
+| elastic ~24.6 dB | 1024x1536 | 24.6 | detected |
+| elastic ~20.8 dB | 1024x1536 | 20.8 | not_detected |
+
+Flip points, still n=1: Gaussian blur between 6 and 7 (24.4 dB vs 23.8 dB);
+crop between keep-50% linear (detected on the identity ladder, 512x768) and
+keep-40% (409x614); elastic between 24.6 dB and 20.8 dB. JPEG q5 remains
+`detected`. No rung that silences the decoder is a usable picture. `flip-ladder-2026-08-20/manifest.json`.
+
+### 2026-08-20: OpenAI add ladder
+
+The crop miss could have been "too few marked pixels in the upload" or
+"too little of the original scene". Adding unmarked pixels distinguishes
+them. Same s1 seed, donor COCO `000000000139`.
+
+| Rung | Upload | Oracle |
+| --- | --- | --- |
+| pad white, original 70% linear | 1463x2194 | detected |
+| pad white, original 40% linear | 2560x3840 | detected |
+| inset on photo, 70% of 1600 canvas | 1600x1600 | not_detected |
+| inset on photo, 40% of 1600 canvas | 1600x1600 | not_detected |
+| blend 50% with photo | 1024x1536 | detected |
+| blend 25% marked / 75% photo | 1024x1536 | detected |
+| horizontal concat with photo | 2048x1536 | not_detected |
+| Gaussian noise sigma 16 | 1024x1536 | detected |
+
+White padding to 40% linear stays `detected`, while cropping the same seed
+to 40% linear was `not_detected`. The decoder is not counting marked pixels
+in the upload; it is reading coverage of the original scene. Uniform pad is
+ignored. A second unmarked photo beside the intact marked half (`hstack`)
+silences it, as does pasting a resized copy onto a photo (`inset`, with an
+aspect-ratio confound). Mixing unmarked pixels into every location at 75%
+still `detected`, so amplitude 0.25 of the residual is enough when it is
+present everywhere. n=1. `add-ladder-2026-08-20/manifest.json`.
+
+All OpenAI oracle ladder numbers are copied into tracked
+[`docs/synthid-removal-research.md`](synthid-removal-research.md) so they survive
+the gitignored eval directory.
+
+Replication on s2 and s3 of the s1 flip points is complete. Blur sigma 6 vs 7
+and crop keep 0.50 vs 0.40 hold on 3/3 seeds. White pad 40% stays `detected`
+and hstack stays `not_detected` on 3/3. Blend 25% stays `detected` on 3/3.
+Native-aspect inset onto a 2x photo canvas is `not_detected` on 3/3 (s1 added).
+Elastic at ~21 dB does not generalize: s3 remains `detected` at 22.0 dB while
+s1 and s2 miss. The durable crop and blur flips are therefore the ones to
+keep; elastic PSNR is not a stable kill threshold.
+
+Surround ladder on s1: photo fill at the white-pad geometries is
+`not_detected` at both 70% and 40% linear, so extra canvas only kills when
+the pad is a photograph. A side strip of unmarked photo stays `detected` at
+10% and 25% of width and becomes `not_detected` at 35% and 40%. The decoder
+treats a large unmarked scene in the same upload as a whole-frame negative,
+while uniform white is ignored. Numbers in
+[`docs/synthid-removal-research.md`](synthid-removal-research.md).
+
+Photo-pad vs white-pad holds on 3/3. The hstack unmarked 25% vs 35% split
+holds on 3/3. A photo frame around s1 stays `detected` at 5/8/10/12% each
+side and becomes `not_detected` at 15%. Frame 15% holds on s2 and s3.
+Frame 12% does not: s2 is already `not_detected`.
+
+### 2026-08-20: close the local OpenAI mark hunt
+
+Decision: stop searching for a local OpenAI SynthID detector or a
+quality-preserving pixel remover on this evidence. The official decoder's
+flip points are now replicated (blur 6 vs 7, crop keep 0.50 vs 0.40, photo
+surround, hstack 25 vs 35, JPEG q5 still detected, all 3/3 except elastic
+PSNR and frame 12%). Every `not_detected` that is not a collage is below
+usable quality. Distillation on L1 labels remains 0.72 temporal-CV against a
+0.78 in-sample permutation, so it is not an expert.
+
+What the product already ships is the honest remainder: signed provenance for
+the watermark, and `detect-synthid` / `identify`'s `pipeline_lattice` for the
+origin-locked generation lattice, labeled as not SynthID. The unshipped
+chroma matched-filter (AUC about 0.90 vs foreign on the frozen holdout) is a
+second generation-family candidate and may only enter runtime under the R0
+gate, never as a watermark claim.
+
+Oracle numbers: [`docs/synthid-detector-research.md`](synthid-detector-research.md)
+and [`docs/synthid-removal-research.md`](synthid-removal-research.md).
+
+Open questions that are not a repeat of closed hunts, now that the official
+OpenAI decoder can be queried:
+
+1. Self-concat. `hstack` of marked|unmarked is `not_detected` on 3/3.
+   `hstack` of marked|marked (same seed, two copies) is untested. If that
+   stays `detected`, the kill is a second scene, not extra canvas. If it
+   misses, any two-panel layout drops the score.
+2. Surrogate. The ladders plus L1 are a small labeled set of (image,
+   transform, official verdict). A student that copies those verdicts would
+   let attack search run offline. It is not a mark decoder until it beats
+   the 0.72 L1 temporal-CV and the 0.78 in-sample permutation on held-out
+   seeds.
+3. Luma-only blur between sigma 6 and 7 at PSNR above 30 dB. Closed
+   2026-08-22 as a quiet-remover class together with Bayer, VNG, barrel, and
+   scanline: none flipped the OpenAI oracle below scramble cost. The only
+   full-frame residual kill remains ~24 dB.
+4. The chroma matched-filter remains a generation-family candidate under R0,
+   never a watermark claim.
+
+Item 1 is the cheapest untested discriminator. Item 2 is the only path to a
+local stand-in for the official decoder. Item 3 is the last quality-removal
+check worth an oracle burst.
+
+### 2026-08-20: cardinal directions, including the text analog
+
+SynthID-Text is not a recipe for the image encoder. Text is biased at
+sampling time among near-synonyms; the published image system is a post-hoc
+map `f: X -> X`. The useful borrow is the *detector* shape: a keyed weak
+statistic pooled over many tokens, so you need a long enough span and
+unmarked tokens vote against. That is compatible with what the OpenAI image
+oracle already did (keep-0.40 misses, whole-frame 0.20x hits, white pad
+ignored, photo surround votes no). It does not revive averaging or a fixed
+tile.
+
+Directions that are actually untested, not a new comb:
+
+- Token analog. Submit the four quadrants of a known-positive separately.
+  4/4 `detected` means a locally redundant residual. 0/4 `detected` while
+  the full frame hits means a global pool. Mixed means content-dependent
+  support. Cheap, four uploads, not a transform we have run.
+- Layout scramble. Cut the same positive into a grid of tiles, permute,
+  reassemble, upload. Local-and-pool marks can survive; layout-locked or
+  object-aligned `g(x)` should drop. Orthogonal to blur and crop.
+- marked|marked concat. Distinguishes "second scene" from "any two-panel
+  layout".
+- Self-keyed residual. Text hashes the prefix; an image analog hashes a
+  thumbnail and chips the residual. Averaging across images then must fail,
+  which it did. The untested check is whether an image's high-pass residual
+  is a stable function of its own low-pass thumbnail across seeds. A yes
+  would be a local handle without the provider key. A no leaves only the
+  official decoder.
+- Surrogate of the oracle, not of the mark. Train on the labeled ladder plus
+  L1. Risk: it learns collage/blur/crop, not SynthID. Gate it on held-out
+  seeds and on JPEG q5 still calling `detected`.
+
+Tree-Ring-style latent Fourier marks are already a poor fit: VAE
+substitution left the OpenAI mark up. Do not reopen band templates, aoxo, or
+elastic PSNR as a threshold.
+
+Token-ladder on s1, 2026-08-20: all four quadrants `detected` at 512x768.
+The mark is not a single global code that needs the whole frame; a corner
+half is enough, matching keep-0.50. `hstack` and `vstack` of two copies of
+the same marked image are both `not_detected`. Photo surround was therefore
+misread: the decoder also fails when both halves are marked. A two-panel
+layout is the kill, not unmarked pixels. 4x4 scramble stays `detected`;
+8x8 scramble misses, so the local support is larger than ~128 px tiles and
+can live in ~256 px tiles. Together with scale-0.20 still detecting the
+full scene, the official decoder looks like a pool over photograph-shaped
+regions of sufficient span, plus a gate that rejects obvious collages.
+
+An independent Claude Code pass (2026-08-20, tools disabled) argued the
+collage gate may be an artifact of **canonical-canvas resampling**: the
+decoder resizes the whole upload, so a 0.20x full scene is restored, while
+a photo-pad or two-panel layout leaves the mark at half canonical scale.
+That one mechanism would reclassify most collage `not_detected` as
+preprocessing, leaving blur-7 as the only confirmed residual kill. Cheapest
+falsifier: submit 0.20x as-is (known detected) versus the same 0.20x pixels
+centered on a white canvas of the original size. Identical marked pixels,
+only canvas scale changes. If the padded copy misses, scale-on-canvas is
+real. If it still detects, the collage/photo-content gate stands.
+A second independent pass the same day used Claude Code Opus with full tools
+and Codex `gpt-5.6-sol` at high reasoning. Full texts:
+`.local-eval/synthid/prc-oklab-attack-2026-08-15/agent-claude-plan.md` and
+`agent-codex-plan.md`.
+
+Merged ordered plan from those two independent reviews, OpenAI first:
+
+0. Repair L1 evaluation (0 calls). Codex: the 0.72 is leave-one-date-out on
+   ~4-image folds, includes health positives, and the 0.78 permutation is
+   in-sample. Forward-temporal control-only reanalysis is about 0.64-0.65.
+   Use that as the baseline, not 0.72 vs 0.78.
+1. The 0.20x-on-native-white discriminator was run anyway on s1. The 0.20x
+   file alone was `detected`; the same pixels on a 1024x1536 white canvas are
+   `not_detected`. Stretch 2x width is `detected`. Centre-crop of marked|marked
+   back to native size is `detected`. Pure aspect and pure duplication at
+   native size are not the hstack kill. Scale of the marked region on the
+   uploaded canvas is real. It does not replace pad_photo vs pad_white, which
+   still shows unmarked photographic content as a second mechanism.
+2. L1 repair: control-only forward-temporal nested ridge is 0.649 / 0.641,
+   not 0.72. June-15 cut beats a 40-run nested permutation at p=0; June-30
+   cut p=0.075.
+3. E3 leave-one-encoder-out on 80 COCO images: ridge and a 4-layer conv both
+   fail to transfer to TrustMark (AUC 0.51 / 0.51). Ridge transfers only to
+   dwtDct at 0.675. After VAE laundry of both classes: all three held-out
+   families are chance or worse (0.41 / 0.49 / 0.47). The 0.65 gate fails.
+   A local blind detector of this mark class is not learnable here at this
+   capacity and data.
+
+Independent debate 2026-08-20 (Opus full tools vs Codex gpt-5.6-sol high):
+Codex votes CLOSED for the whole local-blind program. Opus splits: blind
+transfer CLOSED, Google CLOSED, OpenAI OPEN by one experiment (E4: graded
+phase rotation in 16-32 px, stay open only if some theta < pi kills the
+oracle while a keyless paired AUC on that perturbation stays below 0.75).
+Both texts: `agent-debate-claude.md`, `agent-debate-codex.md` under the eval
+directory. Third-voice merge: honor E3 as closing surrogate-encoder transfer;
+do not reopen templates. The only remaining OpenAI experiment that is not
+shopping is a *short* E4: three seeds times theta in {pi/4, pi/8} in the
+16-32 annulus, with a matched 64-128 control at the same theta. If nothing
+below full scramble flips 2/3 seeds, close. If it flips, the pair layer is
+real and D4 may be attempted once. That is 12 calls, not 57.
+
+Unbounded open pass 2026-08-20 (Opus and Codex gpt-5.6-sol high, full tools,
+local measurements, no oracle). Texts: `agent-open-claude.md`,
+`agent-open-codex.md`.
+
+Opus measured TrustMark mark/content power in the carrier octave at -33.9 dB
+and showed a keyless energy detector's AUC is theoretically ~0.51 at s1 size
+and ~0.54 at 4K; campaign keyless numbers (0.53-0.57) sit on that ceiling.
+E4 pair-by-band-destruction is then dominated by the attack (+24 dB over the
+mark at the gentlest killing theta). Micro-warp desync failed. An external
+HF "gpt-image-synthid-detector" scores 0.50 vs COCO (positive on 80% of
+photos) but 0.69 on L1 official labels; the 0.70 plateau is real and unnamed.
+
+Codex measured that an 11-number geometry vector (size, aspect, modulo 64)
+gets forward-temporal AUC 0.79-0.80 on the same 283 L1 controls where pixel
+ridge is 0.64. Raster geometry currently beats every watermark representation
+as a predictor of the official verdict. TrustMark-P analog: survives 0.20x
+12/12, dies on crop and scramble; its decoder center-crops to 224, so lethal
+octaves can be decoder coordinates.
+
+Merged next action if the local hunt continues at all: zero-API,
+geometry-conditioned L1 (Codex) plus naming the 0.70 (Opus). Do not run E4.
+Do not train a CNN on raw L1 bits.
+
+Ran 2026-08-20. ChatGPT rows are all `not_detected` (21/21). After dropping
+them, geometry still beats pixels (0.72/0.78 vs 0.63/0.67). Largest mixed
+API size 1254x1254 is chance (p=0.45). Self-keyed 16-32 map is 0.41 vs L1-neg
+and 0.50 vs COCO. L1 official bits remain unidentifiable as a mark task on
+this corpus. Do not train a CNN on them.
+
+Detector debate 2026-08-21 after `gpt-image-2` pairs (Opus, Codex gpt-5.6-sol
+high, this session). Notes: `agent-detector-claude.md`, `agent-detector-codex.md`.
+Opus: photo matched-filter ceiling from the flat 16-32 amplitude (0.11 RMS) vs
+in-band photo content (12.2 RMS) is d'~0.93 / AUC~0.75 even with a perfect
+template; P5 needs d'>=4.37, a 13.4 dB deficit *unless* the photo-domain mark is
+louder than the flat measurement. Next: 16-32 jamming titration on the fish edit
+and the gray-128 flat (~14 oracle calls) to measure that amplitude. Codex: do not
+reopen keyless search; train a frozen wavelet CNN only on procedural
+flat-to-texture pairs, lock >=128 photos, require paired AUC LCB>0.65 plus a
+five-file causal panel. Merge: titration first. A student cannot beat a matched
+filter if the amplitude is as quiet as the flats; minting 128 photos before that
+number is architecture shopping. Retract L1 matched-filter AUC 0.701 as size
+confound.
+
+Titration ran 2026-08-21. Gray arm is not a coding-gain calibrator (any extra
+energy, including 4-8 px, is `not_detected`). Fish 16-32 additive jam stays
+`detected` through a=16 / 21.9 dB and flips at a=24 / 18.6 dB; 4-8 px at a=16
+stays `detected`. 4-8 px jam at a=24 / 18.6 dB stays `detected`, so the 16-32 flip is
+band-specific. Phase scramble of 16-32 remains the cheaper kill at 24.3 dB.
+The close `a*_photo < 0.53` failed. Do not mint a 128-photo student on that
+number. Do not treat additive in-band noise as a photo remover.
+
+### 2026-08-21: source-matched pairs and titration
+
+Full numeric log: [`docs/synthid-detector-research.md`](synthid-detector-research.md)
+and [`docs/synthid-removal-research.md`](synthid-removal-research.md).
+
+`gpt-image-2` can mint encoder-on/off pairs. Flats are clean (PSNR 38-49 dB,
+oracle `not_detected` to `detected`) and share a highpass residual (LOO 0.645)
+that does not transfer to photographs. The 16-32 carrier is causal on both
+flats (scramble 51 dB `not_detected`) and the fish photo (scramble 24.3 dB
+`not_detected`; pyramid wipe 48 dB still `detected`; additive jam flips only
+at 18.6 dB, while equal-energy 4-8 px jam stays `detected`).
+
+That does not open a local photo detector: the flat stamp is not the photo
+mark, L1 bits remain a geometry/export task, and the photo jam amplitude never
+fell below the preregistered 0.53 RMS close. Product remainder unchanged.
+
+Future analog track, not a current experiment: a self-owned encoder in the
+16-32 px midband (thumbnail-keyed phase, JND mask) as a research stand, never
+as a Gemini/OpenAI detector. Future evasion track, only with oracle quota: a
+graded phase shift in 16-32 at PSNR > 30 dB on s1-s3. Collage, photo-pad, and
+small-on-canvas stay presentation bypasses, not removers.
+
+### 2026-08-22: Model 1 result, provider CLIP, lattice re-check, Bayer close
+
+Numeric log: [`docs/synthid-classifiers.md`](synthid-classifiers.md) and
+[`docs/synthid-removal-research.md`](synthid-removal-research.md).
+
+Model 1 is the AI-versus-camera research result, not a watermark detector.
+Finetuned CLIP-L, 224 letterbox, last two vision blocks: Kodak 0/24, locked
+Open Images fresh FPR 1.7%, AI-test TPR 93.0% (OpenAI 93.2, Gemini 90.5,
+FLUX hold 92.7). False positives on Open Images are graphics, CGI, and
+cutouts, not Gemini. It does not enter `identify`. CLIP-H and DINOv2-giant
+are not the result.
+
+Provider CLIP (`openai` / `google` / `other`) and an OpenAI-plus-Gemini
+union fail Firefly. The 124-d residual bank remains the Google-lineage
+lattice, not an AI-or-not feature set.
+
+Production `pipeline_lattice` re-check (n=628): Google 56%, Firefly 18%,
+PixelBin 14%, OpenAI 1%, photographs 0. A 2 px crop kills the positives.
+Name stays generation-pipeline lattice.
+
+Bayer bilinear, Bayer VNG, upscale-then-Bayer, barrel, and scanline left
+OpenAI SynthID `detected` on s1 and s2. 16-32 phase scramble still flipped
+both. VNG on s2 is dirtier than scramble and the mark remains. Camera
+pipeline and mild geometry are closed as quiet removers. s3 and the fish
+photo were not submitted in this pass (OpenAI 429).
+4. E2 per-octave phase scramble on s1, replicated p16_32 on s2 and s3:
+   destroying periods 16-32 px is `not_detected` 3/3; 2-4, 4-8, 8-16, 32-64,
+   64-128 stay `detected`. The carrier octave is 16-32 px, not the lattice
+   band. Keyless energy and RGB phase-agreement in that octave on L1 are
+   AUC 0.53 and 0.57.
+5. Google gets no independent hunt. If (3) transfers, validate on a small
+   Gemini-app batch against Firefly/PixelBin. If (3) fails, say so.
+
+Working decoder hypothesis, not proved: a net trained on single whole
+photographs, probably after a canonical resize. That one story fits JPEG q5
+(still one photo), scale 0.20 (same scene), white letterbox (still one
+photo), keep-0.50 vs 0.40 (enough vs too-tight crop of the scene),
+photo-pad and any two-panel concat including marked|marked (not a single
+photo), scramble 4x4 (still reads as one image) vs 8x8 (a mosaic). It is a
+hypothesis about the *decoder*, not a new encoder. Falsify it with a
+concat that still looks like one photograph, or a mosaic that still looks
+like one.
+
+Ontology split, forced by marked|marked missing while every quadrant of the
+same seed detects: an official `not_detected` is not one event. Collage,
+photo-pad, two-panel self-concat, and 8x8 scramble can be a *presentation
+gate* (this upload is not a single photograph). Blur sigma 7, keep-0.40, and
+JPEG-surviving full-frame views sit on the single-photo manifold and are the
+only current candidates for actually damaging the residual. Crop-keep-0.40
+may be either: too little scene for the residual net, or a zoom the
+preprocessor treats as a different image. Do not train a surrogate on mixed
+collage misses if the goal is a mark student; those labels are the gate.
+
 ## Production hardening roadmap
 
 The next milestone is a precision-first production detector system, not one
@@ -4427,6 +5434,20 @@ color spaces, raw FFT magnitude, standalone SWT/DTCWT, multifractal summaries,
 folded variance, spatial lag products, and provider-versus-control CNNs. They
 are ranked by expected information gain and must still follow the P1 split
 discipline.
+
+Execution state as of the 2026-08-16 audit (the entries below keep their
+original wording as the research designs; this block records what happened):
+
+| # | State | Outcome |
+| --- | --- | --- |
+| H1 | Executed 2026-08-14 | Split-confirm lattice synchronization works: 20/20 transformed positive views at exact expected periods, 0/800 locked negative views. But the lattice it locks onto is the origin-anchored generation-pipeline lattice refuted as the watermark under S1/R0, and the broad non-Google challenge accepted 3/276. Closed as a watermark-detection route; remains the mechanism baseline |
+| H2 | Rejected 2026-08-14 | The complex spectral-correlation statistic did not beat its own phase-preserving mutation control; rejected without consuming another locked scale partition |
+| H3 | Partially executed | Split-confirm selection and the content-matched same-image null ran inside the H1/H4/H5 probes; the full GLRT with empirical p-values folded into the conformal cascade is still open |
+| H4 | Rejected as a standalone detector 2026-08-14 | Content-whitened matched filter added no boundary over the phase-preserving spatial template; survives only as an H1 synchronization refinement, calibrated inside that branch |
+| H5 | Advanced as research confirmation | The unknown-payload patch-agreement statistic retained positive margins under JPEG and crop; explicitly not a runtime threshold, and it inherits the S1 scope question because it reads the same periodic structure |
+| H6 | Blocked | Requires the matching-oracle positive corpus (P1 prerequisites, P3 boundary for OpenAI); not started |
+| H7 | Blocked | Same corpus dependency as H6; not started |
+| H8 | Not started | A separate batch product mode, not a substitute for the single-image detector |
 
 #### H1: recover the complete reciprocal lattice
 
