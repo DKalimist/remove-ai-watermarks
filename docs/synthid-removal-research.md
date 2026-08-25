@@ -16,11 +16,19 @@ Bayer, VNG demosaic, upscale-then-Bayer, barrel distortion, scanline
 jitter, and a 2 px shift closed 2026-08-22 on s1/s2 and 2026-08-23 on s3
 and fish: they leave the official oracle `detected`.
 
-Working residual kills on photographs cost about 19-24 dB:
+Working residual kills on photographs cost about 19-26 dB:
 
-- 16-32 px phase scramble (s1 24.6 dB, fish 24.3 dB, s2 19.0 dB)
+- 16-32 px cartesian phase scramble (s1 24.6-24.8 dB, fish 23.2 dB, s2 19.0 dB)
+- Fourier-angle scramble of the same annulus (s1 24.1 dB)
+- Radial-phase scramble of the same annulus (s1 25.0 dB)
+- Y-only 16-32 scramble (s1 24.6 dB); Cb/Cr-only do not kill
+- File named polar-1632, actually cartesian (s1 25.6 dB)
+- Replace 16-32 with a COCO photo's 16-32 (s1 25.2 dB)
 - Gaussian blur sigma 7 (23.8 dB), holds 3/3 versus sigma 6
 - Additive 16-32 jam only at a=24 / 18.6 dB, worse than scramble
+
+Baker-map, 8-seam carve, Poisson, nested LSB, palette64, and ICC rewrite
+do not kill at a better PSNR.
 
 JPEG q5, noise sigma 16, grayscale, rot90, flip, 5°, downscale 0.20x,
 median 7, posterize 4, VAE round-trip, and white pad to 40% linear stay
@@ -47,6 +55,13 @@ presentation gate, not residual damage. Those rungs are in
 | TrustMark-style micro-warp | 2026-08-21 | 0.25 px / 32 dB still 100% detect on TrustMark P; OpenAI elastic ~21 dB unreplicated |
 | OKLab random-codeword replacement as a quiet wipe | 2026-08-15 | On four public Google-oracle positives, replacing the period-16 tile at 0.95 dropped the *local* lattice score below 0.173 at ~54 dB. Gemini pixel verify never accepted the candidates (`Connecting to Verify AI`). Local-score intervention, not an official wipe |
 | PRC-style OKLab a/b noise plus spectral peak cleaning | 2026-08-15 | Independent high-pass OKLab noise at 32.6 dB moved the median local score by only `-0.0219`. Comb suppression moved one of four below threshold at 58 dB. Not a quiet official kill |
+| Rinne414 fixed-template subtraction | 2026-08-24 | The pinned pre-May GPT-Image2 residual was resized onto a current verified OpenAI image and subtracted at 0.25x, 0.5x, 1x, and 2x. Official SynthID stayed `detected` at 43.13, 37.49, 31.60, and 25.72 dB after metadata stripping. Even the dirtiest rung is no better than the existing 24-25 dB annulus-phase scramble. The template can spoof its own public correlator but does not cancel the current mark |
+| `newideas99` CNN gradient | 2026-08-24 | A 3x3 crop-grid objective spread the white-box perturbation over the full marked frame. The frozen ensemble fell from 0.99995 to 0.25956 at ±2/255 (45.92 dB) and to effectively zero at ±4/255 (40.30 dB). Official OpenAI SynthID stayed `detected` at ±1, ±2, ±4, and ±8/255, through 34.30 dB. The gradient attacks the surrogate's shortcut, not the production mark |
+| `reverse-SynthID` V4 Round-06 | 2026-08-24 | The advertised `final`/`nuke` path is SD-VAE regeneration plus elastic and affine warps, resize squeeze, color change, residual FFT subtraction, and a JPEG/noise chain, with PSNR floors of only 14/11 dB. The repository claims 20 manual Gemini-app successes but contains no manifest, tally, or per-image verdicts. Its four bundled older cleaned pairs are 45.7-50.2 dB, yet the reproduced V4 score rises on three and is nearly unchanged on the fourth. No callable Google pixel oracle was available for an independent Round-06 verdict. This is an unverified lossy regeneration/distortion stack, not a quiet pattern cancellation |
+| [`0xROOTPLS/DeSynth`](https://github.com/0xROOTPLS/DeSynth/tree/96db920731c2a3d04bf13163a5077b9a67706d1b) | 2026-08-24 | Qwen Image img2img at strength 0.25, followed by a Gaussian frequency split that restores the source high frequencies above sigma 1.95. The repository's public OpenAI original, default output, and edge-guided output all returned official `detected` in a current repeat after metadata stripping. The published `not found` claim does not reproduce against the current OpenAI oracle |
+| [`froggeric/gemini-watermark-and-synthid-remover`](https://github.com/froggeric/gemini-watermark-and-synthid-remover/tree/5918384ce403968de0560cefd889e50eba0163bc) | 2026-08-24 | SDXL img2img with a documented manual Google-verifier ladder. The author reports 7/8 clears at strength 0.08 and 9/9, including a double mark, at strength 0.10 with five effective denoise steps and PSNR 29-41 dB. The exact nine before/after verdict artifacts are not tracked, so this is useful external regeneration corroboration, not an independently reproduced oracle result |
+| [`atomantic/PortOS`](https://github.com/atomantic/PortOS/tree/b11a93e110262925c64a1b145a154ca87b340055) adversarial-jamming experiment | 2026-08-24 | Its own one-image manual OpenAI run found that quality-preserving phase noise, band noise, blur, and 0.70 resize squeeze stayed detected. Only visibly destructive phase perturbation cleared. A 0.85-0.90 resize caused repeated detector timeouts, which the repository correctly keeps separate from `not_detected`. This independently closes high-fidelity additive/phase jamming, but the source artifacts are not published |
+| Generic regeneration claims | 2026-08-24 | `mertizci/noai-watermark`, `BovineOverlord/Loyal-Bear`, `obaskly/NeuralBleach`, and `tymongumienik/unwatermark` are SD/CtrlRegen/ControlNet redraws. Their algorithms are already covered by the product's regeneration remainder and the CtrlRegen literature. README verdicts without a frozen manifest do not establish a quieter or more reliable operating point |
 | Add unmarked context (frame, pad, hstack, collage) | 2026-08-19 | Official `not_detected` is a presentation gate. White pad 40% linear stays `detected`; photo fill at the same geometry is `not_detected`. See detector identity/layout |
 | `cebeuq/Synthid-Bypass` diffusion reconstruction | 2026-08-13 | 12 public pairs. Lattice and Gemini Verify go quiet on the *after* images because the image was redrawn, not because a payload was deleted. Faces and text are a quality claim for regeneration, not a local wipe |
 
@@ -140,23 +155,62 @@ Surround: photo fill at the white-pad geometries is `not_detected` on
 between 25% width (`detected`) and 35% (`not_detected`). Photo frame 15%
 each side is `not_detected` on 3/3; 12% does not hold.
 
-## Wild removers, oracle not yet run (2026-08-23)
+## Wild removers (oracle 2026-08-23)
 
-Prepared on s1. PSNR only. Bayer fish is complete. Submit these when the
-rate limit allows, not as a new training loop against the verifier.
+Preregistered on s1, one pass, 25 s gap. Manifest:
+`.local-eval/synthid/prc-oklab-attack-2026-08-15/wild-attacks-2026-08-23/oracle-manifest.json`.
 
-| Attack | PSNR | Note |
+| Attack | PSNR | Verdict | Note |
+| --- | ---: | --- | --- |
+| Replace 16-32 with a COCO photo's 16-32 | 25.2 | not_detected | Same annulus as cartesian scramble (24.6 dB). Substituting a camera band kills the decoder, 0.6 dB quieter than scramble on s1, not a new quality class |
+| File named polar-1632 | 25.6 | not_detected | Misnamed. The raster randomizes cartesian FFT phase in the 16-32 annulus, same family as scramble (24.6 dB). It is a scramble replicate, not a `(r, θ)` polar test |
+| 64-color median-cut palette | 35.6 | detected | Quieter than scramble and still marked. Posterize-4 already stayed `detected`; a smarter quantizer is not enough |
+| PIL RGB to CMYK to RGB | inf | not submitted | No-op on this PNG |
+
+The 16-32 kill is luma phase in that annulus. Cartesian, Fourier-angle,
+and radial-phase all silence the decoder near 25 dB. A 90° sector of the
+same ring does not (27.5 dB `detected`). Cb-only and Cr-only 16-32
+scrambles stay `detected` at 44-45 dB. A foreign-scene transplant of the
+same band also silences the decoder near 25 dB. Palette, Baker-map, seam
+carve, Poisson, nested LSB, and ICC do not.
+
+Follow-up 2026-08-23, s1, 25 s gap, `remaining-2026-08-23/oracle-manifest.json`:
+
+| Attack | PSNR | Verdict |
 | --- | ---: | --- |
-| Replace 16-32 with a COCO photo's 16-32 | 25.2 | Band transplant. If this ever reads `not_detected` near 25 dB it is the quietest residual kill so far; if `detected`, the mark is not a replaceable additive layer in that annulus |
-| Polar phase scramble of 16-32 | 25.6 | Same band as the cartesian scramble (24.6 dB `not_detected`). Tests circular / Fourier-Mellin / polar-harmonic families: energy stays, angle dies |
-| 64-color median-cut palette | 35.6 | Quieter than scramble. Posterize-4 already stayed `detected`; this is a smarter quantizer |
-| PIL RGB to CMYK to RGB | inf | No-op on this PNG. Not an attack |
+| Fourier-angle 16-32 scramble | 24.1 | not_detected |
+| Cartesian 16-32 scramble (replicate) | 24.8 | not_detected |
+| Baker-map of the 16-32 band | 27.8 | detected |
+| Poisson noise | 30.7 | detected |
+| Nested LSB in blue | 55.9 | detected |
+| Seam carve 8 | 27.7 | detected |
+| ICC sRGB rewrite | inf | not submitted, no-op |
 
-Files: `.local-eval/synthid/prc-oklab-attack-2026-08-15/wild-attacks-2026-08-23/`.
+Non-local codecs, 2026-08-23, s1, 25 s gap:
 
-Also untested: seam carving of the mid band, CMYK via a real ICC printer
-profile, HEIF/AV1 round-trip, background-only 16-32 scramble (face mask),
-print-scan.
+| Attack | PSNR | Verdict |
+| --- | ---: | --- |
+| HEIF q80 | 46.3 | detected |
+| HEIF q50 | 39.3 | detected |
+| AV1 CRF 32 | 37.2 | detected |
+| Print-scan simulation | 24.95 | detected |
+
+Physical print-scan is still blocked unattended (Brother DCP-L2520DW idle and
+accepting, no `scanimage`, no ImageCapture pyobjc). Face-gated scramble is
+unnecessary: Haar on s1 put *more* 16-32 energy on faces. Generic 25 dB is
+not the kill: this simulation stays `detected` at the PSNR where 16-32
+phase scramble does not.
+
+Waveform-shell splits, 2026-08-23, s1, 25 s gap,
+`waveforms-shells-2026-08-23/oracle-manifest.json`:
+
+| Attack | PSNR | Verdict |
+| --- | ---: | --- |
+| Y-only 16-32 scramble | 24.6 | not_detected |
+| Cb-only 16-32 scramble | 45.0 | detected |
+| Cr-only 16-32 scramble | 43.9 | detected |
+| 90° Fourier sector of 16-32 | 27.5 | detected |
+| Radial-phase-only 16-32 | 25.0 | not_detected |
 
 ## External literature (surveyed 2026-08-23)
 
