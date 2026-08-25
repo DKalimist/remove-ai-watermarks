@@ -11,7 +11,7 @@
 | Page | Use it for |
 | --- | --- |
 | [SynthID local detector research](synthid-detector-research.md) | Hunt for a keyless local mark detector. Open. Closed routes on that page. |
-| [Classifier models](synthid-classifiers.md) | Model 1 AI-versus-camera result, rejected provider CLIP, `pipeline_lattice` as google-lineage. |
+| [Classifier models](synthid-classifiers.md) | Primary metadata-free AI-generation task and Model 1 partial result; secondary OpenAI/Gemini source finding; `pipeline_lattice` as google-lineage. |
 | [SynthID mark removal research](synthid-removal-research.md) | Quiet-remover hunt. Closed except ~19-24 dB 16-32 scramble and blur sigma 7. |
 | [Mechanism reference](synthid.md) | How SynthID works, provenance, robustness, regeneration. |
 | [Chronological plan archive](synthid-detector-removal-plan.md) | Dated H-gates, corpora, and session notes in original order. |
@@ -49,3 +49,5 @@
 | Google verifier surfaces 2026-08-24 (retired Vertex `imageverification@001`; live but unlisted and inaccessible `synthid.googleapis.com/upload/v1:verifyContent`) | [detector](synthid-detector-research.md) |
 | Metadata-free source hunt 2026-08-24 (1% cascades rejected; frozen multiscale fusion found 276/600 OpenAI-or-Google targets, 0/1,000 photographs and 1/25 TC260 on blind v4) | [classifiers](synthid-classifiers.md) |
 | Original-export source hybrids 2026-08-24 (frozen v7 215/400 exact; post-hoc v8 292/400 and per-codec v11 316/400 exact, 0/564 independent camera errors; local precision scan 131 OpenAI plus 17 Gemini candidates) | [classifiers](synthid-classifiers.md) |
+| Frozen general-detector transfer 2026-08-24 (Community Forensics and SPAI do not replace or safely fuse with Model 1 at the 1% calibration FPR; B-Free weights unavailable and license noncommercial) | [classifiers](synthid-classifiers.md#frozen-public-checkpoint-transfer-2026-08-24) |
+| General-classifier GitHub sweep 2026-08-25 (2,006 unique repositories found; DDA and PGC expose complementary frozen signals, but DDA raises independent FPR and PGC's OpenAI gain confounds 24/24 Kodak scans; DGS-Net, SAFE, RINE, and Nonescape Mini rejected) | [classifiers](synthid-classifiers.md#general-ai-classifier-github-sweep-2026-08-25) |

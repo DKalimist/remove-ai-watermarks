@@ -14,7 +14,21 @@ are the first negative, Firefly and PixelBin are in the test, and a watermark
 claim uses an independent oracle. CLIP content embeddings and the 124-d
 origin-locked residual bank are different features for different jobs.
 
-## Result: Model 1, AI versus camera
+## Research task hierarchy
+
+The primary classifier task is metadata-free AI-generation detection: given an
+arbitrary image, decide `ai_generated` versus `not_ai_generated` from pixels.
+The target is open-world transfer to generators absent from training, with a
+very low false-positive rate across real photographs and other non-AI imagery
+such as scans, product cutouts, conventional CGI, and digital graphics.
+
+OpenAI/Gemini source finding is a narrower secondary task. It asks whether a
+file resembles a current OpenAI or Google generation pipeline and otherwise
+abstains. It does not replace the general AI-generation detector: a precise
+provider finder can miss most AI images, and a general detector need not know
+which provider produced a positive. Neither task is a SynthID payload decoder.
+
+## Partial result: Model 1, AI versus camera
 
 Finetuned CLIP-L (`openai/clip-vit-large-patch14`), last two vision blocks,
 224 letterbox, JPEG and mild crop, linear ridge. Train 5,221 AI plus 6,129
@@ -35,7 +49,10 @@ FPR on disjoint `photo_dev_oi`.
 
 51 fresh false positives are mostly graphics, CGI, product cutouts, and
 scans, not Gemini. Nobody in the sweep hit both ≤1% fresh FPR and ≥90%
-TPR. This is AI-versus-camera, not SynthID, and it is not in `identify`.
+TPR. This is the strongest result toward the general task, but its negative
+contract is still AI-versus-camera rather than AI-versus-all-non-AI imagery.
+The graphics/CGI errors therefore keep the general task open. This is not
+SynthID, and it is not in `identify`.
 
 Artifacts: `.local-eval/synthid/ai-photo-2026-08-22/`
 (`comparison.json`, `probe-report-clip-l-ft.json`,
@@ -68,8 +85,164 @@ most of TC260 and xAI. Do not train another ridge on that representation
 for an AI-or-not claim.
 
 Open, if this head is ever considered for a product cut: a graphics/CGI
-abstain. CLIP treats non-camera imagery as generation; that is the remaining
-error, not Gemini contamination.
+abstain and time/device-disjoint modern camera coverage. CLIP treating
+non-camera imagery as generation is one known error, not Gemini contamination.
+
+### Frozen public-checkpoint transfer, 2026-08-24
+
+A no-training sweep put the official
+[`Community Forensics`](https://github.com/JeongsooP/Community-Forensics) and
+[`SPAI`](https://github.com/mever-team/spai) checkpoints on the same public
+rows and the same operating rule as Model 1. Each threshold is the strict 99th
+percentile of the 500-image `photo_dev_oi` split; no AI or evaluation negative
+sets tune it. The SPAI core runs stop after all 2,405 AI rows because the model
+is already dominated there; they do not supply a fresh-photo FPR.
+
+| Model | AI test | AI extra | FLUX hold | Open Images fresh |
+| --- | ---: | ---: | ---: | ---: |
+| Model 1, CLIP-L-ft | 93.0% | 92.5% | 92.7% | 1.7% |
+| Community Forensics 384 | 34.6% | 12.0% | 23.0% | 1.0% |
+| SPAI, longest edge 512 | 2.2% | 3.5% | 0.7% | not run |
+| SPAI, longest edge 1024 | 6.5% | 9.5% | 10.0% | not run |
+
+Community Forensics finds 33 of Model 1's 170 misses across the 2,405 AI
+rows. On 4,133 public evaluation photographs, however, it adds 37 errors not
+made by Model 1. A calibration-only rank-max fusion reduces AI-test recall to
+91.9%, AI-extra recall to 88%, and FLUX recall to 86%, while fresh-photo FPR
+rises to 1.73%. A literal OR at the two original thresholds doubles calibration
+FPR to 2% because their five errors do not overlap. The checkpoint is an
+auxiliary representation, not a better detector or a valid OR branch.
+
+SPAI at 1024 recovers only 11 Model 1 misses. Its predeclared rank-max fusion
+reduces AI-test recall to 90.2% and FLUX recall to 85.3% at the same 1%
+calibration FPR; its literal OR also doubles calibration FPR to 2%. The
+300-image FLUX cell is exactly 1024 on its longest edge, so this failure cannot
+be assigned to downscaling in that cell. The 512/1024 ablation does show
+resolution sensitivity, but no useful low-FPR hybrid.
+
+[`B-Free`](https://github.com/grip-unina/B-Free) remains unmeasured: its sole
+official checkpoint host was unreachable over HTTP and HTTPS, and no verified
+mirror was found. Its license also limits use to informational and nonprofit
+purposes and expressly prohibits industrial or profit-oriented use. Its useful
+result for this project is therefore the bias-reduction training paradigm, not
+a checkpoint dependency.
+
+No public checkpoint replaces Model 1 or safely repairs it. The next model
+must change the negative contract: hash-grouped, time/device-disjoint modern
+computational photography plus conventional CGI, graphics, scans, and product
+cutouts. Another generic detector trained against a narrow `real` corpus is
+not a new signal.
+
+Local reproducibility artifacts:
+`.local-eval/synthid/ai-photo-2026-08-22/frozen-ai-detector-sweep-2026-08-24/`.
+
+### General AI-classifier GitHub sweep, 2026-08-25
+
+A separate search targeted pixel-based `ai_generated` versus
+`not_ai_generated` classifiers, not SynthID repositories. Twelve recorded
+GitHub GraphQL searches returned 2,006 unique public non-fork repositories.
+The broadest four searches were capped at 500 collected results, so this is a
+bounded reproducible survey, not a claim that GitHub search can enumerate every
+repository. Five current catalogs and benchmarks contributed 110 references;
+106 resolved to 105 unique live repositories. Curated references plus
+high-signal search matches produced 332 candidates, of which 328 resolved for
+README, license, weight, and inference review.
+
+The filter required pixel inference, an available checkpoint, reproducible
+preprocessing, a license compatible with possible product use, and a signal or
+training contract that differs materially from already rejected models. It
+removed metadata/API wrappers, SynthID-only tools, face/video-only deepfake
+systems, datasets and leaderboards, UI-only repositories, classroom CIFAKE
+models, noncommercial checkpoints, and repositories without runnable weights.
+
+The most relevant survivors are:
+
+| Model | Status | Why it matters |
+| --- | --- | --- |
+| [Dual Data Alignment](https://github.com/roy-ch/Dual-Data-Alignment) | Apache-2.0, official 1.26 GB checkpoint, measured partially | DINOv2-L LoRA with paired real/reconstruction JPEG and frequency alignment; best new training contract. |
+| [PGC](https://github.com/xiaoyu6868/PGC) | Apache-2.0, SD1.4 measured fully and joint measured on AI-test | DINOv2-L peak-guided calibration exposes a strong OpenAI signal, but it confounds Kodak scans and does not safely fuse with Model 1. |
+| [DGS-Net](https://github.com/HorizonTEL/DGS-Net) | Apache-2.0, stage-2 checkpoint measured partially | Distillation-guided gradient surgery is reproducible, but the frozen checkpoint is weak and adds independent photo errors. |
+| [FerretNet](https://github.com/xigua7105/FerretNet) | Apache-2.0, weights available, lower priority | Efficient local-pixel artifact branch, but trained on four ProGAN classes. |
+| [OmniAID](https://github.com/yunncheng/OmniAID) | Modern 3.24 GB checkpoints; repository has no license file | Mirage-Train semantic/artifact experts are promising, but the README's MIT badge is not a license grant. |
+| [SDAIE](https://github.com/Ekko-zn/SDAIE) | Weights available; no license | Camera/EXIF-supervised and real-only training are relevant ideas; inference is pixel-based, but product use is unresolved. |
+| [AIDE](https://github.com/shilinyan99/AIDE) and [CO-SPY](https://github.com/Megum1/CO-SPY) | MIT, weights available, lower priority | Reproducible hybrid signals, but official checkpoints retain ProGAN or SD1.4-era negative contracts. |
+
+[Effort](https://github.com/YZY-stack/Effort-AIGI-Detection),
+[Forensic Self-Descriptions](https://github.com/ductai199x/Forensic-Self-Descriptions-CVPR25),
+and B-Free are research-only or noncommercial. UniGenDet is MIT but its
+published checkpoint is about 59 GB. OpenSDI and SAD-Bridge have no detected
+license. REM describes a relevant real-centric method, but its code and weights
+are still pending.
+
+Seven additional checkpoints were put on the same frozen rule: the strict 99th
+percentile of `photo_dev_oi`, with no AI row used for calibration. All values
+below are public cells.
+
+| Model | AI test | Gemini | OpenAI | FLUX hold | Fresh Open Images |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Model 1, CLIP-L-ft | 93.0% | 90.5% | 93.3% | 92.7% | 1.7%, n=3,000 |
+| DDA official | 48.2% | 68.8% | 21.8% | not run | 0.7%, n=1,000 |
+| PGC SD1.4 official | 44.6% | 5.5% | 96.5% | 0.7% | 0.7%, n=3,000 |
+| PGC ProGAN+SD1.4 official | 29.3% | 8.3% | 56.3% | not run | not run |
+| DGS-Net stage 2, seed 100 | 21.2% | 1.5% | 55.5% | not run | 1.9%, n=1,000 |
+| SAFE official | 21.6% | 1.3% | 57.8% | 0.0% | 0.6%, n=3,000 |
+| Nonescape Mini v0 | 13.3% | 13.5% | 7.3% | 37.3% | 1.8%, n=3,000 |
+| RINE four-class | 10.7% | 5.5% | 16.8% | 1.0% | 1.0%, n=3,000 |
+
+DDA supplies material complementary recall. It finds 52
+of Model 1's 133 misses on the 1,905-image AI test. Its seven errors on the
+independent 1,000-image negative slice do not overlap Model 1's 18, however. A
+literal OR reaches 95.7% AI recall and 2.5% FPR there; the predeclared
+calibration-rank maximum reaches only 93.4% recall and 1.6% FPR. The checkpoint
+is therefore not a safe drop-in fusion.
+
+PGC SD1.4 finds 63 of those 133 misses, while the joint checkpoint is weaker
+on the same AI rows. A calibration-only rank maximum with Model 1 initially
+looked like a clean improvement: AI-test recall rose from 93.0% to 94.1%
+(58 paired improvements, 37 regressions; one-sided sign test `p=0.0198`) and
+fresh Open Images FPR fell from 1.67% to 1.13% (22 paired improvements, six
+regressions; `p=0.00186`). The full negative matrix rejects that conclusion.
+The fusion calls all 24 Kodak images AI-generated, versus 0/24 for Model 1,
+and its aggregate public-negative errors rise from 59/4,133 to 63/4,133. It
+also reduces AI-extra recall from 92.5% to 87.5% and FLUX hold recall from
+92.7% to 85.3%.
+
+A full-corpus checkpoint ablation localized but did not remove the confound.
+The global head alone still rejects 17/24 Kodak images while retaining 82.0%
+OpenAI recall. Global plus residual peak retains 96.5% OpenAI and rejects
+24/24 Kodak; global plus RGB peak accepts every Kodak image but retains only
+5.5% OpenAI and 6.8% overall AI-test recall. Calibration-rank conjunctions of
+the RGB and residual components remove the Kodak errors, but either add fresh
+photo errors under their own 1% calibration cuts or fall below Model 1 recall
+after joint recalibration. A post-test high-confidence PGC threshold is not an
+independent result and is not accepted. PGC is an OpenAI-oriented research
+feature, not a universal detector branch.
+
+DGS-Net's official stage-2 image branch was reconstructed strictly from the
+published checkpoint; the training-only frozen teacher and text head are not
+read by the repository's image-only evaluation forward. Its official
+spectral-entropy patch selection retains a random shuffle, so this measurement
+pins the repository's seed 100. The checkpoint finds 37 Model 1 misses but adds
+19 non-overlapping errors on the same 1,000 fresh negatives. A literal OR is
+95.0% AI-test recall at 3.7% FPR; calibration-rank maximum is 91.0% recall at
+1.6% FPR. Its 21.2% standalone recall is far enough below the gate that a full
+corpus or multi-seed run is not warranted.
+
+SAFE, RINE, and Nonescape Mini also fail as frozen replacements or fusions.
+Their value is now bounded: SAFE supplies a wavelet/transformation branch, RINE
+intermediate CLIP blocks, and Nonescape a cheap EfficientNet branch, but none
+improves the low-FPR operating point.
+
+The licensed frozen-checkpoint queue is exhausted at the useful priority level.
+The higher-value path is now a training ablation that imports DDA's paired
+codec/frequency alignment into the project's own time/device-disjoint camera
+and non-photo negative contract. PGC's OpenAI/Kodak confound makes scans an
+explicit hard gate for that work. SDAIE's camera-supervised or real-only
+training remains an idea source until a license exists.
+
+Local search and scoring artifacts:
+`.local-eval/github-ai-detector-sweep-2026-08-25/` and the frozen sweep directory
+above.
 
 ### Wild extras, not SynthID
 
@@ -117,14 +290,15 @@ documented Gemini repeating the first file's SynthID verdict inside a
 chat; Google said that was fixed 2026-07-16. The OpenAI provenance API is
 a different endpoint.
 
-## Provider names from pixels
+## Secondary task: provider names from pixels
 
-With the keyless mark hunt still open, the adjacent ask was: given a file
-with no metadata, is this OpenAI, Gemini, or not AI, with almost no
-errors on camera photographs. That is this section. It is not a SynthID
-detector. Firefly, PixelBin, and other generators have to sit in the
-test, because a head that only sees OpenAI versus Gemini versus COCO
-will call Firefly a provider.
+The narrower ask is: given a file with no metadata, is this OpenAI, Gemini, or
+unknown, with almost no errors on camera photographs or other generators. That
+is this section. `unknown` does not mean `not AI`; it includes AI images from
+other providers and target-provider images the strict rule misses. This is not
+a general AI-generation detector or a SynthID detector. Firefly, PixelBin, and
+other generators have to sit in the test, because a head that only sees OpenAI
+versus Gemini versus COCO will call Firefly a provider.
 
 Three-way `openai` / `google` / `other` on Model 1 embeddings fails the
 Firefly gate. CLIP-L-ft test accuracy 0.53; Firefly 35/31/18. CLIP-H 0.57;

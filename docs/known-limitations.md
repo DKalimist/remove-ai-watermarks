@@ -349,9 +349,25 @@ The `trustmark` extra adds Adobe TrustMark decoding. The implementation retains
 an additional JPEG re-encode gate because isolated decoder hits can otherwise
 be content noise.
 
-External AI versus real image classifiers are out of scope. The project
-identifies concrete local provenance signals instead of shipping a generic
-statistical classifier.
+A generic metadata-free AI-generated-image classifier is not shipped. It is a
+separate open research task from provenance detection: the current Model 1
+result is AI-versus-camera and still confuses some conventional graphics, CGI,
+product cutouts, and scans with generation. The OpenAI/Gemini source finder is
+narrower again and cannot substitute for the general classifier. The shipped
+product identifies concrete local provenance signals instead of presenting
+either research classifier as a supported verdict.
+
+Frozen transfers of Community Forensics, SPAI, SAFE, RINE, Nonescape Mini,
+Dual Data Alignment, PGC, and DGS-Net did not close this gap at the required low
+false-positive rate. DDA supplies a complementary representation but its
+independent errors make simple hybrids worse. PGC SD1.4 is strong on OpenAI,
+but its published output and the useful global/residual ablations misclassify
+most or all of the Kodak scan set; removing that branch removes the OpenAI
+gain. DGS-Net is weak at the same operating point and also adds independent
+photo errors. Model 1 also lacks a time/device-disjoint negative contract for
+modern computational photography. The measured public protocol, GitHub survey, and
+rejected fusions are recorded in
+[classifier research](synthid-classifiers.md#general-ai-classifier-github-sweep-2026-08-25).
 
 ## Output and traceability
 

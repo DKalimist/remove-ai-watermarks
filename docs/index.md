@@ -36,7 +36,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [Qwen improvement research](qwen-improvement-research.md)
 - [Doubao reverse-alpha research](research-doubao-distillation.md)
 - [SynthID local detector research](synthid-detector-research.md)
-- [Classifier models](synthid-classifiers.md) (Model 1 result)
+- [Classifier models](synthid-classifiers.md) (primary metadata-free AI-generation task, Model 1 partial result, and secondary provider source finding)
 - [SynthID mark removal research](synthid-removal-research.md)
 - [SynthID identity research](synthid-robust-identity-research.md)
 - [SynthID identity follow-up](synthid-robust-identity-research-2026-06-08.md)
