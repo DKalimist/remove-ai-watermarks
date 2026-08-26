@@ -1,6 +1,6 @@
 # Installation
 
-Python 3.10.1 or newer is required.
+Python 3.11 through 3.14 are supported.
 
 ## Default metadata mode
 
@@ -87,6 +87,15 @@ removal, metadata stripping and every `identify` command still run anywhere.
 Video SynthID regeneration is a separate VAE path and does still run on CPU or MPS;
 it needs the `diffusion` extra, not this one.
 
+The experimental verified-text post-pass additionally needs LaMa:
+
+```bash
+uv tool install --force "remove-ai-watermarks[text-restoration]"
+```
+
+That extra includes `qwen-zimage` and `lama`; it does not add OCR. Text strings and
+line boxes must be reviewed before the run.
+
 ## Feature extras
 
 Extras are composable. Install only the capabilities and file formats the
@@ -99,13 +108,14 @@ application actually uses:
 | `visible` | Visible mark detection, OpenCV inpainting, and manual erasing | `pixels` | No |
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
-| `trustmark` | Adobe TrustMark detection | trustmark | Yes |
+| `trustmark` | Adobe TrustMark detection on Python 3.11-3.12 | trustmark | Yes |
 | `verify` | Official remote OpenAI SynthID verification | OpenAI SDK | No |
 | `diffusion` | Torch and Diffusers runtime; video SynthID regeneration | `pixels`, Torch, Diffusers | Yes |
 | `migan` | MI-GAN ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `lama` | big-LaMa ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `qwen-zimage` | Invisible image-watermark removal, both CUDA-only profiles | `diffusion`, DiffSynth | Yes |
-| `all` | Every production feature | All rows above | Yes |
+| `text-restoration` | Opt-in verified Qwen-VAE glyph restoration | `qwen-zimage`, `lama` | Yes |
+| `all` | Every production feature available on the active Python | All compatible rows above | Yes |
 | `dev` | Tests, linting, typing, and upstream parity checks | `video`, `detect`, upstream invisible-watermark | Yes, for parity tests |
 
 Dependency composition:
@@ -119,14 +129,18 @@ flowchart LR
     migan --> visible
     lama --> visible
     qwen["qwen-zimage"] --> diffusion
+    text["text-restoration"] --> qwen
+    text --> lama
     heif
     trustmark
     verify
 ```
 
 `heif`, `trustmark`, and `verify` are independent branches. Combine them explicitly with
-another feature when required. The `all` bundle contains every production
-branch but never includes `dev`.
+another feature when required. TrustMark requires NumPy 1.x, which has no
+CPython 3.13 or 3.14 wheels, so that branch is available only on Python
+3.11-3.12. The `all` bundle contains every production branch compatible with
+the active Python and never includes `dev`.
 
 Examples:
 
@@ -146,7 +160,7 @@ uv tool install --force "remove-ai-watermarks[detect,trustmark]"
 # Official OpenAI SynthID verification
 uv tool install --force "remove-ai-watermarks[verify]"
 
-# Every production capability
+# Every production capability compatible with this Python
 uv tool install --force "remove-ai-watermarks[all]"
 
 # An arbitrary minimal combination

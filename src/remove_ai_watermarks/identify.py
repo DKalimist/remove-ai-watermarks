@@ -6,13 +6,15 @@ Aggregates every locally-readable signal into a single :class:`ProvenanceReport`
   the signing platform (OpenAI, Google, Adobe, Microsoft).
 - **IPTC ``digitalSourceType``** "Made with AI" marker (Meta, X, others).
 - **PNG text / EXIF generation parameters** (Stable Diffusion, ComfyUI, InvokeAI).
-- **SynthID evidence** -- supported C2PA provenance (Google AI, or current OpenAI
-  with an explicit watermark action). There is no local SynthID pixel decoder.
+- **SynthID provenance evidence** -- Google AI C2PA follows Google's all-media
+  policy; current OpenAI C2PA explicitly declares a watermark action.
 - **Registered visible marks** (optional; needs cv2/numpy, no GPU) through the
   shared watermark registry.
 
-Hard limit: Google does not publish its payload decoder, and this package does
-not ship one. Absence of signals is reported as ``Unknown``, never as "clean".
+Hard limit: a stripped image (re-encoded, screenshotted, social-media upload)
+loses all metadata, and the SynthID *pixel* watermark is not locally decodable
+(proprietary decoder). Absence of signals is therefore reported as ``Unknown``,
+never as "clean". See CLAUDE.md "SynthID detection is metadata-only".
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from remove_ai_watermarks._internal.c2pa import (
     c2pa_info_from_manifest_store,
+    c2pa_info_has_invalid_credential,
+    c2pa_info_has_invismark,
+    c2pa_info_has_removal_hint,
     cbor_text_after,
     extract_c2pa_info,
     soft_binding_vendors_in,
@@ -108,7 +113,27 @@ _STRIP_CAVEAT = (
     "Absence of metadata is not proof the image is clean: C2PA, EXIF, and PNG "
     "text chunks are stripped by re-encoding, screenshots, or social-media upload."
 )
-_SYNTHID_CAVEAT = "SynthID presence comes from supported provenance here. Confirm other cases with the provider oracle."
+_SYNTHID_CAVEAT = (
+    "SynthID presence comes from supported provenance here; the pixel watermark is not locally "
+    "decoded (proprietary decoder). Confirm via the Gemini app or openai.com/verify."
+)
+_C2PA_UNTRUSTED_CAVEAT = (
+    "The C2PA claim signature and asset binding validate, but no trust anchor list is configured here, "
+    "so the signer identity was never checked against one; treat the named platform as a signed claim, "
+    "not a verified identity."
+)
+_C2PA_EXPIRED_CAVEAT = (
+    "The C2PA signing certificate has expired and no trusted timestamp establishes when the claim was "
+    "signed. The binding to these bytes still holds; only the signing time is unproven."
+)
+_C2PA_UNVALIDATED_CAVEAT = (
+    "The C2PA marker was parsed without cryptographic validation; treat its origin and watermark "
+    "assertions as unverified claims."
+)
+_C2PA_INVALID_CAVEAT = (
+    "The embedded C2PA claim no longer validates against this asset. Its origin and watermark assertions "
+    "are retained only as removal hints, not as verified provenance."
+)
 _IPTC_ONLY_CAVEAT = "The IPTC 'Made with AI' tag flags AI provenance but does not identify the specific platform."
 _INVISIBLE_WM_CAVEAT = (
     "The open invisible watermark is fragile: it does not survive JPEG re-encoding "
@@ -125,6 +150,10 @@ _C2PA_CLOUD_CAVEAT = (
     "recoverable server-side -- stripping the file no longer removes the provenance. "
     "It marks Content Credentials, not AI origin: the cloud manifest may describe a "
     "human edit, and reading it needs a network fetch this tool does not make."
+)
+_SOFT_BINDING_CAVEAT = (
+    "Removing the embedded C2PA manifest does not remove its soft binding: the named "
+    "watermark or fingerprint may remain in the pixels and re-link the asset to provenance."
 )
 _SAMSUNG_GENAI_CAVEAT = (
     "Samsung's genAIType marker shows a Galaxy AI editing tool (Generative Edit, "
@@ -369,6 +398,8 @@ def evidence_from_metadata_record(
         "actions",
         "synthid_watermark",
         "soft_binding",
+        "soft_binding_algorithm",
+        "soft_binding_value",
     ):
         if key in c2pa_info:
             ai_metadata.setdefault(key, str(c2pa_info[key]))
@@ -445,20 +476,29 @@ class ProvenanceReport:
     ai_source_kind: str | None = None
     # True when the AI verdict rests on a metadata or embedded-invisible signal
     # (C2PA AI issuer / SynthID provenance, IPTC, AIGC, local gen params, EXIF/xAI, or
-    # an open DWT-DCT / TrustMark decode) -- as opposed to a visible mark or a
-    # weak medium-confidence hint (hf-job, Samsung genAIType). It is exactly the
-    # set of signals an invisible/diffusion scrub targets: a visible-only or
-    # no-signal image has it False. Equivalent to ``confidence == "high"``;
-    # surfaced as a field so callers gate on intent, not on the string.
+    # an open DWT-DCT decode) -- as opposed to a visible mark, provenance-only
+    # TrustMark, or a weak medium-confidence hint (hf-job, Samsung genAIType). This
+    # is the set of signals an invisible/diffusion scrub targets: a visible-only
+    # or no-signal image has it False. Callers should gate on intent, not on the
+    # confidence string.
     ai_from_metadata: bool = False
     watermarks: list[str] = field(default_factory=list[str])
     signals: list[Signal] = field(default_factory=list["Signal"])
     caveats: list[str] = field(default_factory=list[str])
     # Contradictions between independent provenance signals (e.g. two different
     # AI vendors both claiming the image, or camera-capture credentials next to
-    # AI-generation markers). Non-empty means the provenance is internally
-    # inconsistent -- a strong tell of spoofed, transplanted, or laundered metadata.
+    # AI-generation markers), and credentials that failed validation. Non-empty means
+    # the provenance is internally inconsistent -- a strong tell of spoofed,
+    # transplanted, or laundered metadata. A failed credential sends
+    # ``is_ai_generated`` to None and lands here instead, so a consumer that reads
+    # only the verdict field turns a broken AI manifest into silence; see the
+    # ``integrity_clashes`` note in docs/python-api.md.
     integrity_clashes: list[str] = field(default_factory=list[str])
+    # Orthogonal C2PA checks. A valid content binding does not make an untrusted
+    # signer identity trusted, and an expired credential does not by itself mean the
+    # signed bytes changed. Fallback parsing reports each dimension as unknown;
+    # None means no C2PA result exists.
+    c2pa_validation: dict[str, Any] | None = None
 
     def to_dict(
         self,
@@ -494,7 +534,39 @@ class ProvenanceReport:
             ],
             "caveats": list(self.caveats),
             "integrity_clashes": list(self.integrity_clashes),
+            "c2pa_validation": self.c2pa_validation,
         }
+
+
+def _c2pa_validation(info: dict[str, Any]) -> dict[str, Any] | None:
+    source = info.get("c2pa_validation_source")
+    if not isinstance(source, str):
+        return None
+    codes = info.get("c2pa_validation_codes")
+    return {
+        "source": source,
+        "state": str(info.get("c2pa_validation_state", "unknown")),
+        "integrity": str(info.get("c2pa_integrity", "unknown")),
+        "signature": str(info.get("c2pa_signature", "unknown")),
+        "signer_trust": str(info.get("c2pa_signer_trust", "unknown")),
+        "signer_validity": str(info.get("c2pa_signer_validity", "unknown")),
+        "codes": list(cast("list[object]", codes)) if isinstance(codes, list) else [],
+    }
+
+
+def _c2pa_credential_level(info: dict[str, Any]) -> str:
+    """Return invalid, verified, or unverified for provenance attribution.
+
+    ``verified`` means the reader tied this manifest to these bytes: the hard binding
+    matched and the claim signature validated. Signer trust is deliberately NOT a
+    condition -- no trust anchors ship, so gating on it made this branch unreachable.
+    Read the trust-anchor paragraph in docs/module-internals.md before changing this.
+    """
+    if c2pa_info_has_invalid_credential(info):
+        return "invalid"
+    if info.get("c2pa_integrity") == "valid" and info.get("c2pa_signature") == "valid":
+        return "verified"
+    return "unverified"
 
 
 def extract_provenance_evidence(image_path: Path) -> ProvenanceEvidence:
@@ -714,6 +786,7 @@ _AI_VENDOR_TOKENS: tuple[tuple[str, str], ...] = (
     ("google", "Google"),
     ("firefly", "Adobe"),
     ("adobe", "Adobe"),
+    ("copilot", "Microsoft"),
     ("bing", "Microsoft"),
     ("designer", "Microsoft"),
     ("microsoft", "Microsoft"),
@@ -740,6 +813,8 @@ _AI_VENDOR_TOKENS: tuple[tuple[str, str], ...] = (
     ("fal-ai", "fal.ai"),
     ("bria", "Bria"),
     ("apple photos clean up", "Apple"),
+    ("luma ai", "Luma AI"),
+    ("lumalabs", "Luma AI"),
 )
 
 
@@ -1079,10 +1154,16 @@ def _identify_from_evidence(
 
     # ── C2PA Content Credentials ────────────────────────────────────
     has_c2pa = bool(info) or c2pa_marker_in(head)
+    c2pa_validation = _c2pa_validation(info)
+    c2pa_level = _c2pa_credential_level(info)
+    c2pa_usable = c2pa_level != "invalid"
+    # The reader already named which failures moved a dimension; re-deriving that here
+    # by substring made the displayed reason a second, looser rule than the verdict.
+    failed_c2pa_codes = [str(code) for code in cast("list[object]", info.get("c2pa_failed_codes", []))]
     issuers = [info["issuer"]] if info.get("issuer") else _issuers_in(region)
     # Full AI generation (trainedAlgorithmicMedia) vs an AI-enhanced real photo
     # (compositeWithTrainedAlgorithmicMedia). The structured kind is parsed once in
-    # _internal.c2pa._populate_registry_fields (covers PNG + any container the c2pa-python
+    # _internal.c2pa._structured_manifest_fields (covers PNG + any container the c2pa-python
     # reader handles); fall back to a raw head scan for the non-PNG raw-blob path
     # where extract_c2pa_info returns {}. Full generation wins when both appear.
     source_kind = _metadata_source_kind(info, head)
@@ -1092,8 +1173,11 @@ def _identify_from_evidence(
     # Restricted to the ``asserts_ai`` vendors (distinctive brand strings), so it
     # does not reopen the incidental-mention problem the common-word issuers have.
     issuer_blob = " ".join(issuers)
-    c2pa_identity_ai = has_c2pa and any(org in issuer_blob for org in C2PA_IDENTITY_AI_ORGS)
-    c2pa_is_ai = source_kind is not None or c2pa_identity_ai
+    c2pa_identity_ai = has_c2pa and (
+        bool(info.get("c2pa_identity_ai")) or any(org in issuer_blob for org in C2PA_IDENTITY_AI_ORGS)
+    )
+    c2pa_claims_ai = source_kind is not None or c2pa_identity_ai
+    c2pa_is_ai = c2pa_usable and c2pa_claims_ai
     # Generator string (for the signal detail): structured for PNG, CBOR-scanned
     # for other containers. Best-effort -- some manifests key it as
     # `claim_generator_info` (Pixel), so this can be None even when a device is
@@ -1113,20 +1197,43 @@ def _identify_from_evidence(
             camera_label
             or signer_label
             or (_claim_generator_platform(generator) if c2pa_is_ai else None)
+            or (_claim_generator_platform(str(info.get("ai_tool"))) if c2pa_is_ai and info.get("ai_tool") else None)
             or _attribute_platform(issuers, is_ai=c2pa_is_ai)
         )
-        if has_c2pa
+        if has_c2pa and c2pa_usable
         else None
     )
     if has_c2pa:
         detail = ", ".join(filter(None, [", ".join(issuers), generator, info.get("source_type")]))
-        signals.append(Signal("c2pa", detail or "C2PA manifest present", "high"))
-        watermarks.append(f"C2PA Content Credentials ({', '.join(issuers) or 'unknown signer'})")
+        if c2pa_level == "invalid":
+            suffix = f"; {', '.join(failed_c2pa_codes)}" if failed_c2pa_codes else ""
+            signals.append(Signal("c2pa", f"C2PA manifest present, credential integrity invalid{suffix}", "medium"))
+            watermarks.append("C2PA Content Credentials (invalid asset binding or signature)")
+            caveats.append(_C2PA_INVALID_CAVEAT)
+        else:
+            signals.append(
+                Signal("c2pa", detail or "C2PA manifest present", "high" if c2pa_level == "verified" else "medium")
+            )
+            watermarks.append(f"C2PA Content Credentials ({', '.join(issuers) or 'unknown signer'})")
+            if c2pa_level == "verified":
+                # A missing trust bundle is not a signer that failed against one.
+                if info.get("c2pa_signer_trust") != "trusted":
+                    caveats.append(_C2PA_UNTRUSTED_CAVEAT)
+                if info.get("c2pa_signer_validity") == "expired":
+                    caveats.append(_C2PA_EXPIRED_CAVEAT)
+            else:
+                caveats.append(_C2PA_UNVALIDATED_CAVEAT)
         # Record the AI-origin vendor for clash detection only when the source is
         # actually AI -- classify the issuer attribution / generator, NOT the
         # resolved `platform` (which may be a camera device token whose label,
         # e.g. "Google Pixel", would mis-normalize to an AI vendor).
-        if c2pa_is_ai and (v := (_vendor_of(_attribute_platform(issuers, is_ai=True)) or _vendor_of(generator))):
+        if c2pa_is_ai and (
+            v := (
+                _vendor_of(_attribute_platform(issuers, is_ai=True))
+                or _vendor_of(generator)
+                or _vendor_of(str(info.get("ai_tool", "")))
+            )
+        ):
             ai_vendor_claims["c2pa"] = v
 
     # ── C2PA cloud-manifest reference (Durable Content Credentials) ─
@@ -1164,9 +1271,13 @@ def _identify_from_evidence(
     if not synthid and trained_source and c2pa_marker_in(head) and (vendors := synthid_evidence_vendors_in(region)):
         synthid = synthid_verdict(", ".join(vendors))
     if synthid:
-        watermarks.append(f"SynthID watermark ({synthid})")
+        watermarks.append(
+            f"SynthID watermark ({synthid})"
+            if c2pa_usable
+            else f"SynthID watermark claimed by invalid C2PA credentials ({synthid})"
+        )
         caveats.append(_SYNTHID_CAVEAT)
-        if v := _vendor_of(synthid):
+        if c2pa_usable and (v := _vendor_of(synthid)):
             ai_vendor_claims["synthid"] = v
 
     # ── C2PA soft-binding: a named forensic/third-party watermark vendor ─
@@ -1174,12 +1285,36 @@ def _identify_from_evidence(
     # the watermark itself can't be decoded; names whose watermark stamped the pixels.
     soft_binding = meta.get("soft_binding") or (", ".join(v) if (v := soft_binding_vendors_in(region)) else None)
     if soft_binding:
-        signals.append(Signal("soft_binding", f"C2PA soft binding: {soft_binding}", "high"))
-        watermarks.append(f"Forensic watermark soft binding ({soft_binding})")
+        soft_binding_algorithm = meta.get("soft_binding_algorithm") or info.get("soft_binding_algorithm")
+        soft_binding_value = meta.get("soft_binding_value") or info.get("soft_binding_value")
+        soft_binding_details = "; ".join(
+            str(value) for value in (soft_binding, soft_binding_algorithm, soft_binding_value) if value
+        )
+        signals.append(
+            Signal(
+                "soft_binding",
+                f"C2PA soft binding: {soft_binding_details}",
+                "high" if c2pa_level == "verified" else "medium",
+            )
+        )
+        if c2pa_info_has_invismark(info):
+            # Keep the generic soft-binding row for schema-1 compatibility, and add
+            # the pixel-removal target as its own stable signal for clients that need
+            # to select diffusion without parsing human-readable detail.
+            signals.append(
+                Signal(
+                    "invismark",
+                    f"Microsoft InvisMark pixel watermark: {soft_binding_details}",
+                    "high" if c2pa_level == "verified" else "medium",
+                )
+            )
+        watermarks.append(f"Forensic watermark soft binding ({soft_binding_details})")
+        caveats.append(_SOFT_BINDING_CAVEAT)
 
     # ── IPTC "Made with AI" (Meta etc.), only meaningful without C2PA ─
     iptc = any(m in head for m in IPTC_AI_MARKERS)
-    if iptc and not has_c2pa:
+    standalone_iptc = iptc and not has_c2pa
+    if standalone_iptc:
         signals.append(Signal("iptc", "digitalSourceType (Made with AI)", "high"))
         watermarks.append("IPTC digitalSourceType (Made with AI)")
         caveats.append(_IPTC_ONLY_CAVEAT)
@@ -1305,8 +1440,18 @@ def _identify_from_evidence(
     exif_gen = any(s.name == "exif_generator" for s in signals)
     xai_sig = any(s.name == "xai_signature" for s in signals)
     ai_from_metadata = bool(
-        (has_c2pa and (c2pa_is_ai or synthid))
-        or iptc
+        (has_c2pa and c2pa_usable and (c2pa_is_ai or synthid))
+        or standalone_iptc
+        or iptc_ai
+        or aigc
+        or local_keys
+        or invisible_wm
+        or exif_gen
+        or xai_sig
+    )
+    high_ai_from_metadata = bool(
+        (has_c2pa and c2pa_level == "verified" and (c2pa_is_ai or synthid))
+        or standalone_iptc
         or iptc_ai
         or aigc
         or local_keys
@@ -1324,7 +1469,7 @@ def _identify_from_evidence(
 
     if ai_from_metadata:
         is_ai: bool | None = True
-        confidence = "high"
+        confidence = "high" if high_ai_from_metadata else "medium"
     elif visible_only or hf_only or samsung_only:
         is_ai = True
         confidence = "medium"
@@ -1333,7 +1478,17 @@ def _identify_from_evidence(
         confidence = "none"
 
     # ── Integrity clashes: contradictions between independent signals ─
-    clashes = _integrity_clashes(ai_vendor_claims, camera_label, camera_has_ai_marker=bool(ai_vendor_claims))
+    clashes = _integrity_clashes(
+        ai_vendor_claims,
+        camera_label if c2pa_usable else None,
+        camera_has_ai_marker=bool(ai_vendor_claims),
+    )
+    if c2pa_level == "invalid":
+        clashes.insert(
+            0,
+            "C2PA credentials failed integrity validation"
+            + (f": {', '.join(failed_c2pa_codes)}" if failed_c2pa_codes else "."),
+        )
 
     caveats.append(_STRIP_CAVEAT)
     # De-duplicate while preserving order.
@@ -1346,12 +1501,13 @@ def _identify_from_evidence(
         confidence=confidence,
         # Meaningful for the same digitalSourceType whether carried by C2PA or a
         # standalone IPTC/XMP label. Other AI signals leave it None.
-        ai_source_kind=source_kind if (is_ai and (has_c2pa or iptc)) else None,
+        ai_source_kind=(source_kind if (is_ai and ((has_c2pa and c2pa_usable) or standalone_iptc)) else None),
         ai_from_metadata=ai_from_metadata,
         watermarks=watermarks,
         signals=signals,
         caveats=caveats,
         integrity_clashes=clashes,
+        c2pa_validation=c2pa_validation,
     )
 
 
@@ -1400,9 +1556,8 @@ def identify(
         image_path: Path to the image (PNG, JPEG, WebP, or ISOBMFF container).
         check_visible: Also run the registered visible-mark detectors through cv2.
             Set False for a metadata-only, dependency-light scan.
-        check_invisible: Also run optional pixel detectors for the supported
-            SynthID carrier and open SD/SDXL/FLUX watermarks. No-op when their
-            numeric extras are not installed.
+        check_invisible: Also decode optional open invisible watermarks
+            (SD/SDXL/FLUX). No-op when the decoder extra is not installed.
 
     File-backed metadata extraction runs first. The extracted evidence is then
     evaluated independently, followed by the optional pixel-backed visible and
@@ -1427,25 +1582,37 @@ def has_invisible_target(image_path: Path) -> bool:
     """True when a locally-detectable invisible/metadata AI signal is present.
 
     The decision gate for the diffusion scrub (``invisible`` / ``all`` / ``batch``):
-    regenerating pixels removes an invisible watermark (SynthID, open DWT-DCT,
-    TrustMark) but degrades a real photo, so it must not run when there is nothing
-    to remove. Runs :func:`identify` with ``check_visible=False`` -- a visible mark
-    is handled by the separate visible pass and is NOT a diffusion target -- and
-    ``check_invisible=True`` so an open watermark counts. Returns
-    ``report.ai_from_metadata`` (C2PA AI issuer / SynthID provenance, IPTC,
-    AIGC, local gen params, EXIF/xAI, open DWT-DCT / TrustMark).
+    regenerating pixels removes an AI-specific invisible watermark (SynthID,
+    open DWT-DCT) but degrades a real photo, so it must not run when there is
+    nothing to remove. It runs the same evidence pipeline as :func:`identify`
+    with visible checks disabled and invisible checks enabled, so a visible mark
+    is handled by the separate visible pass and is NOT a diffusion target. Returns
+    True for ``report.ai_from_metadata`` (C2PA AI issuer / SynthID provenance,
+    IPTC, AIGC, local gen params, EXIF/xAI, or open DWT-DCT), and also when an
+    invalid C2PA claim retains an AI or watermark removal hint. TrustMark alone
+    does not trigger the scrub because it also protects human-authored work and
+    therefore is not an AI signal by itself.
 
-    IMPORTANT -- this cannot prove a pixel SynthID is absent: Google does not
-    publish the payload decoder, and this package does not ship one. A False
-    therefore means "no supported locally-detectable invisible target", not
+    IMPORTANT -- this cannot prove a pixel SynthID is absent: SynthID is detectable
+    only through its C2PA proxy, so a metadata-stripped AI image reads as no signal
+    here. A False therefore means "no locally-detectable invisible target", not
     "clean". Callers must NOT present a skip as a finished clean result.
 
     Fail-safe: any error resolves to True so the removal still runs -- leaving a
     watermark on a paid removal is worse than over-regenerating a clean image.
     """
     try:
-        report = identify(image_path, check_visible=False, check_invisible=True)
+        evidence = extract_provenance_evidence(image_path)
+        report = _identify_from_evidence(
+            evidence,
+            image_path=image_path,
+            check_visible=False,
+            check_invisible=True,
+        )
     except Exception:  # unreadable / detector error -> do not skip the removal
         logger.debug("has_invisible_target: identify failed, defaulting to run", exc_info=True)
         return True
-    return report.ai_from_metadata
+    # An asset edit can invalidate the C2PA binding while leaving the declared pixel
+    # watermark intact. Keep the removal gate fail-safe without promoting that broken
+    # claim back into the provenance verdict.
+    return report.ai_from_metadata or c2pa_info_has_removal_hint(evidence.c2pa_info)

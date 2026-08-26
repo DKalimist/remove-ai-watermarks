@@ -11,8 +11,9 @@ cleaning, directory batches, visible Sora, Veo, Seedance, Dola, Hailuo, and
 Kling mark removal, and oracle-certified VAE regeneration for video SynthID
 removal.
 
-> Try it online at [raiw.cc](https://raiw.cc) if you do not want to install Python
-> or run diffusion models locally.
+> [raiw.cc](https://raiw.cc) runs this library as a hosted service, with the GPU
+> included and nothing to install. Visible mark and metadata removal are free
+> there; invisible watermark removal is paid.
 
 [![PyPI](https://img.shields.io/pypi/v/remove-ai-watermarks?logo=pypi&logoColor=white)](https://pypi.org/project/remove-ai-watermarks/)
 [![Python](https://img.shields.io/pypi/pyversions/remove-ai-watermarks?logo=python&logoColor=white)](https://pypi.org/project/remove-ai-watermarks/)
@@ -44,6 +45,10 @@ removal.
 | Run visible, invisible, and metadata removal | `all` | Recommended |
 | Process a directory | `batch` | Depends on mode |
 
+Microsoft Paint and Photos InvisMark declarations are routed automatically to
+pixel regeneration. The `all` command removes both the hidden pixel watermark and
+its linked C2PA manifest; metadata stripping alone removes only the manifest.
+
 ## Installation modes
 
 | Need | Install |
@@ -55,12 +60,12 @@ removal.
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
 | Torch-free DWT-DCT detection | `remove-ai-watermarks[detect]` |
 | Invisible image removal (needs CUDA) | `remove-ai-watermarks[qwen-zimage]` |
-| Every production feature | `remove-ai-watermarks[all]` |
+| Every production feature available on the active Python | `remove-ai-watermarks[all]` |
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
 `migan`, `lama`, and `diffusion`. The
 [installation guide](docs/installation.md#feature-extras) documents their exact
-dependency composition and model requirements.
+dependency composition, Python compatibility, and model requirements.
 
 ## Quick start
 
@@ -126,7 +131,9 @@ The `video metadata` command does not transcode video or audio streams. Unlike
 the image command above, when `-o` is omitted it writes `<source>_clean` and
 preserves the original. MP4 and MOV
 inspection includes the native TC260 `AIGC` tag in
-`moov.udta.meta.keys/ilst`, including a `moov` placed after the media payload.
+`moov.udta.meta.keys/ilst`, including a `moov` placed after the media payload,
+plus the QuickTime-form `meta` variants Doubao's iOS export writes (a bare
+`meta` box as a direct `moov` child, and a keyless `hdlr=mdir` metadata list).
 MKV and WebM inspection reads the normative
 `Segment.Tags.Tag.SimpleTag` placement. AVI uses `LIST/INFO/AIGC`, while FLV
 uses `script.onMetaData.AIGC`. The non-ISOBMFF formats are remuxed with stream
@@ -217,6 +224,20 @@ image came from an AI generator, add `--force`:
 ```bash
 remove-ai-watermarks invisible image.png -o clean.png --force
 ```
+
+Typography-heavy images can opt into the experimental verified-text post-pass.
+It accepts manually reviewed strings and line boxes or an operator-verified
+geometry-only manifest; it never treats raw OCR output as ground truth or runs
+automatically:
+
+```bash
+uv tool install --force "remove-ai-watermarks[text-restoration]"
+remove-ai-watermarks invisible image.png -o clean.png \
+  --text-manifest verified-lines.json --force
+```
+
+See the [CLI guide](docs/cli.md#restore-operator-verified-text) for the manifest
+schema, compatibility restrictions, and oracle caveats.
 
 See the [installation guide](docs/installation.md) for Homebrew, uv, optional
 features, and development setup.

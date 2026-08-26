@@ -1,9 +1,13 @@
 [project]
+# This name is the published PyPI distribution, not a local label: changing it
+# strands every `pip install remove-ai-watermarks` and every pinned dependency
+# on it, including the ComfyUI node package. The console script below carries
+# the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.26.1"
+version = "0.31.1"
 description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
-requires-python = ">=3.10.1"
+requires-python = ">=3.11,<3.15"
 license = {text = "Apache-2.0"}
 keywords = [
     "ai-watermark",
@@ -33,7 +37,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -61,7 +64,10 @@ dependencies = [
 
 [project.optional-dependencies]
 pixels = [
-    "numpy>=1.24.0",
+    "numpy>=1.24.0; python_version < '3.13'",
+    # NumPy 1.x has no CPython 3.13+ wheels. Requiring 2.x prevents installers
+    # from attempting an unsupported source build on the newer Python lines.
+    "numpy>=2; python_version >= '3.13'",
     "opencv-python-headless>=4.8.0",
 ]
 # Optional HEIC/AVIF pixel decode. Metadata scanning handles these containers
@@ -71,12 +77,10 @@ heif = [
 ]
 visible = ["remove-ai-watermarks[pixels]"]
 # Video visible removal uses the shared pixel runtime. PyAV packetizes processed
-# VFR frames with explicit PTS before system ffmpeg encodes them. PyAV 18 requires
-# Python 3.11; the 16.x wheel line still covers Python 3.10.
+# VFR frames with explicit PTS before system ffmpeg encodes them.
 video = [
     "remove-ai-watermarks[visible]",
-    "av>=16,<17; python_version < '3.11'",
-    "av>=18,<19; python_version >= '3.11'",
+    "av>=18,<19",
 ]
 # Open DWT-DCT watermarks used by Stable Diffusion / SDXL / FLUX. The in-tree
 # decoder avoids the upstream invisible-watermark package's mandatory torch and
@@ -116,12 +120,27 @@ qwen-zimage = [
     "diffsynth>=2.0.17,<3",
     "torchvision>=0.20.0",
 ]
+# Opt-in verified-text reconstruction over qwen-zimage. LaMa removes the changed
+# candidate glyphs before exact Qwen-VAE cores are composited back.
+text-restoration = [
+    "remove-ai-watermarks[qwen-zimage,lama]",
+]
+# Draft-only OCR proposals for verified-text manifests. CPU, no torch:
+# PaddleOCR detection plus three script-chosen recognition engines. The models
+# download on first use and are cached by huggingface_hub; never bundled.
+text-draft = [
+    "paddleocr>=3.3.3",
+    "paddlepaddle>=3.0.0",
+    "huggingface-hub>=0.20.0",
+]
 # Adobe TrustMark decoder -- the open, keyless watermark behind Adobe Durable
 # Content Credentials (soft-binding alg ``com.adobe.trustmark.P``). Optional
 # because it pulls torch and downloads model weights on first use. identify()
 # guards the import and skips the TrustMark signal when absent.
 trustmark = [
-    "trustmark>=0.8.0",
+    # TrustMark requires NumPy <2, whose last release has no CPython 3.13+
+    # wheels. Keep this feature installable only on its real runtime range.
+    "trustmark>=0.8.0; python_version < '3.13'",
 ]
 # Official remote OpenAI SynthID verification. The command strips AI provenance
 # metadata and proves pixel identity before upload; it is never called implicitly.
@@ -134,10 +153,7 @@ verify = [
 # eraser backend needs none of this.
 lama = [
     "remove-ai-watermarks[visible]",
-    # ONNX Runtime 1.24 dropped CPython 3.10 wheels; keep the project's
-    # supported 3.10 line on the last compatible release series.
-    "onnxruntime>=1.16.0,<1.24; python_version < '3.11'",
-    "onnxruntime>=1.16.0; python_version >= '3.11'",
+    "onnxruntime>=1.24.0",
     "huggingface-hub>=0.20.0",
 ]
 # Lightweight inpaint backend -- MI-GAN via onnxruntime (andraniksargsyan/migan,
@@ -147,8 +163,7 @@ lama = [
 # LaMa, the quality-first `auto` choice, is too large. Same runtime as `lama`.
 migan = [
     "remove-ai-watermarks[visible]",
-    "onnxruntime>=1.16.0,<1.24; python_version < '3.11'",
-    "onnxruntime>=1.16.0; python_version >= '3.11'",
+    "onnxruntime>=1.24.0",
     "huggingface-hub>=0.20.0",
 ]
 dev = [
@@ -161,14 +176,10 @@ dev = [
     "ruff>=0.4.0",
     "pyright>=1.1.0",
     "invisible-watermark>=0.2.0",
-    # maintain.sh helpers; they only support newer Pythons, so gate them by
-    # marker to keep the py3.10 resolution (and CI matrix) solvable.
-    "uv-outdated>=0.1.0; python_version >= '3.12'",
-    "uv-secure>=0.12.0; python_version >= '3.12'",
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,heif,detect,trustmark,qwen-zimage,lama,migan,verify]"]
+all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,verify]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"
@@ -205,7 +216,7 @@ pythonpath = ["src", "scripts"]
 addopts = "-v --tb=short"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 exclude = ["_refs"]
 extend-exclude = ["*.md"]
@@ -228,7 +239,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 typeCheckingMode = "strict"
 exclude = ["_refs"]
 

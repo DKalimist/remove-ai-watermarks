@@ -39,6 +39,15 @@ confidence), reviewed once, then re-baselined. Lost detections are the alarm.
 
 Implemented as `scripts/sidecar_regression.py` (resumable, ~1.5 h at 8 workers).
 
+A 2026-08-15 metadata-only C2PA regression audit over the local historical
+corpus caught two structured-parser gaps before release: an exact Firefly claim
+generator without a repeated source type, and a Dreamina generator carried by a
+reachable ingredient under a generic update manifest. Both now have focused
+tests. The same audit confirmed that invalid hash/signature claims lose origin
+attribution without losing the C2PA inventory, and exposed the absence of
+production trust anchors in the SDK defaults. Dataset-derived counts and
+identifiers remain in the gitignored audit output.
+
 #### Local run protocol
 
 Re-run `identify` against locally recorded sidecars, classify losses separately from intended new detections, and keep generated reports under `.local-eval/`. Do not commit dataset-derived counts or identifiers.
@@ -177,17 +186,21 @@ report recall from the detector-sampled set.
 
 ## Tier D -- external oracles
 
-SynthID removal cannot currently be verified locally because no public decoder weights
-exist. Each vendor has its own oracle and it covers only that vendor's content. OpenAI
-documents a synchronous Content Provenance API with a distinct SynthID result, while the
-Gemini app provides a manual, quota-limited Google verifier. A quiet metadata proxy is
-**not** proof the pixel watermark is gone.
+Proprietary watermark removal cannot be verified locally by design -- no public decoder
+exists. Each vendor has its own oracle and it covers only that vendor's content:
+`openai.com/verify` for OpenAI, the Gemini app for Google, and Microsoft's
+[Content Provenance Detection API](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection)
+for InvisMark. The Microsoft API reports `Watermark` and `C2PA` separately. It therefore
+needs a pixel-identical metadata-stripped control: the control must lose `C2PA` while
+remaining `Watermark`-positive before a candidate's negative result can be attributed to
+pixel regeneration. A quiet metadata proxy is **not** proof the pixel watermark is gone.
 
 OpenAI's API documentation says not to use repeated queries to reverse-engineer, remove,
 or evade a watermark. Using it as an adaptive research oracle therefore requires explicit
 authorization. Without that authorization it must not become a training loss, search loop,
 or automated removal gate. The provider-specific detector and pixel-only removal research
 protocol is in [`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
+
 
 Scope honestly: this tier certifies strength floors on a handful of images per vendor, and
 that is all it can do. See `docs/synthid.md`.

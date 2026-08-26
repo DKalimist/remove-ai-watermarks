@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
+from remove_ai_watermarks._internal.c2pa import c2pa_info_from_manifest_store
+from remove_ai_watermarks._internal.constants import C2PA_AI_VENDORS, C2PA_CLAIM_GENERATOR_PLATFORMS
 from remove_ai_watermarks.identify import (
     ProvenanceEvidence,
     ProvenanceReport,
@@ -39,6 +41,147 @@ SAMPLES_DIR = Path(__file__).resolve().parent.parent / "data" / "fixtures" / "pr
 
 
 class TestProvenanceEvidence:
+    def test_exact_ai_claim_generator_can_assert_ai_without_source_type(self, tmp_path: Path):
+        path = tmp_path / "firefly.png"
+        info = {
+            "has_c2pa": True,
+            "issuer": "Adobe",
+            "claim_generator": "Adobe_Firefly",
+            "ai_tool": "Firefly",
+            "c2pa_identity_ai": True,
+            "c2pa_validation_source": "reader",
+            "c2pa_validation_state": "Valid",
+            "c2pa_integrity": "valid",
+            "c2pa_signature": "valid",
+            "c2pa_signer_trust": "untrusted",
+            "c2pa_signer_validity": "valid",
+            "c2pa_validation_codes": ["assertion.dataHash.match", "claimSignature.validated"],
+        }
+        evidence = ProvenanceEvidence(
+            path=path,
+            c2pa_info=info,
+            ai_metadata={},
+            scan=b"jumb c2pa Adobe_Firefly",
+            iptc_ai_system=None,
+            aigc_label=None,
+            exif_generator=None,
+            xai_signature=False,
+            huggingface_job=None,
+            samsung_genai=None,
+        )
+
+        report = identify_from_evidence(evidence)
+
+        assert report.is_ai_generated is True
+        # Intact binding and signature. The signer is not anchored, which is a missing
+        # input here (no trust bundle ships), not a finding against the credential.
+        assert report.confidence == "high"
+        assert report.platform == "Adobe Firefly"
+
+    def test_revoked_signing_credential_is_disqualifying(self, tmp_path: Path):
+        """A credential the issuer disowned cannot establish origin.
+
+        Revocation arrives on its own dimension, not as a binding or signature failure,
+        so a check that reads only those two returned an AI verdict off a dead cert with
+        an empty ``integrity_clashes`` -- quieter than a hash mismatch on the same file.
+
+        The evidence comes from :func:`c2pa_info_from_manifest_store`, not a hand-written
+        dict of what it is believed to emit, so the assertion follows the producer when
+        its contract changes.
+        """
+        path = tmp_path / "revoked.png"
+        info = c2pa_info_from_manifest_store(
+            {
+                "active_manifest": "created",
+                "validation_results": {
+                    "activeManifest": {
+                        "success": [
+                            {"code": "assertion.dataHash.match"},
+                            {"code": "claimSignature.validated"},
+                        ],
+                        "failure": [{"code": "signingCredential.ocsp.revoked"}],
+                    }
+                },
+                "manifests": {
+                    "created": {
+                        "signature_info": {"issuer": "OpenAI"},
+                        "assertions": [
+                            {
+                                "label": "c2pa.actions.v2",
+                                "data": {
+                                    "actions": [
+                                        {
+                                            "action": "c2pa.created",
+                                            "digitalSourceType": "trainedAlgorithmicMedia",
+                                        }
+                                    ]
+                                },
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        assert info["c2pa_signer_validity"] == "invalid"
+        evidence = ProvenanceEvidence(
+            path=path,
+            c2pa_info=info,
+            ai_metadata={},
+            scan=b"jumb c2pa OpenAI trainedAlgorithmicMedia",
+            iptc_ai_system=None,
+            aigc_label=None,
+            exif_generator=None,
+            xai_signature=False,
+            huggingface_job=None,
+            samsung_genai=None,
+        )
+
+        report = identify_from_evidence(evidence)
+
+        assert report.is_ai_generated is None
+        assert report.platform is None
+        assert report.confidence == "none"
+        assert any("revoked" in clash for clash in report.integrity_clashes)
+
+    def test_anchored_signer_is_also_high_confidence(self, tmp_path: Path):
+        path = tmp_path / "validated.png"
+        info = {
+            "has_c2pa": True,
+            "issuer": "OpenAI",
+            "source_type": "trainedAlgorithmicMedia (AI-generated)",
+            "ai_source_kind": "generated",
+            "c2pa_validation_source": "reader",
+            "c2pa_validation_state": "Trusted",
+            "c2pa_integrity": "valid",
+            "c2pa_signature": "valid",
+            "c2pa_signer_trust": "trusted",
+            "c2pa_signer_validity": "valid",
+            "c2pa_validation_codes": [
+                "assertion.dataHash.match",
+                "claimSignature.validated",
+                "signingCredential.trusted",
+            ],
+        }
+        evidence = ProvenanceEvidence(
+            path=path,
+            c2pa_info=info,
+            ai_metadata={},
+            scan=b"jumb c2pa OpenAI trainedAlgorithmicMedia",
+            iptc_ai_system=None,
+            aigc_label=None,
+            exif_generator=None,
+            xai_signature=False,
+            huggingface_job=None,
+            samsung_genai=None,
+        )
+
+        report = identify_from_evidence(evidence)
+
+        assert report.is_ai_generated is True
+        assert report.confidence == "high"
+        assert report.platform == "OpenAI (ChatGPT / gpt-image / DALL-E / Sora)"
+        assert not any("not anchored" in caveat for caveat in report.caveats)
+
     def test_external_metadata_record_builds_equivalent_evidence(self, tmp_path: Path):
         path = tmp_path / "external.jpg"
         signature = "A" * 64
@@ -428,12 +571,14 @@ class TestIdentifySamsungGalaxy:
         path.write_bytes(b"\xff\xd8\xff\xe1jumbc2pa" + blob + b"\xff\xd9")
         return path
 
-    def test_galaxy_trained_source_is_high_ai(self, tmp_path: Path):
+    def test_galaxy_trained_source_is_unverified_ai(self, tmp_path: Path):
         path = self._jpeg(tmp_path, "s25.jpg", b"Samsung Galaxy Galaxy S25 c2pa-rs trainedAlgorithmicMedia")
         r = identify(path, check_visible=False, check_invisible=False)
         assert r.is_ai_generated is True
-        assert r.confidence == "high"
+        assert r.confidence == "medium"
         assert r.platform == "Samsung Galaxy (C2PA)"
+        assert r.c2pa_validation is None
+        assert any("without cryptographic validation" in caveat for caveat in r.caveats)
         assert r.integrity_clashes == []  # device cert + AI source-type is legitimate, not a clash
 
     def test_galaxy_genai_only_is_medium_ai(self, tmp_path: Path):
@@ -546,8 +691,60 @@ class TestIdentifyRealSamples:
         # both invisible/metadata targets, so the diffusion scrub should run.
         assert has_invisible_target(SAMPLES_DIR / "chatgpt-1.png") is True
         assert has_invisible_target(SAMPLES_DIR / "mj-1.png") is True
-        # ai_from_metadata mirrors confidence == "high" and backs the helper.
+        # ai_from_metadata records scrub intent independently of the confidence string.
         assert identify(SAMPLES_DIR / "chatgpt-1.png", check_visible=False).ai_from_metadata is True
+
+    def test_untrusted_but_intact_c2pa_is_high_confidence_with_a_caveat(self):
+        report = identify(SAMPLES_DIR / "chatgpt-1.png", check_visible=False, check_invisible=False)
+
+        assert report.is_ai_generated is True
+        assert report.confidence == "high"
+        assert report.ai_from_metadata is True
+        assert report.c2pa_validation is not None
+        assert report.c2pa_validation["source"] == "reader"
+        assert report.c2pa_validation["state"] == "Invalid"
+        assert report.c2pa_validation["integrity"] == "valid"
+        assert report.c2pa_validation["signature"] == "valid"
+        assert report.c2pa_validation["signer_trust"] == "untrusted"
+        assert report.c2pa_validation["signer_validity"] == "expired"
+        assert "assertion.dataHash.match" in report.c2pa_validation["codes"]
+        # What was not established is said, not folded into the confidence string.
+        assert any("never checked against one" in caveat for caveat in report.caveats)
+        assert any("only the signing time is unproven" in caveat for caveat in report.caveats)
+
+    def test_no_committed_fixture_reports_a_trusted_signer(self):
+        """The reachability guard for :func:`_c2pa_credential_level`.
+
+        The SDK ships no production trust anchors, so ``signingCredential.trusted``
+        appears in no default installation. Gating high confidence on it made that branch
+        dead in production for every vendor while a hand-built dict kept it green in the
+        suite. These fixtures are the producer; if one ever comes back trusted, a bundle
+        got configured and the confidence mapping needs re-reading, not this assertion
+        deleted.
+        """
+        checked = 0
+        for path in sorted(SAMPLES_DIR.iterdir()):
+            report = identify(path, check_visible=False, check_invisible=False)
+            if report.c2pa_validation is None:
+                continue
+            checked += 1
+            assert report.c2pa_validation["signer_trust"] != "trusted"
+            if report.c2pa_validation["integrity"] == "valid" and report.c2pa_validation["signature"] == "valid":
+                assert report.confidence == "high", path.name
+        assert checked >= 3
+
+    def test_hash_mismatch_does_not_confirm_origin_but_keeps_scrub_fail_safe(self, tampered_chatgpt_png: Path):
+        report = identify(tampered_chatgpt_png, check_visible=False, check_invisible=False)
+
+        assert report.is_ai_generated is None
+        assert report.platform is None
+        assert report.confidence == "none"
+        assert report.ai_source_kind is None
+        assert report.ai_from_metadata is False
+        assert report.c2pa_validation is not None
+        assert report.c2pa_validation["integrity"] == "invalid"
+        assert any("dataHash.mismatch" in clash for clash in report.integrity_clashes)
+        assert has_invisible_target(tampered_chatgpt_png) is True
 
     def test_has_invisible_target_false_on_clean_photo(self, clean_photo: Path):
         # No detectable invisible signal -> skip the scrub (do not degrade a clean image).
@@ -566,13 +763,13 @@ class TestHasInvisibleTargetFailSafe:
     """The scrub gate fails SAFE: when a detector errors, it runs the removal."""
 
     def test_detector_error_defaults_to_run(self, tmp_path: Path):
-        # If identify raises (a detector crash), the gate must return True so the
+        # If evidence evaluation raises (a detector crash), the gate must return True so the
         # caller still attempts removal -- leaving a watermark on a paid removal is
         # worse than over-regenerating. (Garbage bytes do NOT raise; identify returns
         # a clean None verdict there, so that path correctly skips -- see below.)
         bad = tmp_path / "x.png"
         bad.write_bytes(b"not image bytes")
-        with patch("remove_ai_watermarks.identify.identify", side_effect=RuntimeError("boom")):
+        with patch("remove_ai_watermarks.identify._identify_from_evidence", side_effect=RuntimeError("boom")):
             assert has_invisible_target(bad) is True
 
     def test_unreadable_bytes_are_not_a_target(self, tmp_path: Path):
@@ -1038,6 +1235,39 @@ class TestIdentifySoftBinding:
         assert any("Digimarc" in w for w in r.watermarks)
         assert any(s.name == "soft_binding" for s in r.signals)
 
+    def test_invismark_signal_lists_signed_watermark_id(self, tmp_path: Path):
+        watermark_id = "83424621-03cb-40e3-9808-a9fae837156d"
+        record = {
+            "c2pa_store": {
+                "active_manifest": "paint",
+                "manifests": {
+                    "paint": {
+                        "assertions": [
+                            {
+                                "label": "c2pa.soft-binding",
+                                "data": {
+                                    "alg": "com.microsoft.invismark.1",
+                                    "blocks": [{"scope": "the entire image", "value": watermark_id}],
+                                },
+                            }
+                        ]
+                    }
+                },
+            }
+        }
+        evidence = evidence_from_metadata_record(record, path=tmp_path / "paint.png")
+
+        report = identify_from_evidence(evidence)
+
+        assert evidence.ai_metadata["soft_binding_value"] == watermark_id
+        signal = next(signal for signal in report.signals if signal.name == "soft_binding")
+        assert "com.microsoft.invismark.1" in signal.detail
+        assert watermark_id in signal.detail
+        invismark = next(signal for signal in report.signals if signal.name == "invismark")
+        assert "com.microsoft.invismark.1" in invismark.detail
+        assert watermark_id in invismark.detail
+        assert any("may remain in the pixels" in caveat for caveat in report.caveats)
+
 
 class TestIdentifyIptcAi:
     """IPTC 2025.1 AISystemUsed drives an AI verdict + platform attribution."""
@@ -1195,11 +1425,19 @@ class TestVendorOf:
     def test_registered_vendors_normalize(self):
         # Regression: these registered C2PA vendors returned None, so their claims never
         # entered clash detection (a coverage hole). They now normalize to one origin.
-        assert _vendor_of("ByteDance (Doubao / Jimeng / Volcano Engine)") == "ByteDance"
+        assert _vendor_of("Microsoft (Copilot / Designer)") == "Microsoft"
+        assert _vendor_of("Copilot") == "Microsoft"
+        assert _vendor_of("ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)") == "ByteDance"
         assert _vendor_of("Dreamina/1.2") == "ByteDance"
         assert _vendor_of("Canva (Magic Media)") == "Canva"
         assert _vendor_of("Black Forest Labs (FLUX)") == "Black Forest Labs"
         assert _vendor_of("Eleven Labs Inc.") == "ElevenLabs"
+
+    def test_bytedance_issuers_share_one_platform(self):
+        expected = "ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)"
+        platforms = {vendor.platform for vendor in C2PA_AI_VENDORS if vendor.needle == "ByteDance"}
+        assert platforms == {expected}
+        assert ("dreamina", expected) in C2PA_CLAIM_GENERATOR_PLATFORMS
 
 
 class TestIntegrityClashesHelper:

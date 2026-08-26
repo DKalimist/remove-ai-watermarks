@@ -579,6 +579,127 @@ def test_cli_qwen_zimage_keeps_profile_postprocess_default(tmp_image_path, monke
     assert mock_engine.remove_watermark.call_args.kwargs["adaptive_polish"] is True
 
 
+def test_cli_forwards_verified_text_manifest(tmp_image_path, tmp_path, monkeypatch):
+    from remove_ai_watermarks import cli
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    mock_engine = MagicMock()
+    mock_engine.remove_watermark.return_value = tmp_image_path
+    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.is_available", lambda: True)
+    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.InvisibleEngine", MagicMock(return_value=mock_engine))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["invisible", str(tmp_image_path), "--text-manifest", str(manifest), "--force"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert mock_engine.remove_watermark.call_args.kwargs["text_manifest"] == manifest
+
+
+def test_cli_reports_verified_text_manifest_errors(tmp_image_path, tmp_path, monkeypatch):
+    from remove_ai_watermarks import cli
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    mock_engine = MagicMock()
+    mock_engine.remove_watermark.side_effect = ValueError("manifest pixels do not match")
+    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.is_available", lambda: True)
+    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.InvisibleEngine", MagicMock(return_value=mock_engine))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["invisible", str(tmp_image_path), "--text-manifest", str(manifest), "--force"],
+    )
+
+    assert result.exit_code == 1
+    assert "manifest pixels do not match" in result.output
+
+
+def test_no_face_path_still_runs_verified_text_restoration(monkeypatch):
+    from remove_ai_watermarks._internal import qwen_zimage_pipeline, text_restoration
+    from remove_ai_watermarks._internal.qwen_zimage_pipeline import QwenZImagePipeline
+    from remove_ai_watermarks._internal.text_restoration import VerifiedTextLine, VerifiedTextManifest
+
+    pipeline = object.__new__(QwenZImagePipeline)
+    pipeline.device = "cuda"
+    pipeline.progress_callback = None
+    source = Image.new("RGB", (32, 32), (10, 20, 30))
+    donor = Image.new("RGB", (32, 32), (40, 50, 60))
+    global_result = Image.new("RGB", (32, 32), (70, 80, 90))
+    anchor = Image.new("RGB", (32, 32), (100, 110, 120))
+    restored = Image.new("RGB", (32, 32), (130, 140, 150))
+    pipeline._qwen_vae_roundtrip = MagicMock(return_value=donor)
+    pipeline._run_global = MagicMock(return_value=global_result)
+    monkeypatch.setattr(qwen_zimage_pipeline, "detect_faces", lambda _image: [])
+    blend = MagicMock(return_value=anchor)
+    restore = MagicMock(return_value=restored)
+    monkeypatch.setattr(text_restoration, "blend_fidelity_anchor", blend)
+    monkeypatch.setattr(text_restoration, "restore_verified_text", restore)
+    manifest = VerifiedTextManifest(
+        "0" * 64,
+        32,
+        32,
+        (VerifiedTextLine((4, 4, 20, 16), "Exact", "alphabetic"),),
+    )
+
+    result = pipeline.run(source, strength=0.1, seed=0, text_manifest=manifest)
+
+    assert result is restored
+    # Off by default since 0.27.1 (leak finding, docs/text-protection-research.md):
+    # no whole-frame donor blend; the raw global result feeds restoration.
+    blend.assert_not_called()
+    restore.assert_called_once_with(source, global_result, donor, manifest.lines)
+
+    result = pipeline.run(source, strength=0.1, seed=0, text_manifest=manifest, fidelity_anchor=True)
+
+    assert result is restored
+    blend.assert_called_once_with(global_result, donor)
+    restore.assert_called_with(source, anchor, donor, manifest.lines)
+
+
+def test_tiled_verified_text_runs_vae_donor_per_tile(monkeypatch):
+    from remove_ai_watermarks._internal import qwen_zimage_pipeline, text_restoration
+    from remove_ai_watermarks._internal.qwen_zimage_pipeline import QwenZImagePipeline
+    from remove_ai_watermarks._internal.text_restoration import VerifiedTextLine, VerifiedTextManifest
+
+    pipeline = object.__new__(QwenZImagePipeline)
+    pipeline.device = "cuda"
+    pipeline.progress_callback = None
+    source = Image.new("RGB", (96, 80), (10, 20, 30))
+    restored = Image.new("RGB", (96, 80), (130, 140, 150))
+    pipeline._qwen_vae_roundtrip = MagicMock(side_effect=lambda tile: tile)
+    pipeline._run_global = MagicMock(side_effect=lambda tile, _strength, _seed: tile)
+    monkeypatch.setattr(qwen_zimage_pipeline, "detect_faces", lambda _image: [])
+    restore = MagicMock(return_value=restored)
+    monkeypatch.setattr(text_restoration, "restore_verified_text", restore)
+    manifest = VerifiedTextManifest(
+        "0" * 64,
+        96,
+        80,
+        (VerifiedTextLine((4, 4, 20, 16), "Exact", "alphabetic"),),
+    )
+
+    result = pipeline.run(
+        source,
+        strength=0.1,
+        seed=0,
+        tile=True,
+        tile_size=64,
+        tile_overlap=16,
+        text_manifest=manifest,
+    )
+
+    assert result is restored
+    assert pipeline._qwen_vae_roundtrip.call_count > 1
+    assert pipeline._run_global.call_count > 1
+    restore.assert_called_once()
+    assert restore.call_args.args[0].size == (96, 80)
+    assert restore.call_args.args[1].size == (96, 80)
+    assert restore.call_args.args[2].size == (96, 80)
+
+
 def test_watermark_remover_dispatches_to_full_pipeline(tmp_path, monkeypatch):
     from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover
 
@@ -601,6 +722,7 @@ def test_watermark_remover_dispatches_to_full_pipeline(tmp_path, monkeypatch):
     _, kwargs = runtime.run.call_args
     assert kwargs["strength"] == pytest.approx(0.084)
     assert kwargs["seed"] == 0
+    assert kwargs["text_manifest"] is None
     assert output.exists()
 
 
@@ -785,6 +907,8 @@ def test_invisible_engine_passes_the_seed_but_never_a_step_count(tmp_image_path,
 def test_sdxl_zimage_strength_is_vendor_adaptive_and_leaves_other_profiles_alone():
     """An SDXL global pass needs more strength than Qwen, so it gets its own policy."""
     from remove_ai_watermarks._internal.watermark_profiles import (
+        QWEN_ZIMAGE_GOOGLE_STRENGTH,
+        QWEN_ZIMAGE_OPENAI_STRENGTH,
         SDXL_ZIMAGE_GEMINI_STRENGTH,
         SDXL_ZIMAGE_OPENAI_STRENGTH,
         resolve_strength,
@@ -794,11 +918,15 @@ def test_sdxl_zimage_strength_is_vendor_adaptive_and_leaves_other_profiles_alone
     assert resolve_strength(None, "google", "sdxl-zimage") == pytest.approx(SDXL_ZIMAGE_GEMINI_STRENGTH)
     # Unknown provenance takes the stricter of the two.
     assert resolve_strength(None, None, "sdxl-zimage") == pytest.approx(SDXL_ZIMAGE_GEMINI_STRENGTH)
-    # An explicit value still wins, and qwen-zimage is untouched by this ladder: it
-    # defers to its resolution curve rather than to a vendor value.
+    # An explicit value still wins. qwen-zimage's unknown cohort keeps the curve,
+    # while measured providers take their flat operating points.
     assert resolve_strength(0.4, "google", "sdxl-zimage") == pytest.approx(0.4)
-    assert resolve_strength(None, "openai", "qwen-zimage", size=(2000, 1850)) == pytest.approx(0.154)
-    assert resolve_strength(None, "google", "qwen-zimage", size=(2000, 1850)) == pytest.approx(0.154)
+    assert resolve_strength(None, "openai", "qwen-zimage", size=(2000, 1850)) == pytest.approx(
+        QWEN_ZIMAGE_OPENAI_STRENGTH
+    )
+    assert resolve_strength(None, "google", "qwen-zimage", size=(2000, 1850)) == pytest.approx(
+        QWEN_ZIMAGE_GOOGLE_STRENGTH
+    )
 
 
 def test_sdxl_zimage_shares_the_fixed_seed_contract():

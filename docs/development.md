@@ -12,9 +12,18 @@ Read this reference for environment setup, dependency recovery, CI behavior, and
 
 The optional TrustMark decoder downloads weights into its installed package directory. After pruning that extra, a leftover weights directory can make availability checks see an empty namespace package. If Pyright reports an unknown `TrustMark` import and `find_spec("trustmark")` returns a loader-less spec, remove that regenerable remnant from the active virtual environment and resync.
 
+### Known security-gate blocks
+
+`maintain.sh` fails while PyPI ships no fixed release for a transitive CVE. Current case (triaged 2026-08-17): `lightning` 2.6.5, pulled only by the optional `trustmark` extra, carries PYSEC-2026-3624 (RCE via `load_from_checkpoint` on an attacker-crafted checkpoint). The vulnerable API is unreachable here, because the TrustMark decoder loads only its own pinned weights downloaded from the TrustMark release, never a user-supplied checkpoint. The upstream fix is merged but unreleased, and ignores are never added, so run and report the remaining core checks (Ruff, Pyright, tests) separately until a fixed `lightning` release lands; bump it with `uv lock --upgrade-package lightning` as soon as one does.
+
 ## CI
 
-`.github/workflows/test.yml` runs Ruff, a cross-platform test matrix over the supported-Python floor and the latest supported minor with default plus development dependencies, and a separate job that installs ffmpeg on Ubuntu to run the full-clip video test. Diffusion and model-running tests skip in that matrix; metadata, identification, visible removal, the DWT-DCT decoder, and the OpenCV eraser remain covered across operating systems.
+`.github/workflows/test.yml` runs Ruff, a test matrix over every supported Python
+minor with default plus development dependencies, cross-platform coverage at the
+oldest and newest minors, and a separate job that installs ffmpeg on Ubuntu to
+run the full-clip video test. Diffusion and model-running tests skip in that
+matrix; metadata, identification, visible removal, the DWT-DCT decoder, and the
+OpenCV eraser remain covered across operating systems.
 
 Keep `uv.lock` compatible with `uv sync --frozen`. Dependency pull-request checks use GitHub's merge result against current `main`; if `main` moves, merge it locally and rerun the full gate because a newer linter can expose stale directives in later code.
 

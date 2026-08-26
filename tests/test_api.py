@@ -256,6 +256,7 @@ class TestInvisibleOptionsMirrorTheEngine:
             tile=True,
             tile_size=768,
             tile_overlap=64,
+            text_manifest=tmp_path / "verified-lines.json",
         )
         seen: dict[str, object] = {}
 
@@ -521,6 +522,15 @@ class TestSourceEvidenceHolder:
         holder = api._SourceEvidence(DOUBAO)
         assert holder.visible_provenance() == api.visible_provenance(DOUBAO)
         assert holder.has_invisible_target() == identify.has_invisible_target(DOUBAO)
+
+    def test_holder_preserves_invalid_c2pa_removal_hint(self, tampered_chatgpt_png):
+        from remove_ai_watermarks import api, identify
+
+        holder = api._SourceEvidence(tampered_chatgpt_png)
+
+        assert identify.identify(tampered_chatgpt_png, check_visible=False).ai_from_metadata is False
+        assert holder.has_invisible_target() is True
+        assert holder.has_invisible_target() == identify.has_invisible_target(tampered_chatgpt_png)
 
     def test_extraction_failure_fails_safe_in_both_directions(self, monkeypatch, tmp_path):
         """No provenance means no relaxation; an unknown invisible target means SCRUB.

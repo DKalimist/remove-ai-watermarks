@@ -42,6 +42,10 @@ Important contracts:
 - `invisible` writes no output when no supported local signal is found, unless
   `--force` is supplied.
 - The two no-signal conditions currently share exit code `2`.
+- A quiet `metadata --check` and a successful `metadata --remove` (same for
+  `video metadata`) end by repeating the `identify` limit: the pixel channel is
+  untouched and a watermark such as SynthID has no local decoder once its
+  metadata proxy is gone, so neither outcome is a clean verdict.
 - Hard processing and write failures exit with code `1`.
 - `all` can still write the completed visible and metadata stages when the
   diffusion dependencies are unavailable, but exits with code `1` so the
@@ -158,7 +162,14 @@ Native MP4/MOV TC260 labels follow TC260-PG-20257A:
 `moov.udta.meta.keys` maps an `AIGC` key to a raw JSON value in `ilst`.
 [`_internal/isobmff.py`](../src/remove_ai_watermarks/_internal/isobmff.py) walks those
 nested boxes by seeking, so detection reaches a tail `moov` without reading the
-preceding `mdat`. The MP4/MOV/M4V/M4A removal path first validates the top-level
+preceding `mdat`. Two Doubao iOS variants sit outside that normative placement
+and are covered by the same walker (2026-08-17 corpus findings, both previously
+undetected): a QuickTime-form `meta` box as a *direct* `moov` child (no FullBox
+header, disambiguated by probing the child-box offset), and a QuickTime
+`hdlr=mdir` metadata list under `udta.meta` whose `ilst` data items carry the
+validated JSON with no `keys` box at all (content-validated, so only genuine
+TC260 JSON matches; the keyless entry has no key name to blank, so its value
+alone is spaced out). The MP4/MOV/M4V/M4A removal path first validates the top-level
 box walk, then copies the source to a sibling temporary file in bounded chunks.
 Supported C2PA/JUMBF/AI-label boxes become same-size `free` boxes with blank
 payloads; TC260 removal changes the four-byte key to `free` and blanks only the
@@ -363,6 +374,75 @@ Regression coverage:
 [`_internal/c2pa.py`](../src/remove_ai_watermarks/_internal/c2pa.py) reads C2PA with the
 official `c2pa-python` reader first. Its byte-level PNG parser remains a fallback
 for partial and synthetic fixtures that the official reader rejects.
+
+Structured extraction is limited to the active manifest and the ingredient
+manifests reachable from it. Validation is preserved as separate dimensions:
+asset binding integrity, claim signature, signer trust, and signer certificate
+validity. A matching asset hash and valid claim signature do not make an
+untrusted or expired signer trusted, so those stay separate fields and separate
+caveats -- but they do not lower confidence. `identify` assigns high confidence
+when the asset binding and the claim signature both validate, medium confidence
+to a claim that validated nothing (fallback parsing, unknown dimensions), and no
+origin verdict to a binding failure, a signature failure, or a revoked signing
+credential. The failed claim remains in the marker inventory and keeps the removal
+gate fail-safe because a post-signing container edit can invalidate C2PA without
+removing a declared pixel watermark.
+
+Revocation reaches the disqualifying branch through `signer_validity`, not through
+binding or signature. A check that read only the latter two returned a confident AI
+verdict off a credential the issuer had disowned, with an empty `integrity_clashes`
+-- quieter than a hash mismatch on the same file. Certificate expiry is deliberately
+not disqualifying: an expired certificate does not imply the signed bytes changed,
+and a signature actually made outside validity already arrives as
+`claimSignature.outsideValidity`.
+
+One rule, one place. `_validation_fields` maps status codes to the four dimensions
+and also emits `c2pa_failed_codes`, the subset of failures that actually drove a
+dimension to invalid; `c2pa_info_has_invalid_credential` maps those dimensions to
+disqualified, and both the ingredient-reachability walk and the report consume that
+single path. The displayed reason comes from `c2pa_failed_codes` rather than a
+substring rescan of the full code list, so what a caller is shown as the cause
+cannot become a looser rule than the verdict it explains.
+
+The structured walk also treats an exact known AI product in a reachable
+`claim_generator` as an AI assertion. This covers update chains where the active
+manifest names only `c2pa-tool` while a validated ingredient names Dreamina, and
+Firefly chains that identify `Adobe_Firefly` without repeating a digital source
+type. Unreachable manifests remain excluded.
+
+Reachable `c2pa.soft-binding*` assertions retain their exact `alg` and bounded,
+printable block `value` in addition to the normalized vendor label. A block value
+without its algorithm is not surfaced because it cannot be attributed to a
+decoder or registry entry. `com.microsoft.invismark.1` uses that value as the
+pixel-watermark identifier in Microsoft Paint output. An InvisMark soft binding
+keeps the invisible-removal gate fail-safe even when the C2PA asset binding has
+since become invalid, because metadata damage does not prove the pixel carrier
+disappeared. `identify` retains the generic `soft_binding` signal for schema-1
+compatibility and adds `invismark` as the stable pixel-removal signal.
+Content-fingerprint soft bindings do not trigger pixel regeneration.
+
+The SDK default enables trust verification but supplies no production trust
+anchors. Consequently, an installation without an explicitly maintained C2PA
+trust bundle reports every otherwise valid signer chain as untrusted --
+`signingCredential.trusted` appears in no default installation, from any vendor.
+Confidence therefore must not depend on it. It did from 0.27.0 through 0.30.0, which made
+the high-confidence branch unreachable in production while a hand-built fixture
+stamping `signingCredential.trusted` kept it green in the suite; measured on the
+committed provenance fixtures, every C2PA file from OpenAI, Adobe and Black Forest
+Labs came back untrusted, and an intact manifest scored the same medium as a
+fallback parse that validated nothing. That collapsed the one distinction the
+official reader exists to draw.
+`tests/test_identify.py::TestIdentifyRealSamples::test_no_committed_fixture_reports_a_trusted_signer`
+is the reachability guard: it asserts the fixtures really are untrusted and still
+reach high confidence.
+
+Read `untrusted` here as a missing input, not a finding: nothing was checked,
+because there was nothing to check against. If a maintained trust bundle is ever
+configured, that stops being true and the confidence mapping in
+`_c2pa_credential_level` must be re-read, because only then does a failed trust
+check mean the signer was rejected. Shipping or fetching an official trust bundle
+requires a separate update, provenance, and availability policy; do not silently
+convert `signingCredential.untrusted` into trusted based on a vendor-name match.
 
 Vendor attribution comes from the registry in
 [`_internal/constants.py`](../src/remove_ai_watermarks/_internal/constants.py). Derived
@@ -930,22 +1010,82 @@ the function it replaces does — no provenance means no relaxation, and an unkn
 invisible target means scrub rather than skip.
 
 The `detect` extra composes the shared `pixels` runtime with PyWavelets. Its
-in-tree [`dwt_dct.py`](../src/remove_ai_watermarks/dwt_dct.py) decoder preserves
-the upstream matrix algorithm without installing Torch or non-headless OpenCV.
-The upstream MIT notice ships inside the wheel under `licenses/`.
+in-tree [`dwt_dct.py`](../src/remove_ai_watermarks/dwt_dct.py) decoder reproduces
+the upstream algorithm's output bit for bit without installing Torch or
+non-headless OpenCV; the block scan is vectorized rather than transcribed, so
+the file no longer reads line by line against `maxDct.py`. The upstream MIT
+notice ships inside the wheel under `licenses/`.
 
 `is_ai_generated` is `True` or `None`; absence of evidence is not reported as a
 human-made verdict. `ai_source_kind` distinguishes fully generated content from
 AI-enhanced composites when the source metadata provides that distinction.
 
 TrustMark is reported as a watermark signal but does not by itself assert AI
-origin because it can also protect human-authored content.
+origin because it can also protect human-authored content. The decoder requests
+binary mode, matching Adobe's Durable Content Credentials example, then requires
+the same payload and schema after a quality-95 JPEG round-trip. Only Variant P
+schemas 0-2 count as positives. Schema 3 is below the precision threshold: all
+38 measured historical false-positive candidates used it, and six retained the
+same false payload after re-encoding. The official Adobe Variant P schema-1
+fixture in `data/fixtures/provenance/` is the positive regression control.
+
+#### Why the DWT-DCT decoder looks the way it does
+
+Two things in `dwt_dct.py` are load-bearing and neither is obvious from the code.
+
+`_approximation` calls `pywt.dwt` twice instead of `pywt.dwt2`, and transposes
+before each pass. A factorial ablation over both axes separates the two:
+skipping the three detail bands `dwt2` computes and this code discards is worth
+**4%**, while the transposes are worth **2.8x**, because pywt walks the axis it
+transforms and on axis 0 of a C-contiguous plane that is a column walk. The
+arithmetic saving is the intuitive explanation and it is the small term; four
+independent profiles named it as the mechanism before the ablation contradicted
+them.
+
+Bit-identity is a hard requirement, not a preference. For uint8 input the exact
+Haar LL value is a multiple of 0.5 and the bit test is `peak % 36 > 18.0`, a
+threshold sitting exactly on a representable value that ~1 block in 72 lands on,
+so a 1-ulp difference deterministically flips real bits. That is why the ~16x
+available from a hand-rolled numpy Haar is unreachable rather than merely
+untaken: pywt's C convolution contracts into an FMA that numpy has no ufunc for,
+and `np.longdouble` is 64-bit on arm64 macOS.
+
+Each pass is one flat `pywt.downcoef` call over a raveled strip rather than
+`pywt.dwt(..., axis=1)[0]`, and the plane is processed in strips of `_STRIP`
+block-rows so no full-plane float64 intermediate is ever materialized. The strip
+height is not a tuned value: 8 through 64 all scored inside each other's noise
+with unstable ordering, and only "strips at all" versus whole-plane matters.
+
+`_approximation`'s even-last-axis check is load-bearing, not defensive. Haar's
+filter is length 2, so an even row length keeps every pair inside its own row;
+on an odd width the pairs walk across row boundaries and the reshape still
+succeeds whenever the total is even, which would be wrong bits with no
+exception. Both call sites are even by construction today, and
+`TestRaveledHaarPass` pins both halves -- the `downcoef`/`dwt` equivalence,
+which a pywt upgrade could take away, and the raise on an odd width.
+
+Measured on a 1536x2816 image, all arms timed in one process: the decoder went
+0.112 s (the original per-block Python loop) to 0.011 s vectorized to 0.007 s
+with strips, and a warm `identify()` 1.757 s to 1.365 s on the first step and a
+further 0.4% on the second. That last figure is the point at which this target
+is finished: the decoder is now under 2% of `identify()`, so speed here has
+stopped buying anything. What the strips buy is peak RSS in the stage, 111 MB to
+21 MB on a 4.3 MP image, which is what matters on the memory-limited Space.
+
+Both steps were verified by recording decoder output and detector verdict over
+200 sampled `data/` images plus two synthesized carriers before and after: the
+record is byte-identical, as are seven degenerate shapes (`1x65536` through
+`8x8192`, plus an odd width) that clear the caller's area check.
 
 Regression coverage:
 
 - [`test_identify.py`](../tests/test_identify.py)
 - [`test_trustmark_detector.py`](../tests/test_trustmark_detector.py)
-- [`test_invisible_watermark.py`](../tests/test_invisible_watermark.py)
+- [`test_invisible_watermark.py`](../tests/test_invisible_watermark.py) --
+  note `test_in_tree_decoder_matches_upstream` is the parity guard against
+  upstream's own decoder, and the whole module is `skipif(not is_available())`.
+  A green run without the `detect` extra installed has not checked parity at
+  all, so a decoder change still owes the before/after verdict record.
 
 ## Visible mark removal
 
@@ -1111,6 +1251,11 @@ are CUDA-only. `controlnet`, `sdxl`, `qwen` and `default` were removed rather th
 kept as a CPU path, and are rejected rather than aliased onward. There is no
 content-dependent automatic router.
 
+`qwen-zimage` normally resolves global denoise from image area for unknown content.
+Measured provider cohorts bypass that curve with flat operating points. The values,
+measurement derivations, and corpus limits are canonical in
+[`known-limitations.md`](known-limitations.md#strength-is-content-and-seed-dependent).
+
 For serverless cold starts, `InvisibleEngine.preload(global_only=True)` loads the
 mandatory global stage and YuNet while leaving the optional Z-Image and SAM face
 stack lazy until a face is detected. The default `preload()` still loads every
@@ -1239,6 +1384,63 @@ conditioning, crop, and sampler parameters as compatibility contracts. Its Pytho
 orchestration, YuNet integration, SAM selection, masks, sizing helpers, and pixel
 compositing are implemented for this runtime. Changing a calibrated model input
 requires the same provider-oracle and identity evaluation as a model change.
+
+#### Verified text restoration
+
+[`_internal/text_restoration.py`](../src/remove_ai_watermarks/_internal/text_restoration.py)
+implements the opt-in `vae-glyphs` stage. A versioned manifest carries manually
+reviewed strings and source-space line boxes in schema 1, or verified source-space
+geometry alone in schema 2, plus a SHA-256 over decoded RGB width, height, and pixels.
+Validation happens before model loading. The library never treats OCR confidence as
+verification, and geometry-only operators do not need to invent text or script fields.
+
+When enabled, `QwenZImagePipeline` reconstructs the source once through its already
+loaded Qwen VAE, runs the ordinary global and face stages, blends 15% of the VAE
+reconstruction into that clean result, and calls the shared restoration compositor.
+The compositor derives binary source and candidate silhouettes, groups nearby lines,
+uses LaMa for the initial and residual-glyph erase passes, paints fresh silhouette
+edges, then copies the Qwen-VAE core with a 0.5-pixel feather. The evaluation script
+imports these same mask and compositing helpers so the two implementations cannot
+silently drift. Silhouette crops start 12% of line height beyond each horizontal
+side, then expand each side independently while a foreground component anchored
+inside the detector box still reaches that boundary, up to one line height. They
+extend 8% above and 25% below. The anchored-component gate covers clipped leading
+flourishes, trailing punctuation, icons, and descenders without walking into
+disconnected decoration or background texture.
+
+The stage is deliberately narrower than the engine: it rejects `sdxl-zimage`, tiles,
+resolution caps, humanize, unsharp, and adaptive polish. Those combinations change
+geometry or final pixels after the verified layer and have no measured oracle result.
+It remains opt-in because annotations are manual and provider verdicts apply only to
+the exact tested output hashes, not to the mechanism in general.
+
+A matched stage-isolation check on the 18-face Gemini portrait grid confirms the
+division of responsibility. The visible-cleaned, metadata-stripped control and the
+Z-Image face-only output were both SynthID-positive; Qwen global-only and the full
+Qwen-then-Z-Image output were both clean. The face stage raised identity cosine from
+0.589 to 0.852 and reduced face LPIPS from 0.217 to 0.050 without reintroducing a
+detectable whole-image signal. Thus Z-Image is a masked fidelity repair stage here,
+not the watermark-removal stage. Exact hashes, metrics, strengths, and the one-fixture,
+one-seed caveat are recorded in
+[`data/evaluations/fidelity/face-stage-isolation-2026-08-13.csv`](../data/evaluations/fidelity/face-stage-isolation-2026-08-13.csv).
+
+The public Synthid-Bypass v2 graph was subsequently audited at upstream commit
+`3007d035`. Its saved-output path confirms the same division: Qwen-Image-2512
+Lightning plus Canny is global, and Z-Image Turbo exists only inside the masked
+face detailer. The connected face path is YOLOv8-face plus SAM; the MediaPipe nodes
+described by the upstream README and the 1.2-megapixel normalization node do not
+reach `SaveImage`. Upstream also applies its adaptive face strength directly,
+whereas this implementation multiplies it by `FACE_DENOISE_SCALE = 0.5`.
+
+A close reproduction on the same portrait fixture kept the control positive and
+made both Qwen global-only and full Qwen-then-Z-Image outputs clean. Applying the
+upstream-strength face pass raised identity from 0.589 to 0.783 and reduced face
+LPIPS from 0.217 to 0.083, but remained worse than this profile's 0.852 and 0.050.
+The published upstream pair 12 was also independently checked positive before and
+clean after, with 0.975 identity. Exact workflow provenance, hashes, metrics,
+oracle outcomes, and the DiffSynth/GGUF, scheduler, detector, and seed caveats are
+recorded in
+[`data/evaluations/fidelity/upstream-v2-reproduction-2026-08-13.csv`](../data/evaluations/fidelity/upstream-v2-reproduction-2026-08-13.csv).
 
 ### SDXL plus Z-Image
 

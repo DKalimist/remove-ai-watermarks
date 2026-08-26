@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from ._internal.watermark_profiles import (
     DEFAULT_PROFILE,
+    QWEN_ZIMAGE_PROFILE,
     REMOVAL_MODULES,
     resolve_adaptive_polish,
     resolve_seed,
@@ -148,6 +149,8 @@ class InvisibleEngine:
         tile: bool = False,
         tile_size: int = 1024,
         tile_overlap: int = 128,
+        text_manifest: Path | None = None,
+        fidelity_anchor: bool = False,
     ) -> Path:
         """Remove invisible watermark from an image.
 
@@ -180,6 +183,20 @@ class InvisibleEngine:
                 Engages only when the long side exceeds ``tile_size``.
             tile_size: Tile dimension in px (default 1024).
             tile_overlap: Overlap between adjacent tiles in px (default 128).
+            text_manifest: Operator-verified text lines bound to the decoded source
+                pixels. Enables the experimental Qwen-VAE ``vae-glyphs`` post-pass.
+                Requires the ``text-restoration`` extra and the ``qwen-zimage``
+                profile. Incompatible with downscaling, humanize, unsharp, and
+                adaptive polish. Tiling is supported: the VAE donor uses the same
+                overlapping tiles as the global pass, then glyph restore runs on
+                the blended full frame.
+            fidelity_anchor: Blend 15% of the Qwen-VAE donor across the whole frame
+                before glyph restoration. OFF by default since 0.27.1: that global
+                blend was measured to return detector-visible OpenAI SynthID on
+                poster-scale manifests (detected x6 with the anchor vs clean x6
+                without it, base clean; official Content Provenance API,
+                2026-08-19 - docs/text-protection-research.md). ``True`` reproduces
+                the 0.27.0 research behavior. Requires ``text_manifest``.
 
         Returns:
             Path to the cleaned image.
@@ -188,6 +205,23 @@ class InvisibleEngine:
 
         seed = resolve_seed(seed)
         adaptive_polish = resolve_adaptive_polish(adaptive_polish, self._remover.model_profile)
+
+        if fidelity_anchor and text_manifest is None:
+            raise ValueError("fidelity_anchor requires a text manifest")
+        if text_manifest is not None:
+            if self._remover.model_profile != QWEN_ZIMAGE_PROFILE:
+                raise ValueError("--text-manifest is supported only by the qwen-zimage profile")
+            if max_resolution != 0:
+                raise ValueError("--text-manifest requires --max-resolution 0")
+            if humanize > 0.0 or unsharp > 0.0 or adaptive_polish:
+                raise ValueError("--text-manifest requires humanize=0, unsharp=0, and adaptive polish disabled")
+            from remove_ai_watermarks import region_eraser
+
+            if not region_eraser.lama_available():
+                raise RuntimeError(
+                    "Verified text restoration requires LaMa. Install: "
+                    "pip install 'remove-ai-watermarks[text-restoration]'"
+                )
 
         from PIL import Image, ImageOps
 
@@ -205,6 +239,11 @@ class InvisibleEngine:
         # Full-res original, kept for the adaptive-polish detail target (image is
         # reassigned to the resized copy below; PIL resize returns a new object).
         reference_pil = image
+        verified_text = None
+        if text_manifest is not None:
+            from remove_ai_watermarks._internal.text_restoration import load_verified_text_manifest
+
+            verified_text = load_verified_text_manifest(text_manifest, reference_pil)
 
         # Both profiles run at the input's native geometry, so only the explicit max
         # cap can move it, and it can only ever scale down.
@@ -240,6 +279,8 @@ class InvisibleEngine:
                 tile=tile,
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
+                text_manifest=verified_text,
+                fidelity_anchor=fidelity_anchor,
             )
 
             # Post-processing chain: decode the diffusion output ONCE, apply the

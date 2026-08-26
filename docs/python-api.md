@@ -172,7 +172,33 @@ from remove_ai_watermarks.identify import identify
 report = identify(Path("input.png"))
 print(report.platform)
 print(report.signals)
+print(report.c2pa_validation)
 ```
+
+`c2pa_validation`, when present, reports `integrity`, `signature`,
+`signer_trust`, and `signer_validity` independently, plus the reader status
+codes. A valid hash and signature is a high-confidence signed claim; an
+unanchored or expired signer appears in `caveats` and in these fields, not as a
+lower confidence, because the reader ships no trust anchors to check against and
+`signer_trust` is therefore a missing input rather than a finding. A hash or
+signature failure, or a revoked signing credential, does not confirm the claimed
+platform or AI origin.
+
+A consumer must read `integrity_clashes`. When a credential fails validation,
+`is_ai_generated` becomes `None`, because a claim that cannot be tied to these
+bytes cannot establish origin -- the manifest may have been transplanted from a
+real AI image onto anything -- and the failure is reported in
+`integrity_clashes` instead. That is a different question from whether an AI
+watermark is physically present in the pixels, which is what
+`has_invisible_target` answers, and it stays fail-safe `True` on the same file.
+Reading only `is_ai_generated` turns a broken vendor manifest into silence.
+
+`c2pa_validation["state"]` is the reader's own aggregate and is carried for
+diagnostics only; no verdict is derived from it, because it collapses a
+transplanted manifest and a merely expired certificate into one `Invalid`, and
+its `Trusted` level depends on anchors no default installation has. Fallback parsing reports unknown validation
+dimensions, while a raw marker in an unsupported or malformed container can
+leave `c2pa_validation` as `None`.
 
 Use `check_visible=False` and `check_invisible=False` for metadata-only
 inspection through the compatible path-based API:
@@ -240,6 +266,11 @@ add fields that consumers must ignore. A breaking change requires a new schema w
 the schema 1 serializer remains available for rolling upgrades. Asking a release for
 an unsupported schema raises `ValueError` rather than silently returning another
 shape.
+
+Microsoft InvisMark declarations emit both the compatible generic `soft_binding`
+signal and the additive `invismark` signal. Consumers should use `invismark` to route
+the image through pixel removal; the generic signal also covers content fingerprints
+that must not trigger regeneration.
 
 A record carries metadata regions, not the primary coded-pixel stream: marker
 segments before the JPEG scan, every PNG chunk except `IDAT`, RIFF chunks except the
@@ -439,7 +470,8 @@ must use the same container extension as the source.
 The returned `VideoMetadataResult` records the source, output, metadata detected
 before removal, and any markers remaining after the verified strip. MP4/MOV
 inspection recognizes the native TC260 `AIGC` entry in
-`moov.udta.meta.keys/ilst`; its removal preserves container size and encoded
+`moov.udta.meta.keys/ilst` and the QuickTime-form `meta` variants Doubao's iOS
+export writes; its removal preserves container size and encoded
 stream bytes. MP4/MOV/M4V are copied in bounded chunks, so a large `mdat` is not
 loaded into memory; publication is atomic. MKV/WebM inspection recognizes the corresponding
 `Segment.Tags.Tag.SimpleTag` representation; its removal requires ffmpeg for a
@@ -603,6 +635,58 @@ engine = InvisibleEngine(pipeline="sdxl-zimage")
 
 The `qwen-zimage` extra is required for both profiles: each runs the same
 DiffSynth Z-Image face stage.
+
+The opt-in verified-text stage uses the same `text_manifest` argument as the CLI:
+
+```python
+engine.remove_watermark(
+    Path("watermarked.png"),
+    Path("clean.png"),
+    text_manifest=Path("verified-lines.json"),
+)
+```
+
+Install `remove-ai-watermarks[text-restoration]`. The manifest schema and safety
+constraints are documented in the CLI guide. The engine verifies its decoded RGB
+hash before loading the diffusion models and rejects SDXL, downscaling, and
+postprocessing combinations that were not evaluated. Tiling is allowed: the VAE
+donor uses the same overlapping tiles as the global pass. `InvisibleOptions` exposes the
+same field for `remove_all`; after a visible-stage edit, the manifest must be built
+against the staged pixels rather than the pristine source.
+
+Use manifest schema 1 for manually reviewed text plus script metadata. Automated
+operators that verify only text-region geometry should emit schema 2 lines with a
+`box` and optional `angle`; no placeholder transcription or script is required.
+
+Since 0.27.1 the mode's global 15% Qwen-VAE fidelity-anchor blend is **off by
+default** (`fidelity_anchor=False`): that whole-frame blend was measured to
+return detector-visible OpenAI SynthID on poster-scale manifests (official
+Content Provenance API, 2026-08-19 - detected x6 with the anchor, clean x6
+without it, controls and base outputs validated in the same sessions). Pass
+`fidelity_anchor=True` to reproduce the 0.27.0 research behavior.
+
+### Drafting manifest lines
+
+`remove_ai_watermarks.text_draft` proposes lines for a manifest; it never
+produces verified ones:
+
+```python
+from remove_ai_watermarks.text_draft import draft_text_lines
+
+draft = draft_text_lines(Path("watermarked.png"))
+for line in draft.accepted:
+    print(line.box, line.script, line.min_score, line.text)
+```
+
+Install `remove-ai-watermarks[text-draft]` (CPU, no torch: PaddleOCR detection
+plus three script-chosen recognition engines). A line lands in `accepted` only
+when three crop paddings normalize identically and every confidence clears
+`min_score` (default 0.85); `accepted` means crop-stable, NOT ground-truth-
+correct - on the reference posters the draft's exact-text precision was 90.0%
+and 94.4% because high-confidence OCR still lost punctuation. Every accepted
+line needs a human yes/no before a manifest may claim `verified: true`.
+`source_pixel_sha256` is re-exported here for building the manifest's
+pixel-binding hash against the exact source the engine will decode.
 
 `remove_watermark` takes strength, seed, tiling, resolution, and postprocessing
 controls. It takes no model id, step count or guidance scale, and neither does the

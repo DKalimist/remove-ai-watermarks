@@ -792,7 +792,7 @@ def _iptc_ai_system_impl(image_path: Path) -> str | None:
     return iptc_ai_system_in(scan_head(image_path))
 
 
-def synthid_source(image_path: Path) -> str | None:
+def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None) -> str | None:
     """Return the vendor name(s) when provenance establishes SynthID.
 
     This is provenance-based, not a local pixel decode. Google states that all
@@ -809,14 +809,25 @@ def synthid_source(image_path: Path) -> str | None:
 
     Args:
         image_path: Path to the image (PNG, JPEG, WebP, or ISOBMFF container).
+        c2pa_info: Already extracted normalized C2PA info, for callers that also need
+            another claim from the same manifest.
 
     Returns:
         Comma-joined vendor name(s) (e.g. ``"OpenAI"``) or None.
     """
-    from remove_ai_watermarks._internal.c2pa import extract_c2pa_info, synthid_evidence_vendors_in
+    from remove_ai_watermarks._internal.c2pa import (
+        c2pa_info_has_invalid_credential,
+        extract_c2pa_info,
+        synthid_evidence_vendors_in,
+    )
 
-    # PNG: the caBX chunk parser gives a clean, structured issuer.
-    vendors = extract_c2pa_info(image_path).get("synthid_vendors")
+    # Prefer the official reader's structured result. A failed asset binding or
+    # signature cannot establish the claim, and the raw fallback below must not
+    # resurrect it from the same damaged manifest bytes.
+    c2pa = extract_c2pa_info(image_path) if c2pa_info is None else c2pa_info
+    if c2pa_info_has_invalid_credential(c2pa):
+        return None
+    vendors = c2pa.get("synthid_vendors")
     if vendors:
         return ", ".join(vendors)
 
@@ -1152,6 +1163,14 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
         "actions",
         "synthid_watermark",
         "soft_binding",
+        "soft_binding_algorithm",
+        "soft_binding_value",
+        "c2pa_validation_source",
+        "c2pa_validation_state",
+        "c2pa_integrity",
+        "c2pa_signature",
+        "c2pa_signer_trust",
+        "c2pa_signer_validity",
     ):
         if key in c2pa:
             result.setdefault(key, str(c2pa[key]))
@@ -1170,6 +1189,11 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     if (aigc := aigc_label(image_path)) is not None:
         producer = aigc.get("ContentProducer", "")
         result["aigc_label"] = f"China AIGC label (TC260){f'; producer {producer}' if producer else ''}"
+        # The structural producer beside its display rendering: a machine
+        # consumer (video-visible provenance) must not parse the formatted
+        # sentence above, whose wording can change without notice.
+        if producer:
+            result["aigc_producer"] = producer
 
     app_scan = scan_head(image_path)
     app_provenance, app_generator = _app_metadata_evidence(app_scan)

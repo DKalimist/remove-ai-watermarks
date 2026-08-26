@@ -12,6 +12,9 @@ from PIL import Image
 
 from remove_ai_watermarks._internal.c2pa import (
     _parse_c2pa_chunk,
+    c2pa_info_from_manifest_store,
+    c2pa_info_has_invismark,
+    c2pa_info_has_removal_hint,
     cbor_text_after,
     extract_c2pa_chunk,
     extract_c2pa_info,
@@ -153,6 +156,172 @@ class TestC2PA:
     def test_c2pa_returns_false_for_non_png(self, tmp_jpeg_path):
         assert not has_c2pa_metadata(tmp_jpeg_path)
 
+    def test_structured_extraction_ignores_unreachable_manifests(self):
+        store = {
+            "active_manifest": "active",
+            "manifests": {
+                "active": {
+                    "signature_info": {"issuer": "Adobe"},
+                    "assertions": [],
+                },
+                "unreachable": {
+                    "signature_info": {"issuer": "OpenAI"},
+                    "assertions": [
+                        {
+                            "label": "c2pa.actions.v2",
+                            "data": {
+                                "actions": [
+                                    {
+                                        "action": "c2pa.created",
+                                        "digitalSourceType": "trainedAlgorithmicMedia",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            },
+        }
+
+        info = c2pa_info_from_manifest_store(store)
+
+        assert info["issuer"] == "Adobe"
+        assert "source_type" not in info
+        assert "ai_source_kind" not in info
+        assert "c2pa_identity_ai" not in info
+
+    def test_reachable_ingredient_claim_generator_can_assert_ai(self):
+        store = {
+            "active_manifest": "update",
+            "manifests": {
+                "update": {
+                    "claim_generator": "c2pa-tool/0.1.0",
+                    "ingredients": [{"active_manifest": "created"}],
+                    "assertions": [],
+                },
+                "created": {
+                    "claim_generator": "Dreamina/7.5.0",
+                    "assertions": [],
+                },
+            },
+        }
+
+        info = c2pa_info_from_manifest_store(store)
+
+        assert info["ai_tool"] == "Dreamina"
+        assert info["c2pa_identity_ai"] is True
+
+    def test_structured_invismark_exposes_algorithm_and_watermark_id(self):
+        watermark_id = "83424621-03cb-40e3-9808-a9fae837156d"
+        store = {
+            "active_manifest": "paint",
+            "manifests": {
+                "paint": {
+                    "assertions": [
+                        {
+                            "label": "c2pa.soft-binding",
+                            "data": {
+                                "alg": "com.microsoft.invismark.1",
+                                "blocks": [
+                                    {
+                                        "scope": "the entire image",
+                                        "value": watermark_id,
+                                    }
+                                ],
+                            },
+                        }
+                    ]
+                }
+            },
+        }
+
+        info = c2pa_info_from_manifest_store(store)
+
+        assert info["soft_binding"] == "Microsoft InvisMark"
+        assert info["soft_binding_algorithm"] == "com.microsoft.invismark.1"
+        assert info["soft_binding_value"] == watermark_id
+
+    def test_soft_binding_value_requires_its_algorithm(self):
+        store = {
+            "active_manifest": "broken",
+            "manifests": {
+                "broken": {
+                    "assertions": [
+                        {
+                            "label": "c2pa.soft-binding",
+                            "data": {"blocks": [{"value": "not-attributable"}]},
+                        }
+                    ]
+                }
+            },
+        }
+
+        assert "soft_binding_value" not in c2pa_info_from_manifest_store(store)
+
+    def test_soft_binding_keeps_invisible_removal_fail_safe(self):
+        info = {"soft_binding_vendors": ["Microsoft InvisMark"]}
+
+        assert c2pa_info_has_invismark(info) is True
+        assert c2pa_info_has_removal_hint(info) is True
+
+    def test_content_fingerprint_does_not_trigger_invisible_removal(self):
+        info = {
+            "soft_binding": "Adobe (content fingerprint)",
+            "soft_binding_vendors": ["Adobe (content fingerprint)"],
+        }
+
+        assert c2pa_info_has_removal_hint(info) is False
+
+    @pytest.mark.parametrize(
+        "ingredient_failure",
+        [
+            # One exclusion rule, reached through two different dimensions: a broken
+            # binding and a credential the issuer disowned. The walk classified only the
+            # first for a while, so a revoked child manifest stayed reachable and kept
+            # donating its claim generator to the parent's attribution.
+            "assertion.dataHash.mismatch",
+            "signingCredential.ocsp.revoked",
+        ],
+    )
+    def test_invalid_ingredient_does_not_taint_active_validation_or_supply_claims(self, ingredient_failure: str):
+        store = {
+            "active_manifest": "update",
+            "validation_results": {
+                "activeManifest": {
+                    "success": [
+                        {"code": "assertion.dataHash.match"},
+                        {"code": "claimSignature.validated"},
+                    ],
+                    "failure": [{"code": "signingCredential.untrusted"}],
+                },
+                "ingredientDeltas": [{"validationDeltas": {"failure": [{"code": ingredient_failure}]}}],
+            },
+            "manifests": {
+                "update": {
+                    "claim_generator": "c2pa-tool/0.1.0",
+                    "ingredients": [
+                        {
+                            "active_manifest": "created",
+                            "validation_results": {"activeManifest": {"failure": [{"code": ingredient_failure}]}},
+                        }
+                    ],
+                    "assertions": [],
+                },
+                "created": {
+                    "claim_generator": "Dreamina/7.5.0",
+                    "assertions": [],
+                },
+            },
+        }
+
+        info = c2pa_info_from_manifest_store(store)
+
+        assert info["c2pa_integrity"] == "valid"
+        assert info["c2pa_signature"] == "valid"
+        assert info["c2pa_signer_trust"] == "untrusted"
+        assert "ai_tool" not in info
+        assert "c2pa_identity_ai" not in info
+
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "data" / "fixtures" / "provenance"
 CURRENT_OPENAI_SAMPLE = (
@@ -227,6 +396,22 @@ class TestC2PARealSamples:
         # Structured claim generator is exact, not a CBOR-scanned best-effort.
         assert info["claim_generator"] == "ChatGPT"
 
+    def test_reader_reports_intact_but_untrusted_credentials(self):
+        info = extract_c2pa_info(SAMPLES_DIR / "chatgpt-1.png")
+
+        assert info["c2pa_integrity"] == "valid"
+        assert info["c2pa_signature"] == "valid"
+        assert info["c2pa_signer_trust"] == "untrusted"
+        assert info["c2pa_signer_validity"] == "expired"
+        assert "assertion.dataHash.match" in info["c2pa_validation_codes"]
+
+    def test_reader_reports_post_signing_container_mutation(self, tampered_chatgpt_png):
+        info = extract_c2pa_info(tampered_chatgpt_png)
+
+        assert info["c2pa_integrity"] == "invalid"
+        assert info["c2pa_signature"] == "valid"
+        assert "assertion.dataHash.mismatch" in info["c2pa_validation_codes"]
+
     def test_fallback_to_png_parser_when_reader_unavailable(self, monkeypatch):
         """With the reader disabled, the hand-rolled PNG parser still works."""
         from remove_ai_watermarks._internal import c2pa
@@ -237,6 +422,8 @@ class TestC2PARealSamples:
         assert "OpenAI" in info["issuer"]
         assert "trainedAlgorithmicMedia" in info["source_type"]
         assert "synthid_watermark" not in info
+        assert info["c2pa_integrity"] == "unknown"
+        assert info["c2pa_validation_source"] == "fallback"
 
 
 class TestC2PAInjectValidation:

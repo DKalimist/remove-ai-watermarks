@@ -57,12 +57,42 @@ Invisible removal does not decode and delete a payload. It regenerates the
 image through a diffusion pipeline. Faces, text, colors, and fine detail can
 change even when the watermark is successfully disrupted.
 
+Text, tables, and UI screenshots are the worst case for a forced scrub: the
+model redraws glyphs as plausible-but-wrong shapes. Do not run the invisible
+stage on such content unless a locally-detectable invisible signal exists.
+The default `all`, `invisible`, and `batch` commands already skip it then, and
+`visible` (which strips AI metadata by default) or `metadata` alone never
+redraws a glyph outside the filled watermark box. `--force` is for content you
+know carries a pixel watermark despite no local signal; on a clean screenshot
+it only buys distortion. Preserving or pasting back the original text pixels
+during a real scrub is deliberately not offered: an invisible watermark such
+as SynthID lives in the pixels everywhere, including inside the glyphs, so
+frozen text regions would keep the watermark
+([text protection research](text-protection-research.md)).
+
 `qwen-zimage` is the default profile and `sdxl-zimage` the only alternative.
 Both are CUDA only and differ only in the global regeneration model: each
 conditions that stage on a canny edge map, which preserves structure but not
 identity or exact texture, and each then runs the same face stage.
-`qwen-zimage` is the higher fidelity of the two. Both are large, slow, and may
-still alter small text or difficult faces.
+Existing face evaluations favor `qwen-zimage`, but there is no blanket fidelity
+ordering across content types. A fixed-seed, three-scene text comparison at the
+profile defaults found no stable winner: SDXL won one poster, Qwen won one, and
+the Chinese sign tied. Both are large, slow, and may still alter small text or
+difficult faces. The measurements and their OCR and oracle caveats are tracked
+in [`data/evaluations/fidelity/`](../data/evaluations/fidelity/README.md).
+A global Z-Image Turbo prototype preserved text substantially better at low
+strength, but it has no useful cross-provider operating point and is not a
+supported profile. Automatic text restorers also remain research-only:
+fresh-font and silhouette variants visibly changed typography. The higher-fidelity
+`vae-glyphs` route is available only as an experimental opt-in with verified strings
+and line geometry. It builds its donor internally but still requires an independently
+clean global anchor. Automatic OCR and line-box proposals are not reliable enough to
+remove those requirements, and exact oracle results do not establish a general mask,
+seed, runtime, or provider operating range. Qwen-Image-2.0 is hosted-only and exposes
+no equivalent low-strength denoise control. Exact experiments, controls, and pass
+rates are kept in
+[`text-protection-research.md`](text-protection-research.md) and the
+[`fidelity` evaluation record](../data/evaluations/fidelity/README.md).
 
 ### There is no local SynthID pixel detector in the package
 
@@ -114,6 +144,21 @@ measured 25.39 dB paired PSNR and a 1.058 motion-compensated temporal-residual
 ratio. This is one carrier, not a universal guarantee; hashes and exact verdicts
 are tracked in `data/evaluations/video-synthid-oracle.csv`.
 
+### The invisible video path does not touch the audio track
+
+`remove_video_invisible` regenerates the video stream and copies the source audio
+verbatim: the extracted audio bitstream of input and output has an identical
+sha256, measured on two carriers. It also strips every metadata marker, so the
+output can report clean from `get_ai_metadata` and `identify_video` while carrying
+an untouched generated audio track. Google's verifier scores audio and visual
+tracks separately, and a track this path never modifies is a track it cannot have
+cleaned.
+
+Whether a given carrier's audio actually holds a mark the verifier reads has not
+been established -- that needs a provider verdict, which has not been obtained.
+Treat a clean local report on a clip with generated audio as unproven, not as a
+guarantee, and check the audio separately when it matters.
+
 The shipped engine streams sampled frames in bounded batches, computes its
 fidelity metrics incrementally, and pipes regenerated pixels directly to
 ffmpeg. Its frame and latent memory is therefore bounded by `--batch-size`
@@ -134,9 +179,14 @@ path has not yet answered.
 The two profiles resolve an unset strength differently, because different things
 were measured for each.
 
-`qwen-zimage` reads it from image area, through the resolution-adaptive denoise
-curve. The vendor is deliberately ignored: the curve, not the issuer, is what was
-calibrated.
+`qwen-zimage` reads unknown content from the resolution-adaptive denoise curve.
+Measured provider cohorts instead take flat operating points: OpenAI `0.07675`,
+Google `0.27`, and Microsoft InvisMark `0.15`. OpenAI and Microsoft add one full
+observed cross-source boundary spread to the worst clean source; Microsoft's three
+first-clean boundaries were `0.04125`, `0.055`, and `0.095`, giving `0.14875` before
+rounding up. Google's candidate was separately repeated across three valid sources
+and three accounts. The small corpora make these operating points, not universal
+thresholds.
 
 `sdxl-zimage` reads it from the C2PA issuer, on a flat ladder:
 
@@ -161,6 +211,15 @@ certified at a fixed seed. The live resolver is
 | --- | --- |
 | `qwen-zimage` | CUDA only, large model stack, and limited broad certification across seeds and content. |
 | `sdxl-zimage` | CUDA only. Its strength ladder is flat per vendor, not a resolution curve, because flat values are what was measured. |
+
+Only manually verified `vae-glyphs` is an optional production stage, and it is
+experimental rather than a default.
+OCR plus LaMa recovered literal poster text but changed fonts and worsened whole-image
+fidelity. Restricting it to OCR-mismatched lines improved the tradeoff but still
+left a local shadow on one poster. The published AnyText2 SD1.5 checkpoint
+substituted Chinese characters and increased CER on the sign fixture. AnyText2XL
+is not published, and the released wrapper truncates individual text lines after
+20 characters.
 
 The `controlnet`, `sdxl`, `qwen` and `default` profiles were removed, not aliased
 onward: a retired name is rejected at parse time rather than routed into a profile
@@ -346,8 +405,17 @@ Diffusion, SDXL, and FLUX workflows. That decoder is sensitive to the carrier
 and transformations. A negative result is not a universal negative.
 
 The `trustmark` extra adds Adobe TrustMark decoding. The implementation retains
-an additional JPEG re-encode gate because isolated decoder hits can otherwise
-be content noise.
+an additional JPEG re-encode gate and requires the binary payload and schema to
+remain identical because isolated decoder hits can otherwise be content noise.
+It accepts Variant P schemas 0-2. Variant Q requires a different model, and
+schema 3 is rejected at the measured precision threshold. Its NumPy 1.x runtime
+limits the extra to Python 3.11-3.12; the rest of the package remains supported
+through Python 3.14. Through 0.29.0 the extra also resolves lightning 2.6.5
+(PYSEC-2026-3624, no fixed release yet); the vulnerable `load_from_checkpoint`
+path is unreachable here because TrustMark loads its checksummed checkpoints
+with plain `torch.load`. Bump lightning and cut a patch release when a fix
+ships. The calibration history is in
+[module internals](module-internals.md#metadata-and-provenance).
 
 A generic metadata-free AI-generated-image classifier is not shipped. It is a
 separate open research task from provenance detection: the current Model 1

@@ -891,8 +891,8 @@ study (section 2.2) gives empirical floors:
 > were removed, and `OPENAI_STRENGTH` / `GEMINI_STRENGTH` / `UNKNOWN_STRENGTH` went
 > with them. Everything from here to the end of this section is a record of what was
 > measured on those profiles, kept because the oracle verdicts are still the evidence
-> base. For the strength policy in force now see `module-internals.md`: `qwen-zimage`
-> uses `resolution_adaptive_denoise`, `sdxl-zimage` a flat vendor ladder.
+> base. For the strength policy in force now see
+> [`known-limitations.md`](known-limitations.md#strength-is-content-and-seed-dependent).
 
 The default was **vendor-adaptive** (`watermark_profiles.resolve_strength` +
 `vendor_for_strength`): the tool read the C2PA issuer on the original input and picked
@@ -1048,9 +1048,9 @@ solid at 0.10 but at 0.15 it is near-threshold noise; (2) for reliable removal p
 a strength with MARGIN above the borderline (controlnet >= 0.20), not exactly on
 it; (3) **historical engineering conclusion:** this dated run argued for a
 higher ControlNet strength than the then-current default. That proposal was
-later superseded. The current resolver intentionally shares the 0.10/0.15
-ladder between SDXL and ControlNet and uses a separate Qwen ladder; see
-`_internal/watermark_profiles.py`.
+later superseded. The resolver of that period shared the 0.10/0.15 ladder between
+SDXL and ControlNet; the current policies are recorded in
+[`known-limitations.md`](known-limitations.md#strength-is-content-and-seed-dependent).
 Source images are private (faces / product shots), not committed; reproduce on any
 photoreal + flat-graphic gpt-image pair, varying the seed, and re-checking the
 oracle.

@@ -37,7 +37,7 @@ when you can select the affected area yourself.
 | `veo` | Current four-point diamond and legacy `Veo` text | Fixed bottom-right corner | Uses separate silhouettes and requires a recurring match; learned fill is preferable on structured backgrounds. |
 | `seedance` | Boxed `AI` label | Fixed bottom-right corner | Requires an anchored recurring match; the full localized box is filled because a thinner synthetic shape mask leaves the real translucent rim behind. |
 | `dola` | `Dola AI` text | Fixed bottom-right corner | Requires an anchored recurring match; ByteDance or BytePlus provenance can relax only an existing visual run. |
-| `hailuo` | `MINIMAX \| hailuo AI` composite label | Fixed lower edge | Uses a synthetic waveform, text, separator, and ring silhouette; the complete recurring label box is filled. |
+| `hailuo` | `MINIMAX \| hailuo AI` composite label | Fixed lower edge | Uses a synthetic waveform, text, separator, and ring silhouette; the complete recurring label box is filled. A TC260 label naming MiniMax as producer can relax only an existing stable run. |
 | `kling` | Kling swirl, `KLING AI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font variants, an edge gate, a white-label gate, and anchored temporal recurrence. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
@@ -80,11 +80,19 @@ The inspection and stripping code handles signals in these groups:
 - Samsung AI editing markers;
 - Hugging Face job metadata;
 - open Stable Diffusion style DWT-DCT watermarks with the `detect` extra;
-- Adobe TrustMark with the `trustmark` extra.
+- Adobe TrustMark Variant P schemas 0-2 with the `trustmark` extra. Variant Q
+  needs a different model, while schema 3 is deliberately rejected because it
+  produced persistent false positives on unrelated generators.
 
 `identify` combines detected signals into a `ProvenanceReport`. It reports
 unknown when evidence is absent. It never treats missing metadata as proof that
-an image is human made.
+an image is human made. C2PA presence alone is not a verified identity: the
+report distinguishes asset binding, claim signature, signer trust, and signer
+validity. High-confidence C2PA attribution requires an intact asset binding and
+claim signature; signer trust and certificate expiry are reported as their own
+dimensions and as caveats, since no trust anchor list ships to evaluate them.
+Fallback claims, which validate nothing, remain medium-confidence, while a failed
+binding or signature or a revoked credential contributes no origin verdict.
 
 ## File and container formats
 
@@ -143,6 +151,20 @@ of C2PA for its decision, but it is not local: the sanitized raster is uploaded
 to OpenAI after explicit acknowledgement. It is intentionally excluded from
 `identify` and its negative result remains inconclusive.
 
+Microsoft Paint can name `com.microsoft.invismark.1` in a C2PA soft-binding
+assertion. Inspection reports both that exact algorithm and its signed `value`,
+which Paint uses as the identifier carried by the pixel watermark, and emits an
+additive `invismark` signal so callers can select pixel removal without parsing
+the generic `soft_binding` detail. Photos uses a parallel local writer path.
+Metadata stripping removes only the embedded manifest; `invisible` and `all`
+guarantee the supported InvisMark removal contract by regenerating the pixel
+layer as well. The project has no validated local InvisMark decoder, so local
+inspection cannot independently verify the output. Microsoft's official
+[Content Provenance Detection API](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection)
+is the external oracle: it reports pixel `Watermark` and embedded `C2PA` results
+separately; a control-positive, output-negative pair is the available per-file
+verification path.
+
 For MP4, MOV, and M4V, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
 source metadata. The shipped profile is oracle-certified, but it is not a local
@@ -162,11 +184,13 @@ not a universal clean verdict.
 | --- | --- | --- | --- |
 | Google Gemini | Sparkle | Diffusion regeneration | C2PA and related source signals |
 | Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID | C2PA and related source signals |
-| OpenAI image generators | None registered | Official remote pixel verifier; diffusion regeneration | C2PA and generator provenance |
+| OpenAI image generators | None registered | Official remote pixel verifier; diffusion regeneration for supported invisible signals | C2PA and generator provenance |
+| Microsoft Paint and Photos | None registered | External Microsoft oracle for InvisMark; no validated local decoder | Paint C2PA soft-binding algorithm and identifier |
 | Stable Diffusion and SDXL | None registered | Diffusion regeneration; optional open decoder | Embedded parameters and text metadata |
 | FLUX | None registered | Diffusion regeneration; optional open decoder | C2PA for supported sources |
-| Adobe Firefly | None registered | No proprietary local decoder | C2PA; optional TrustMark decoder |
+| Adobe Firefly | None registered | Optional TrustMark Variant P decoder | C2PA |
 | Midjourney | None registered | No registered pixel decoder | EXIF, XMP, and IPTC signals |
+| Luma AI | None registered | No registered pixel decoder | PNG text generator tags (Uni-1) |
 | ByteDance generators | Doubao and Jimeng marks | No registered pixel decoder | TC260 AIGC, supported C2PA, and exact app-export AIGC disclosures |
 | Qwen | Qwen mark | No registered pixel decoder | TC260 AIGC |
 | Kling | Kling image and video marks | No registered pixel decoder | TC260 AIGC |

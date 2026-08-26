@@ -311,6 +311,26 @@ _cpu_offload_option = click.option(
     ),
 )
 
+_text_manifest_option = click.option(
+    "--text-manifest",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Experimental verified-text restoration manifest. Requires qwen-zimage, "
+        "the text-restoration extra, native untiled geometry, and no postprocessing."
+    ),
+)
+
+_fidelity_anchor_option = click.option(
+    "--fidelity-anchor/--no-fidelity-anchor",
+    default=False,
+    help=(
+        "With --text-manifest: blend 15% of the Qwen-VAE donor across the whole "
+        "frame. Off by default - the global blend was measured to return "
+        "detector-visible OpenAI SynthID on poster-scale manifests."
+    ),
+)
+
 
 _visible_backend_option = click.option(
     "--backend",
@@ -787,6 +807,8 @@ def cmd_erase(
 @_tile_options
 @_force_option
 @_cpu_offload_option
+@_text_manifest_option
+@_fidelity_anchor_option
 @click.pass_context
 def cmd_invisible(
     ctx: click.Context,
@@ -806,6 +828,8 @@ def cmd_invisible(
     tile_overlap: int,
     force: bool,
     cpu_offload: bool,
+    text_manifest: Path | None,
+    fidelity_anchor: bool,
 ) -> None:
     """Remove invisible AI watermarks (SynthID, StableSignature, TreeRing).
 
@@ -853,20 +877,26 @@ def cmd_invisible(
     console.print(f"  Strength: {_resolved_strength_for_display(source, strength, vendor, pipeline)}")
 
     t0 = time.monotonic()
-    result_path = engine.remove_watermark(
-        image_path=source,
-        output_path=output,
-        strength=strength,
-        seed=seed,
-        humanize=humanize,
-        unsharp=unsharp,
-        adaptive_polish=adaptive_polish,
-        max_resolution=max_resolution,
-        vendor=vendor,
-        tile=tile,
-        tile_size=tile_size,
-        tile_overlap=tile_overlap,
-    )
+    try:
+        result_path = engine.remove_watermark(
+            image_path=source,
+            output_path=output,
+            strength=strength,
+            seed=seed,
+            humanize=humanize,
+            unsharp=unsharp,
+            adaptive_polish=adaptive_polish,
+            max_resolution=max_resolution,
+            vendor=vendor,
+            tile=tile,
+            tile_size=tile_size,
+            tile_overlap=tile_overlap,
+            text_manifest=text_manifest,
+            fidelity_anchor=fidelity_anchor,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        console.print(f"  Error: {exc}")
+        raise SystemExit(1) from exc
     elapsed = time.monotonic() - t0
 
     size_kb = result_path.stat().st_size / 1024
@@ -874,10 +904,27 @@ def cmd_invisible(
 
 
 # ── Metadata operations ──
+def _print_metadata_not_a_clean_verdict() -> None:
+    """Repeat the identify empty-scan limit on metadata check and strip success.
+
+    ``metadata --check`` and ``metadata --remove`` answer a narrower question than
+    ``identify``: they report embedded AI metadata only. A quiet result used to
+    stop at "No AI metadata found" / "AI metadata stripped", which readers treat
+    as a clean-image verdict. The pixel channel is unchanged, and this project has
+    no local SynthID decoder, so the command must say so in the same words
+    ``identify`` already uses.
+    """
+    console.print(
+        "  This is not the same as 'clean': a pixel watermark such as SynthID cannot be\n"
+        "  detected here once its metadata proxy is absent."
+    )
+
+
 def _print_metadata_report(source: Path, has_ai: bool, metadata: dict[str, str]) -> None:
     """Render one metadata inspection result for the generic and video commands."""
     if not has_ai:
         console.print(f"  No AI metadata found in {source.name}")
+        _print_metadata_not_a_clean_verdict()
         return
 
     console.print(f"  Warning: AI metadata detected in {source.name}:")
@@ -944,6 +991,7 @@ def cmd_metadata(
         console.print("    the file could not be decoded, so it was copied through unchanged")
         raise SystemExit(1)
     console.print(f"  AI metadata stripped -> {out}")
+    _print_metadata_not_a_clean_verdict()
 
 
 # ── Video pipeline ──
@@ -1085,6 +1133,7 @@ def cmd_video_metadata(
         console.print(f"    still present: {', '.join(sorted(result.remaining))}")
         raise SystemExit(1)
     console.print(f"  AI metadata stripped -> {result.output}")
+    _print_metadata_not_a_clean_verdict()
 
 
 @cmd_video.command("invisible")
@@ -1402,6 +1451,13 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
         verdict = "AI-generated (fully synthetic)"
     console.print(f"\n  Verdict: {verdict}  (confidence: {report.confidence})")
     console.print(f"  Platform: {report.platform or 'undetermined'}")
+    if report.c2pa_validation is not None:
+        validation = report.c2pa_validation
+        console.print(
+            "  C2PA validation: "
+            f"integrity={validation['integrity']}, signature={validation['signature']}, "
+            f"signer trust={validation['signer_trust']}, signer validity={validation['signer_validity']}"
+        )
 
     if report.is_ai_generated is None:
         console.print(
@@ -1448,6 +1504,8 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
 @_tile_options
 @_force_option
 @_cpu_offload_option
+@_text_manifest_option
+@_fidelity_anchor_option
 @click.pass_context
 def cmd_all(
     ctx: click.Context,
@@ -1469,6 +1527,8 @@ def cmd_all(
     tile_overlap: int,
     force: bool,
     cpu_offload: bool,
+    text_manifest: Path | None,
+    fidelity_anchor: bool,
 ) -> None:
     """Remove ALL watermarks: visible + invisible + metadata.
 
@@ -1546,6 +1606,8 @@ def cmd_all(
                 tile=tile,
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
+                text_manifest=text_manifest,
+                fidelity_anchor=fidelity_anchor,
             ),
             force=force,
             progress=progress,

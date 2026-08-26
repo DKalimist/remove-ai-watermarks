@@ -243,6 +243,8 @@ class InvisibleOptions:
     tile: bool = False
     tile_size: int = 1024
     tile_overlap: int = 128
+    text_manifest: Path | None = None
+    fidelity_anchor: bool = False
 
 
 # What the invisible stage did. "unavailable" is the one outcome the caller must
@@ -329,12 +331,13 @@ class _SourceEvidence:
         if evidence is None:
             return True
         try:
+            from remove_ai_watermarks._internal.c2pa import c2pa_info_has_removal_hint
             from remove_ai_watermarks.identify import identify_from_evidence
 
             report = identify_from_evidence(evidence, image_path=self._path, check_invisible=True)
         except Exception:
             return True
-        return bool(report.ai_from_metadata)
+        return report.ai_from_metadata or c2pa_info_has_removal_hint(evidence.c2pa_info)
 
 
 def _provenance_from_report(report: Any, path: Path) -> frozenset[str]:
@@ -522,6 +525,8 @@ def _run_invisible(
         tile=opts.tile,
         tile_size=opts.tile_size,
         tile_overlap=opts.tile_overlap,
+        text_manifest=opts.text_manifest,
+        fidelity_anchor=opts.fidelity_anchor,
     )
     say("invisible", "removed")
     return "removed"

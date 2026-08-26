@@ -30,6 +30,8 @@ from remove_ai_watermarks._internal.watermark_profiles import resolve_seed
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from remove_ai_watermarks._internal.text_restoration import VerifiedTextManifest
+
 log = logging.getLogger(__name__)
 
 QWEN_IMAGE_2512_MODEL_ID = "Qwen/Qwen-Image-2512"
@@ -973,6 +975,30 @@ class QwenZImagePipeline:
             result = result.resize(image.size, Image.Resampling.LANCZOS)
         return result.convert("RGB")
 
+    def _qwen_vae_roundtrip(self, image: Image.Image) -> Image.Image:
+        """Reconstruct source pixels through the already loaded Qwen VAE."""
+        import torch
+
+        pipe, _controlnet_input_cls = self._load_qwen()
+        source_width, source_height = image.size
+        pad_width = (-source_width) % 8
+        pad_height = (-source_height) % 8
+        padded = image.convert("RGB")
+        if pad_width or pad_height:
+            padded = Image.fromarray(
+                np.pad(
+                    np.asarray(padded),
+                    ((0, pad_height), (0, pad_width), (0, 0)),
+                    mode="edge",
+                )
+            )
+        pipe.load_models_to_device(["vae"])
+        tensor = pipe.preprocess_image(padded).to(device=self.device, dtype=self.torch_dtype)
+        with torch.inference_mode():
+            latents = pipe.vae.encode(tensor)
+            decoded = pipe.vae.decode(latents)
+        return pipe.vae_output_to_image(decoded).crop((0, 0, source_width, source_height)).convert("RGB")
+
     @staticmethod
     def _detail_size(
         crop_size: tuple[int, int],
@@ -1044,10 +1070,33 @@ class QwenZImagePipeline:
         tile: bool = False,
         tile_size: int = 1024,
         tile_overlap: int = 128,
+        text_manifest: VerifiedTextManifest | None = None,
+        fidelity_anchor: bool = False,
     ) -> Image.Image:
         """Execute global regeneration and masked face repair."""
         self._require_cuda()
         seed = resolve_seed(seed)
+        donor = None
+        if text_manifest is not None:
+            self._progress("Reconstructing the verified text donor with the Qwen VAE...")
+            if tile and max(image.size) > tile_size:
+                from remove_ai_watermarks._internal.tiling import run_tiled
+
+                donor = run_tiled(
+                    self._qwen_vae_roundtrip,
+                    image,
+                    tile_size,
+                    tile_overlap,
+                    lambda message: self._progress(
+                        message.replace(
+                            "Tiled diffusion",
+                            "Reconstructing the verified text donor",
+                            1,
+                        )
+                    ),
+                )
+            else:
+                donor = self._qwen_vae_roundtrip(image)
         global_strength = (
             resolution_adaptive_denoise(image.width, image.height) if strength is None else float(strength)
         )
@@ -1068,14 +1117,37 @@ class QwenZImagePipeline:
         boxes = detect_faces(image)
         if not boxes:
             self._progress("No faces detected; keeping the Qwen global result.")
-            return global_result
-        masks = self._sam_masks(image, boxes)
-        face_strength = largest_face_denoise(boxes, image.size) * FACE_DENOISE_SCALE
-        return self._run_faces(
-            image,
-            global_result,
-            boxes,
-            masks,
-            strength=face_strength,
-            seed=seed,
+            result = global_result
+        else:
+            masks = self._sam_masks(image, boxes)
+            face_strength = largest_face_denoise(boxes, image.size) * FACE_DENOISE_SCALE
+            result = self._run_faces(
+                image,
+                global_result,
+                boxes,
+                masks,
+                strength=face_strength,
+                seed=seed,
+            )
+        if text_manifest is None:
+            return result
+        if donor is None:
+            raise RuntimeError("Verified text restoration requires a Qwen-VAE donor")
+        from remove_ai_watermarks._internal.text_restoration import (
+            blend_fidelity_anchor,
+            restore_verified_text,
         )
+
+        # The anchor is OFF by default since 0.27.1: blending 15% of the Qwen-VAE
+        # donor ACROSS THE WHOLE FRAME returned detector-visible OpenAI SynthID on
+        # poster-scale manifests (official Content Provenance API, 2026-08-19:
+        # detected x6 with the anchor, clean x6 without it, base clean throughout;
+        # see docs/text-protection-research.md). ``fidelity_anchor=True`` keeps the
+        # 0.27.0 research behavior for reproduction.
+        if fidelity_anchor:
+            self._progress("Blending the Qwen-VAE fidelity anchor...")
+            anchor = blend_fidelity_anchor(result, donor)
+        else:
+            anchor = result
+        self._progress(f"Restoring {len(text_manifest.lines)} verified text lines...")
+        return restore_verified_text(image, anchor, donor, text_manifest.lines)

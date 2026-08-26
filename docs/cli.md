@@ -17,7 +17,7 @@ defaults. This page focuses on choosing the right command.
 | `verify-openai-synthid` | `remove-ai-watermarks[verify]`, API access, and `OPENAI_API_KEY` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
-| Adobe TrustMark signals in `identify` | `remove-ai-watermarks[trustmark]` |
+| Adobe TrustMark signals in `identify` on Python 3.11-3.12 | `remove-ai-watermarks[trustmark]` |
 | `visible` and `erase` with OpenCV | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | `visible` or `erase` with MI-GAN | `remove-ai-watermarks[migan]` |
 | `visible` or `erase` with big-LaMa | `remove-ai-watermarks[lama]` |
@@ -27,7 +27,7 @@ defaults. This page focuses on choosing the right command.
 | `video visible`, `video all`, and visible/all batch modes | `remove-ai-watermarks[video]` plus ffmpeg on PATH |
 | `video invisible` and `video all --invisible` | `remove-ai-watermarks[video,diffusion]` plus ffmpeg on PATH |
 | HEIC/HEIF/AVIF pixel input | Add `remove-ai-watermarks[heif]` |
-| Every production command and backend | `remove-ai-watermarks[all]` |
+| Every production command and Python-compatible backend | `remove-ai-watermarks[all]` |
 
 `batch` requires the same extra as its selected mode. Extras can be combined in
 one installation, for example `remove-ai-watermarks[visible,detect,heif]`.
@@ -41,7 +41,15 @@ remove-ai-watermarks identify image.png
 `identify` always inspects supported metadata. When pixel extras are installed,
 it also evaluates supported visible and invisible pixel signals. When no signal
 is found, it reports the origin as unknown. It does not claim the image is
-clean.
+clean. For C2PA files, the text report shows asset integrity, claim-signature,
+signer-trust, and signer-validity results separately. Confidence follows the
+binding: an intact asset binding and claim signature is high confidence, and an
+unanchored or expired signer is reported as a caveat rather than a lower score,
+because no trust anchor list ships with the reader. A failed asset binding or
+signature, or a revoked signing credential, does not confirm the claimed origin. When a structured
+C2PA soft binding is present, the report also names its exact algorithm and
+signed value; removing the manifest does not remove the referenced pixel
+watermark or content fingerprint.
 
 Machine readable output:
 
@@ -191,6 +199,11 @@ remove-ai-watermarks metadata image.png --remove -o clean.png
 When `-o` is omitted, removal overwrites the source. Standard metadata is kept
 unless you pass `--remove-all`.
 
+A quiet `--check` or a successful `--remove` is not a clean verdict. The command
+only inspects and strips embedded AI metadata; a pixel watermark such as SynthID
+has no local decoder once that metadata proxy is gone. `identify` reports the
+same limit.
+
 The command also supports the audio and video containers listed in
 [supported signals](supported-signals.md). ffmpeg must be available for the
 non-ISOBMFF audio and video path.
@@ -259,11 +272,17 @@ remove-ai-watermarks video metadata input.mp4 --check
 remove-ai-watermarks video metadata input.mp4 --remove -o clean.mp4
 ```
 
+As with the generic `metadata` command, a quiet check or a successful strip is
+not a clean verdict: video SynthID is not decoded locally after the metadata
+proxy is gone.
+
 Supported containers are MP4, MOV, M4V, WebM, MKV, AVI, and FLV. The operation
 delegates to the same verified metadata scanner and stripper as the generic
 `metadata` command, so detection and removal stay in parity. Video and audio
 streams are not transcoded. For MP4 and MOV, this includes the native TC260
-`AIGC` key and JSON value stored in `moov.udta.meta.keys/ilst`. The inspector
+`AIGC` key and JSON value stored in `moov.udta.meta.keys/ilst`, plus the
+QuickTime-form `meta` variants Doubao's iOS export writes (a bare `meta` box
+as a direct `moov` child, and a keyless `hdlr=mdir` metadata list). The inspector
 seeks past a large `mdat` to find a tail `moov`. Removal stream-copies the
 container in bounded chunks, converts supported top-level provenance boxes to
 same-size `free` boxes, and blanks the TC260 key/value in place. Box sizes,
@@ -432,6 +451,50 @@ schedule, CFG 1.0 and CUDA, so every one of those flags existed only to be refus
 several layers down. They are not parsed at all now, which fails at the point the
 user can act on rather than after a model load.
 
+### Restore operator-verified text
+
+`--text-manifest` enables the experimental `vae-glyphs` post-pass. It reconstructs
+the source with the Qwen VAE, blends 15% of that reconstruction into the normal
+`qwen-zimage` result, erases the annotated candidate glyphs with LaMa, and composites
+only the reconstructed glyph cores through source-derived silhouettes. It does not
+run OCR or choose which strings are correct.
+
+Install the combined extra and run only with an operator-verified manifest:
+
+```bash
+uv tool install --force "remove-ai-watermarks[text-restoration]"
+remove-ai-watermarks invisible image.png -o clean.png \
+  --pipeline qwen-zimage --text-manifest verified-lines.json --force
+```
+
+``verified: true`` may also be set by an automated operator that attests
+machine-verified geometry: stability-gated detector boxes inside sane caps. Such
+operators should use the geometry-only schema 2, which carries no transcription
+or script metadata.
+
+Since 0.27.1 the global 15% Qwen-VAE fidelity-anchor blend is off by default: it
+was measured to return detector-visible OpenAI SynthID on poster-scale manifests
+(official Content Provenance API, 2026-08-19). `--fidelity-anchor` restores the
+0.27.0 research behavior; text-box fidelity lost by the default is well under one
+MAE point on the measured fixtures.
+
+The manifest is a JSON object with `verified: true`, decoded RGB dimensions,
+`source_pixel_sha256`, and a non-empty `lines` array. Schema 1 is retained for
+manually reviewed annotations: each line has an integer `[x1, y1, x2, y2]` box,
+exact `text`, a non-empty `script`, and an optional angle from -30 to 30 degrees.
+Schema 2 is geometry-only: each line has the box and optional angle, with no
+required `text` or `script`. Lines must be in top-to-bottom, left-to-right order.
+The hash binds the annotations to decoded RGB geometry and pixels, so metadata-only
+container changes remain valid while a resized or edited source fails closed. The
+experimental helper
+`remove_ai_watermarks._internal.text_restoration.source_pixel_sha256` computes it.
+
+This mode is supported only by `qwen-zimage` at native geometry with
+`humanize=0`, `unsharp=0`, and adaptive polish disabled. `all` also accepts the flag,
+but its manifest must match the pixels entering the invisible stage; if visible-mark
+removal changes those pixels, the hash check rejects the run. One oracle verdict does
+not certify another manifest, seed, model/runtime version, or output hash.
+
 ### Work with limited memory
 
 Lower CUDA memory pressure:
@@ -463,7 +526,7 @@ It is a memory strategy, not a guarantee of better quality.
 
 The `all` command and the `all` installation extra are separate concepts. The
 command runs every applicable stage. Installing `remove-ai-watermarks[all]`
-makes every production backend available; a smaller installation such as
+makes every backend compatible with the active Python available; a smaller installation such as
 `remove-ai-watermarks[visible,qwen-zimage]` can also run the command with fewer
 optional backends.
 
