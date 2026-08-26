@@ -364,10 +364,31 @@ independent errors make simple hybrids worse. PGC SD1.4 is strong on OpenAI,
 but its published output and the useful global/residual ablations misclassify
 most or all of the Kodak scan set; removing that branch removes the OpenAI
 gain. DGS-Net is weak at the same operating point and also adds independent
-photo errors. Model 1 also lacks a time/device-disjoint negative contract for
-modern computational photography. The measured public protocol, GitHub survey, and
-rejected fusions are recorded in
-[classifier research](synthid-classifiers.md#general-ai-classifier-github-sweep-2026-08-25).
+photo errors. A source-disjoint public-domain museum audit confirmed a separate
+human-art failure: Model 1 called 355/1,050 drawings, prints, manuscripts,
+paintings, textiles, and studio-object or historical-photo rows AI-generated.
+Its error was 0/150 on the historical-photo control, so ordinary camera accuracy
+does not bound accuracy on other human-created visual media. A domain veto
+removed the museum errors in development but failed the existing AI-test and
+fresh-photo core. A second source-disjoint modern-negative audit measured the
+commercial cells: across 421 date-clean Unsplash and CC-licensed Flickr images,
+Model 1 accepted 16.4% as AI, concentrated in logo/graphic design (38.3%),
+retouched fashion photography (34.1% on the Unsplash cell; 2/40 on the Flickr
+replication), and product cutouts (16.0%), while composites
+stayed clean at 0/50 and long exposure near clean at 11/146 after a
+two-part contamination control (a 0/450 provenance-metadata scan and a
+pre-2022-08 date bound that dropped 29 rows, correcting one contaminated
+Flickr fashion cell). The failure pattern therefore spans both historical art
+and modern stylized graphics, not photographic exposure technique. A
+source-disjoint linear veto fit on the date-clean modern cells was then
+rejected one gate earlier: no searched operating point repaired even one
+modern dev error without dropping below the frozen EvalGEN and FLUX floors,
+because modern human graphics and AI generations overlap almost one-to-one in
+the frozen CLIP embedding, at roughly 1.3 to 1.5 AI positives lost per negative
+repaired. Model 1 also lacks a time/device-disjoint negative contract
+for modern computational photography. The measured public protocol, GitHub
+survey, and rejected fusions are recorded in
+[AI-generated image classifier research](ai-generated-image-classifiers.md#general-ai-classifier-github-sweep-2026-08-25).
 
 ## Output and traceability
 

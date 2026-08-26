@@ -1,0 +1,763 @@
+# AI-generated image classifiers (research)
+
+> Research archive for metadata-free `ai_generated` versus
+> `not_ai_generated` classifiers. These are not SynthID detectors and are not
+> shipped product verdicts. Current behavior: [supported signals](supported-signals.md)
+> and [known limitations](known-limitations.md).
+>
+> Sister pages: [SynthID source classifiers](synthid-classifiers.md),
+> [SynthID local detector](synthid-detector-research.md),
+> [SynthID mark removal](synthid-removal-research.md), and
+> [mechanism reference](synthid.md).
+
+A classifier is reliable only when its name matches its errors, photographs
+are the first negative, Firefly and PixelBin are in the test, and a watermark
+claim uses an independent oracle. CLIP content embeddings and the 124-d
+origin-locked residual bank are different features for different jobs.
+
+## Research task hierarchy
+
+The primary classifier task is metadata-free AI-generation detection: given an
+arbitrary image, decide `ai_generated` versus `not_ai_generated` from pixels.
+The target is open-world transfer to generators absent from training, with a
+very low false-positive rate across real photographs and other non-AI imagery
+such as scans, product cutouts, conventional CGI, and digital graphics.
+
+OpenAI/Gemini source finding is a narrower, separately documented
+[SynthID-adjacent task](synthid-classifiers.md). It asks whether a file resembles
+a current OpenAI or Google generation pipeline and otherwise abstains. It does
+not replace the general AI-generation detector: a precise provider finder can
+miss most AI images, and a general detector need not know which provider
+produced a positive. Neither task is a SynthID payload decoder.
+
+## Partial result: Model 1, AI versus camera
+
+Finetuned CLIP-L (`openai/clip-vit-large-patch14`), last two vision blocks,
+224 letterbox, JPEG and mild crop, linear ridge. Train 5,221 AI plus 6,129
+photos. Locked Open Images fresh never enters train. Operating point: 1%
+FPR on disjoint `photo_dev_oi`.
+
+| Cell | Value |
+| --- | --- |
+| Kodak | 0/24 |
+| Open Images fresh FPR | 1.7% (n=3,000) |
+| Exact-1024 Open Images FPR | 6% |
+| AI-test TPR | 93.0% (n=1,905) |
+| OpenAI | 93.2% |
+| Gemini | 90.5% |
+| Firefly | 94.0% |
+| xAI | 96.1% |
+| FLUX hold | 92.7% |
+
+51 fresh false positives are mostly graphics, CGI, product cutouts, and
+scans, not Gemini. Nobody in the sweep hit both ≤1% fresh FPR and ≥90%
+TPR. This is the strongest result toward the general task, but its negative
+contract is still AI-versus-camera rather than AI-versus-all-non-AI imagery.
+The graphics/CGI errors therefore keep the general task open. This is not
+SynthID, and it is not in `identify`.
+
+Artifacts: `.local-eval/synthid/ai-photo-2026-08-22/`
+(`comparison.json`, `probe-report-clip-l-ft.json`,
+`probe-weights-clip-l-ft.npz`). Date cutoff 2026-07-23, seed 20260822.
+
+### Rejected Model 1 variants
+
+Same splits and `photo_dev_oi` 1% cut.
+
+| Variant | Fresh FPR | Kodak | 1024 FPR | AI TPR | FLUX hold |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| CLIP-L v2 | 0.017 | 0/24 | 0.04 | 0.877 | n/a |
+| CLIP-L + FLUX extra | 0.016 | 0/24 | 0.05 | 0.861 | 0.707 |
+| CLIP-H + FLUX extra | 0.014 | 0/24 | 0.02 | 0.812 | 0.913 |
+| CLIP-L last-2-blocks finetune | 0.017 | 0/24 | 0.06 | **0.930** | **0.927** |
+| DINOv2-giant 256 | 0.023 | 0/24 | 0.04 | 0.606 | 0.293 |
+
+CLIP-H is the photo-FPR specialist (1.4% fresh, 2% at 1024) at 81% TPR and
+is not the result. DINOv2-giant at 256 px is not usable.
+
+v1 (CLIP-L, no Open Images in train) at a COCO-looking 0.5% cut accepted
+13% of Open Images. Domain shift, not the 124 residual bank. v2 added
+1,000 disjoint Open Images reserve photos to train and 500 as
+`photo_dev_oi`; locked fresh stayed 1.7% FPR at 87.7% TPR before
+finetune.
+
+The 124-d residual bank is the wrong feature for "AI or not". At a
+Kodak-safe cut it catches 60% Firefly and misses FLUX, NovelAI, Reve, and
+most of TC260 and xAI. Do not train another ridge on that representation
+for an AI-or-not claim.
+
+Open, if this head is ever considered for a product cut: a graphics/CGI
+abstain and time/device-disjoint modern camera coverage. CLIP treating
+non-camera imagery as generation is one known error, not Gemini contamination.
+
+### Frozen public-checkpoint transfer, 2026-08-24
+
+A no-training sweep put the official
+[`Community Forensics`](https://github.com/JeongsooP/Community-Forensics) and
+[`SPAI`](https://github.com/mever-team/spai) checkpoints on the same public
+rows and the same operating rule as Model 1. Each threshold is the strict 99th
+percentile of the 500-image `photo_dev_oi` split; no AI or evaluation negative
+sets tune it. The SPAI core runs stop after all 2,405 AI rows because the model
+is already dominated there; they do not supply a fresh-photo FPR.
+
+| Model | AI test | AI extra | FLUX hold | Open Images fresh |
+| --- | ---: | ---: | ---: | ---: |
+| Model 1, CLIP-L-ft | 93.0% | 92.5% | 92.7% | 1.7% |
+| Community Forensics 384 | 34.6% | 12.0% | 23.0% | 1.0% |
+| SPAI, longest edge 512 | 2.2% | 3.5% | 0.7% | not run |
+| SPAI, longest edge 1024 | 6.5% | 9.5% | 10.0% | not run |
+
+Community Forensics finds 33 of Model 1's 170 misses across the 2,405 AI
+rows. On 4,133 public evaluation photographs, however, it adds 37 errors not
+made by Model 1. A calibration-only rank-max fusion reduces AI-test recall to
+91.9%, AI-extra recall to 88%, and FLUX recall to 86%, while fresh-photo FPR
+rises to 1.73%. A literal OR at the two original thresholds doubles calibration
+FPR to 2% because their five errors do not overlap. The checkpoint is an
+auxiliary representation, not a better detector or a valid OR branch.
+
+SPAI at 1024 recovers only 11 Model 1 misses. Its predeclared rank-max fusion
+reduces AI-test recall to 90.2% and FLUX recall to 85.3% at the same 1%
+calibration FPR; its literal OR also doubles calibration FPR to 2%. The
+300-image FLUX cell is exactly 1024 on its longest edge, so this failure cannot
+be assigned to downscaling in that cell. The 512/1024 ablation does show
+resolution sensitivity, but no useful low-FPR hybrid.
+
+[`B-Free`](https://github.com/grip-unina/B-Free) remains unmeasured: its sole
+official checkpoint host was unreachable over HTTP and HTTPS, and no verified
+mirror was found. Its license also limits use to informational and nonprofit
+purposes and expressly prohibits industrial or profit-oriented use. Its useful
+result for this project is therefore the bias-reduction training paradigm, not
+a checkpoint dependency.
+
+No public checkpoint replaces Model 1 or safely repairs it. The next model
+must change the negative contract: hash-grouped, time/device-disjoint modern
+computational photography plus conventional CGI, graphics, scans, and product
+cutouts. Another generic detector trained against a narrow `real` corpus is
+not a new signal.
+
+Local reproducibility artifacts:
+`.local-eval/synthid/ai-photo-2026-08-22/frozen-ai-detector-sweep-2026-08-24/`.
+
+### General AI-classifier GitHub sweep, 2026-08-25
+
+A separate search targeted pixel-based `ai_generated` versus
+`not_ai_generated` classifiers, not SynthID repositories. Twelve recorded
+GitHub GraphQL searches returned 2,006 unique public non-fork repositories.
+The broadest four searches were capped at 500 collected results, so this is a
+bounded reproducible survey, not a claim that GitHub search can enumerate every
+repository. Five current catalogs and benchmarks contributed 110 references;
+106 resolved to 105 unique live repositories. Curated references plus
+high-signal search matches produced 332 candidates, of which 328 resolved for
+README, license, weight, and inference review.
+
+The exact public, non-fork GitHub query set was:
+
+```text
+"AI-generated image detection" in:name,description,readme fork:false
+"AI generated image detector" in:name,description,readme fork:false
+"AI image detector" in:name,description,readme fork:false
+"AIGC image detection" in:name,description,readme fork:false
+"AIGC detector" image in:name,description,readme fork:false
+"synthetic image detection" in:name,description,readme fork:false
+"synthetic image detector" in:name,description,readme fork:false
+"generated image detection" diffusion in:name,description,readme fork:false
+topic:ai-generated-image-detection fork:false
+topic:ai-image-detection fork:false
+topic:aigc-detection fork:false
+topic:synthetic-image-detection fork:false
+```
+
+The five catalog/benchmark inputs were
+[`AIGCDetectBenchmark`](https://github.com/Ekko-zn/AIGCDetectBenchmark),
+[`Awesome-AIGC-Image-Video-Detection`](https://github.com/ant-research/Awesome-AIGC-Image-Video-Detection),
+[`Awesome-AIGC-Detection`](https://github.com/Daisy-Zhang/Awesome-AIGC-Detection),
+[`Awesome-AIGC-Image-Detection`](https://github.com/graydove/Awesome-AIGC-Image-Detection),
+and
+[`Awesome-AI-generated-Image-Detection`](https://github.com/nxZhai/Awesome-AI-generated-Image-Detection).
+
+The filter required pixel inference, an available checkpoint, reproducible
+preprocessing, a license compatible with possible product use, and a signal or
+training contract that differs materially from already rejected models. It
+removed metadata/API wrappers, SynthID-only tools, face/video-only deepfake
+systems, datasets and leaderboards, UI-only repositories, classroom CIFAKE
+models, noncommercial checkpoints, and repositories without runnable weights.
+
+The most relevant survivors are:
+
+| Model | Status | Why it matters |
+| --- | --- | --- |
+| [Dual Data Alignment](https://github.com/roy-ch/Dual-Data-Alignment) | Apache-2.0, official 1.26 GB checkpoint, measured partially | DINOv2-L LoRA with paired real/reconstruction JPEG and frequency alignment; best new training contract. |
+| [PGC](https://github.com/xiaoyu6868/PGC) | Apache-2.0, SD1.4 measured fully and joint measured on AI-test | DINOv2-L peak-guided calibration exposes a strong OpenAI signal, but it confounds Kodak scans and does not safely fuse with Model 1. |
+| [DGS-Net](https://github.com/HorizonTEL/DGS-Net) | Apache-2.0, stage-2 checkpoint measured partially | Distillation-guided gradient surgery is reproducible, but the frozen checkpoint is weak and adds independent photo errors. |
+| [FerretNet](https://github.com/xigua7105/FerretNet) | Apache-2.0, weights available, lower priority | Efficient local-pixel artifact branch, but trained on four ProGAN classes. |
+| [OmniAID](https://github.com/yunncheng/OmniAID) | Modern 3.24 GB checkpoints; repository has no license file | Mirage-Train semantic/artifact experts are promising, but the README's MIT badge is not a license grant. |
+| [SDAIE](https://github.com/Ekko-zn/SDAIE) | Weights available; no license | Camera/EXIF-supervised and real-only training are relevant ideas; inference is pixel-based, but product use is unresolved. |
+| [AIDE](https://github.com/shilinyan99/AIDE) and [CO-SPY](https://github.com/Megum1/CO-SPY) | MIT, weights available, lower priority | Reproducible hybrid signals, but official checkpoints retain ProGAN or SD1.4-era negative contracts. |
+
+[Effort](https://github.com/YZY-stack/Effort-AIGI-Detection),
+[Forensic Self-Descriptions](https://github.com/ductai199x/Forensic-Self-Descriptions-CVPR25),
+and B-Free are research-only or noncommercial. UniGenDet is MIT but its
+published checkpoint is about 59 GB. OpenSDI and SAD-Bridge have no detected
+license. REM describes a relevant real-centric method, but its code and weights
+are still pending. [FatFormer](https://github.com/Michel-liu/FatFormer) and
+[SSP-AI-Generated-Image-Detection](https://github.com/bcmi/SSP-AI-Generated-Image-Detection)
+have runnable, product-compatible releases, but their four-class ProGAN and
+per-generator GenImage contracts are narrower than the measured candidates.
+[RIGID](https://github.com/IBM/RIGID) is an Apache-2.0 training-free
+reference-comparison idea rather than a detector with a frozen checkpoint to
+transfer.
+
+#### Our frozen-transfer protocol
+
+The results below are this project's measurements, not accuracy copied from the
+upstream papers or model cards. The public portion of the frozen manifest
+contains 7,038 rows:
+
+| Role | Public cells | Rows |
+| --- | --- | ---: |
+| Calibration negative | `photo_dev_oi` | 500 |
+| AI evaluation | `ai_test`, `ai_eval_only`, `flux_hf_hold` | 2,405 |
+| Non-AI evaluation | fresh and 1024-pixel Open Images, COCO holdout, Kodak, Picsum | 4,133 |
+
+The manifest removes exact SHA-256 duplicates before scoring. Every candidate
+uses its official image branch and published evaluation preprocessing unless a
+deviation is named below. No checkpoint is retrained and no AI or evaluation
+negative row selects a threshold. Scores are oriented so that larger means more
+likely AI-generated; the decision is the strict inequality above the empirical
+99th percentile of the 500 calibration negatives.
+
+For a two-model hybrid, each raw score is converted to its empirical percentile
+against that model's 500 calibration scores. `rank_max` is the maximum of those
+two percentiles and `rank_mean` is their mean. The hybrid threshold is then
+recalibrated on those same 500 negatives. Literal OR results retain each model's
+independently calibrated threshold. Per-item changes are reported as paired
+improvements and regressions, with a one-sided exact sign test when the direction
+is used as evidence. A pilot stops a larger run only when it is already too far
+below the recall/FPR gate to change the decision.
+
+#### Exact artifacts and adapters used by our runs
+
+- Community Forensics: repository
+  `ee5b71d43db0f3779e1edd64ee927b13f2dd6ad4`; model snapshot
+  `6076002bf0d9dd37537f965ee2f06f826c333b61`, model SHA-256
+  `b89f36275f3bf5e2b040eee36597a8f19db051bff9a473a9cf7b2466284fb387`;
+  processor snapshot `3540a3f0d688f8bf492a8aed48613b891f88047e`. The adapter uses
+  official `CommForImageProcessor` test mode at 384 pixels and the raw output
+  logit. Its calibrated threshold is `-0.7597203404`.
+- SPAI: repository `8ff7b3b6779b4fcb43cf313471d9cb1c62d129a4`, OpenAI CLIP
+  revision `d05afc436d78f1c48dc0dbf8e5980a9d471f35f6`, checkpoint SHA-256
+  `24159f27d7c8c2cd0cb6c4019189eb89ad0874a0d9d15f8dc9afd39ca9648a55`.
+  The 512/1024 variants cap the longest edge with bicubic resampling before
+  SPAI's RGB, minimum-size-padding transform; this implements the documented
+  `--resize-to` intent because the upstream `SmallestMaxSize` path can enlarge
+  the longest edge. Thresholds are `17.0864165878` and `14.0359167767`. The
+  upstream checkpoint embeds a YACS object and could not use safe
+  `weights_only=True` loading; this is another reason it remains research-only.
+- Dual Data Alignment: repository
+  `8b9c06e75e63f4688bc25ac43a7e3412878cf67f`, checkpoint SHA-256
+  `b27a31d39374803ddeff02bfabb2be76e190b04300490cddfafb24f683f37e3e`.
+  The adapter is the official DINOv2-L/14 rank-8 LoRA image path with
+  `CenterCrop(336)`, tensor conversion, CLIP normalization, and sigmoid binary
+  score. The threshold is `0.9587997139`.
+- PGC: repository `0c9b10f3b89964b804ad6097e61709f74e827fbf`, DINOv2-L
+  configuration `47b73eefe95e8d44ec3623f8890bd894b6ea2d6c`. The SD1.4
+  checkpoint SHA-256 is
+  `275c35741834345191fd1be4e4c26075512840d4cf0d2515b9c86094b7bf003e`;
+  the ProGAN+SD1.4 checkpoint SHA-256 is
+  `234ca835f4219892acacaea6f2bd15ac698e4491c91b2125f109901fdb56ece6`.
+  Both load with `weights_only=True` and a strict state-dict match. The adapter
+  preserves official `PadCenterCrop(224)`, tensor quantization-residual append,
+  DINO normalization, and sigmoid fused logit. Thresholds are `0.4983334646`
+  and `0.7142269963`.
+- DGS-Net: repository `e7e0799b61014765c11c837506b772e7504198e3`, stage-2
+  checkpoint SHA-256
+  `89b96a586a6b9f2e5626b03aa27e8063bbe6aaae00f4d0cf97fd3ced2379c216`.
+  Safe `weights_only=True`, memory-mapped loading extracts a strict inference
+  subtree: CLIP ViT-L/14, rank-6 vision LoRA, and image head. The training-only
+  frozen teacher and text head are not read by the official image-only forward,
+  so stage 1 is unnecessary for evaluation. Preprocessing selects the 24 lowest
+  and 25 highest spectral-entropy 32-pixel patches, shuffles them with the
+  official seed 100, stitches a 7x7 image, and applies ImageNet normalization.
+  The threshold is `0.9998653293`.
+- SAFE, RINE, and Nonescape Mini respectively pin repository revisions
+  `4e998724651b227def64f5be0cd60c0aa1552c35`,
+  `9b7fd5857cc205d0412be6aeee0d7611b95bd620`, and
+  `52619d5c96ab83f018d9e879d4be14d847ccb15d`; checkpoint SHA-256 values are
+  `b3f5ecfb46a154ed553aaaf4bf3ba59182310726ddb0cbb1fe42bd0e22d2f20e`,
+  `6535ff6ecfa88d33c081e561c2cb2dcb594a1006b050eddb72a72ce005ed2ca1`,
+  and `7a0d0740c813ce199bc32ed16a5f4f4915895c4c9fdee0a98bdbeedd4f3631fd`.
+  Their adapters preserve, respectively, the official 256-pixel crop plus
+  bior1.3 DWT branch, 224-pixel OpenAI-CLIP path, and EfficientNet-v2-s
+  256-resize/224-crop path. Thresholds are `0.9303810883`, `0.9529916000`, and
+  `0.9896544343`.
+
+Seven additional checkpoints were put on that frozen rule. All values below
+are public cells.
+
+| Model | AI test | Gemini | OpenAI | FLUX hold | Fresh Open Images |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Model 1, CLIP-L-ft | 93.0% | 90.5% | 93.3% | 92.7% | 1.7%, n=3,000 |
+| DDA official | 48.2% | 68.8% | 21.8% | not run | 0.7%, n=1,000 |
+| PGC SD1.4 official | 44.6% | 5.5% | 96.5% | 0.7% | 0.7%, n=3,000 |
+| PGC ProGAN+SD1.4 official | 29.3% | 8.3% | 56.3% | not run | not run |
+| DGS-Net stage 2, seed 100 | 21.2% | 1.5% | 55.5% | not run | 1.9%, n=1,000 |
+| SAFE official | 21.6% | 1.3% | 57.8% | 0.0% | 0.6%, n=3,000 |
+| Nonescape Mini v0 | 13.3% | 13.5% | 7.3% | 37.3% | 1.8%, n=3,000 |
+| RINE four-class | 10.7% | 5.5% | 16.8% | 1.0% | 1.0%, n=3,000 |
+
+DDA supplies material complementary recall. It finds 52
+of Model 1's 133 misses on the 1,905-image AI test. Its seven errors on the
+independent 1,000-image negative slice do not overlap Model 1's 18, however. A
+literal OR reaches 95.7% AI recall and 2.5% FPR there; the predeclared
+calibration-rank maximum reaches only 93.4% recall and 1.6% FPR. The checkpoint
+is therefore not a safe drop-in fusion.
+
+PGC SD1.4 finds 63 of those 133 misses, while the joint checkpoint is weaker
+on the same AI rows. A calibration-only rank maximum with Model 1 initially
+looked like a clean improvement: AI-test recall rose from 93.0% to 94.1%
+(58 paired improvements, 37 regressions; one-sided sign test `p=0.0198`) and
+fresh Open Images FPR fell from 1.67% to 1.13% (22 paired improvements, six
+regressions; `p=0.00186`). The full negative matrix rejects that conclusion.
+The fusion calls all 24 Kodak images AI-generated, versus 0/24 for Model 1,
+and its aggregate public-negative errors rise from 59/4,133 to 63/4,133. It
+also reduces AI-extra recall from 92.5% to 87.5% and FLUX hold recall from
+92.7% to 85.3%.
+
+Our single-pass PGC component ablation localized but did not remove the
+confound:
+
+| PGC score | AI test | OpenAI | Fresh Open Images FPR | Kodak errors |
+| --- | ---: | ---: | ---: | ---: |
+| Global only | 34.8% | 82.0% | 1.8% | 17/24 |
+| Global + RGB peak | 6.8% | 5.5% | 0.37% | 0/24 |
+| Global + residual peak | 41.9% | 96.5% | 1.5% | 24/24 |
+| Official global + RGB + residual | 44.6% | 96.5% | 0.67% | 24/24 |
+
+The RGB peak suppresses the Kodak response, but it also removes the useful
+OpenAI signal; the residual peak carries both. Calibration-rank conjunctions
+of the RGB and residual components remove the Kodak errors, but either add
+fresh-photo errors under their own 1% calibration cuts or fall below Model 1
+recall after joint recalibration. A descriptive raw PGC threshold above `0.75`
+would add 23 AI catches without a public-negative error, but it was selected
+after inspecting test behavior and is therefore not validation. It is not an
+accepted branch or product threshold. PGC remains an OpenAI-oriented research
+feature, not a universal detector.
+
+DGS-Net's official stage-2 image branch was reconstructed strictly from the
+published checkpoint; the training-only frozen teacher and text head are not
+read by the repository's image-only evaluation forward. Its official
+spectral-entropy patch selection retains a random shuffle, so this measurement
+pins the repository's seed 100. The checkpoint finds 37 Model 1 misses but adds
+19 non-overlapping errors on the same 1,000 fresh negatives. A literal OR is
+95.0% AI-test recall at 3.7% FPR; calibration-rank maximum is 91.0% recall at
+1.6% FPR. Its 21.2% standalone recall is far enough below the gate that a full
+corpus or multi-seed run is not warranted.
+
+SAFE, RINE, and Nonescape Mini also fail as frozen replacements or fusions.
+Their value is now bounded: SAFE supplies a wavelet/transformation branch, RINE
+intermediate CLIP blocks, and Nonescape a cheap EfficientNet branch, but none
+improves the low-FPR operating point.
+
+The licensed frozen-checkpoint queue is exhausted at the useful priority level.
+PGC's OpenAI/Kodak confound makes scans an explicit hard gate for subsequent
+training. SDAIE's camera-supervised or real-only training remains an idea source
+until a license exists.
+
+Local search and scoring artifacts:
+`.local-eval/github-ai-detector-sweep-2026-08-25/` and the frozen sweep directory
+above.
+
+### Own training and hard-negative ablations, 2026-08-25
+
+The next campaign tested the training ideas rather than treating upstream
+checkpoints as finished detectors. Every accepted threshold used only a named
+negative calibration split. Per-item decisions were compared with Model 1, and
+a prompt-disjoint EvalGEN cohort remained physically unextracted whenever a
+candidate failed development or the old public matrix.
+
+#### Paired reconstruction and hard negatives
+
+DDA's useful ingredient is paired real/reconstruction training, not its
+published frequency-mix formula: with its documented whole-image patch setting,
+frequency mixing reduces algebraically to pixel mixing. A 256-pair pilot used a
+public VAE reconstruction of training-only COCO, Picsum, and Open Images photos.
+At 128 continuation steps, the ordinary control reached 93.75% AI-test recall,
+2.67% fresh Open Images FPR, 94% FLUX recall, and 0/24 Kodak errors. Paired
+reconstruction kept AI-test at 93.75% but moved FLUX to 91%, retained 2.67%
+fresh FPR, and produced eight paired improvements against ten regressions.
+Adding codec augmentation moved the same cells to 93%, 90%, and 3%, with six
+improvements against 13 regressions. Neither arm improved Model 1.
+
+Source-grouped UI screenshot negatives also failed to repair the public
+contract. A higher-dose continuation reduced AI-test to 87.5%, raised fresh FPR
+to 3%, added 1/24 Kodak error, and reduced FLUX to 82%. A lower dose reached 89%,
+3%, 0/24, and 85%. Adding the same negative category only to the frozen ridge
+head produced 52 regressions against 24 improvements on the public matrix.
+Private source identities, paths, and local-only measurements are deliberately
+absent from this public archive.
+
+An official Open Images V7 training partition supplied a reproducible hard-photo
+test. The first 6,000 lexicographic official S3 IDs were frozen before scoring,
+content-deduplicated, and split into 4,000 mining, 1,000 untouched holdout, and
+1,000 unused challenge images. Model 1 called 55/4,000 mining and 13/1,000
+holdout images AI. Replacing its head after adding the top 128 hard negatives
+kept holdout at 13/1,000, improved AI-test from 93.02% to 94.12%, but raised
+fresh FPR from 1.67% to 2.13% and added 1/24 Kodak error. A predefined
+calibration-rank mean with the hard head was only directional: AI-test 92.97%,
+fresh FPR 1.53%, unchanged 92.67% FLUX, 0/24 Kodak, and six aggregate paired
+improvements against two regressions. On the untouched Open Images train
+holdout it changed 13 errors to ten, with four repairs and one new error.
+
+The corresponding frozen rank-min challenge did not justify promotion. On 100
+previously unscored EvalGEN Flux images it exactly matched Model 1 at 83%; on
+1,000 unused Open Images train negatives it moved 1.0% to 0.9%, one repair and
+no new error. The positive gate failed. That first 100-image dataset-viewer
+slice covered only five lexicographically early prompt groups, heavily featuring
+backpacks, bananas, and baseball bats, so 83% is a semantic stress result rather
+than representative EvalGEN recall.
+
+Semantic matching alone did not solve that content bias. A 5,221-pair frozen
+CLIP linear head validated at AUC 0.996 but reached only 76% on the opened
+EvalGEN slice. Two- and three-scale Model 1 views reached at most 85% there and
+raised negative FPR to 1.3%; a 50% center crop fell to 57%. A paired-margin tower
+continuation made the same decisions as its ordinary control. Its best arm made
+two repairs against four regressions, while larger margins had no measured
+separation to exploit.
+
+#### Prompt-diverse EvalGEN continuation
+
+The official [EvalGEN dataset](https://huggingface.co/datasets/Junwei-Xi/EvalGEN)
+contains 553 aligned prompt groups and approximately 55,300 JPEG images from
+Flux, GoT, Infinity, OmniGen, and NOVA. Before training, the five viewer-prefix
+prompt groups were reserved as opened development, 300 disjoint prompt groups
+were assigned to training, 100 to a future blind cohort, and 148 left unused.
+One deterministic image per generator and training prompt produced 1,500 unique
+training positives, 300 per generator. Their decoded-pixel hashes had zero
+overlap with the 19,524 unique hashes in the base manifest. The 500-image blind
+cohort was not extracted or scored during the campaign.
+
+A 256-step continuation replaced half of each batch with an EvalGEN positive
+and a text-nearest real training photo. Its neural head moved the opened
+EvalGEN development slice from 88% for the byte-identical control to 95%, while
+the unused 1,000-photo development FPR moved from 1.2% to 1.1%. The signal was
+real, but promotion checks exposed forgetting:
+
+| Candidate | Opened EvalGEN dev | Unused-photo dev FPR | AI-test | Fresh Open Images | FLUX | Kodak |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Canonical ridge on expanded tower | 89% | 0.9% | not run | not run | not run | not run |
+| Expanded neural head, stricter calibration | 92% | 0.7% | 91.13% | 1.57% | 92.0% | 0/24 |
+| Model 1 + expanded rank maximum | 92% | 0.8% | 92.28% | 1.63% | 92.67% | 0/24 |
+| Quarter-dose replay rank maximum | 91% | 0.7% | 92.34% | 1.60% | 90.0% | 0/24 |
+| Soft-distilled quarter replay rank maximum | 90% | 0.8% | 92.07% | 1.40% | 90.67% | 0/24 |
+| 75% base-to-expanded parameter interpolation | 91% | 0.8% | 92.28% | 1.73% | 91.67% | 0/24 |
+| Calibration-budgeted rescue branch | 94% | 1.0% | 92.81% | 2.03% | 93.67% | 0/24 |
+| Quadratic two-score stacker | 92% | 1.0% | 92.60% | 2.27% | 94.0% | 0/24 |
+| Full-dose hard-negative neural head | 100% | 0.8% | 87.72% | 1.37% | 98.0% | 0/24 |
+| Model 1 + full-dose hard-negative rank maximum | 91% | 0.6% | 90.34% | 1.17% | 92.0% | 0/24 |
+| 75% hard-negative parameter interpolation | 90% | 0.6% | 90.60% | 1.20% | 91.33% | 0/24 |
+| Quarter-dose hard-negative neural head | 97% | 0.8% | 88.50% | 1.43% | 97.0% | 0/24 |
+| Model 1 + quarter-dose hard-negative rank maximum | 89% | 0.6% | not run | not run | not run | not run |
+| Conditional Model 1 + quarter-hard branch | 97% | 1.0% | 93.33% | 1.93% | 96.33% | 0/24 |
+
+The ridge gate failed on recall, so it never entered the old full matrix. The
+full-dose neural head and rank fusion reduced fresh errors slightly, but paired
+AI-test changes remained negative: the rank maximum repaired eight Model 1
+misses and broke 22 prior hits. Reducing EvalGEN to one-quarter of each batch
+did not remove the asymmetry. Logit-MSE distillation overconstrained the model
+and collapsed the opened positive recall to 64%; bounded probability-BCE
+distillation retained 95% before strict fusion but still failed the old core.
+Interpolation at 25% and 50% failed development at 89%; 75% passed development
+and then failed every core condition except Kodak.
+
+The rescue cascade allocated a fixed five-error calibration budget between the
+old and new heads. Its conservative selected allocation gave the new branch
+only one error, yet the independent fresh-photo cell rose to 2.03%. Expanding
+calibration to all 6,195 opened public negatives found no budget allocation that
+simultaneously held aggregate FPR at or below 1%, preserved Model 1 AI-test,
+AI-extra, and FLUX recall, and reached 90% on opened EvalGEN. A supervised
+linear/quadratic stacker also failed: the quadratic model passed development at
+92%/1.0%, then raised fresh FPR to 2.27% and reduced AI-test to 92.60% despite
+raising FLUX to 94%.
+
+Hard-negative replay isolated the competing objectives more sharply. A batch
+with two old AI, two EvalGEN AI, two ordinary photos, one prompt-matched photo,
+and one of the top 128 reproducible Open Images false positives produced perfect
+opened EvalGEN recall and 0.8% development FPR. It also gave the campaign's best
+fresh-photo rates, 1.37% for the neural head and 1.17% for its rank fusion, but
+old AI-test recall collapsed to 87.72% and 90.34%. A 75% interpolation retained
+only 90.60% AI-test recall. Thus hard negatives repair the negative contract,
+but do not prevent positive-class forgetting.
+
+A factorial follow-up changed only the positive replay ratio from two old plus
+two EvalGEN images to three old plus one EvalGEN image per batch. Its direct
+neural head reproduced 97/100 opened EvalGEN detections with 8/1,000 photo
+errors under a frozen 99th-percentile calibration. On the old core it repaired
+8 Model 1 AI-test misses but broke 94 prior hits: 1,686/1,905 AI-test images
+(88.50%) remained positive. It improved fresh Open Images from 50/3,000 to
+43/3,000, improved FLUX from 278/300 to 291/300 without a paired regression,
+and kept Kodak at 0/24. The predeclared rank maximum was stricter on development,
+89%/0.6%, and therefore never entered core. This rules out replay ratio alone as
+the missing anti-forgetting mechanism.
+
+A conditional two-branch rule then used a high quarter-hard threshold to add
+new positives and a lower threshold only when Model 1 was already positive.
+Its thresholds were selected from 13,280 admissible combinations on old
+training AI and opened development, never core. It preserved 5,055/5,221 old
+training AI against Model 1's 5,041, retained 97% opened EvalGEN recall at
+1.0% development FPR, and restored the old core positive side: AI-test reached
+1,778/1,905 (93.33%) with six repairs and no regressions, while FLUX reached
+289/300 (96.33%) with 11 repairs and no regressions. The independent negative
+side exposed calibration drift, however. Fresh Open Images rose from 50 to
+58/3,000 errors: one repair against nine new errors, or 1.93% FPR. The route
+separation fixes forgetting, but a single-source negative calibration does not
+yet learn a portable veto.
+
+Broadening that same two-score threshold search did not produce a candidate.
+The frozen contract combined 4,171 negatives from eight public photo cells,
+required aggregate FPR at or below 1%, untouched Open Images train at or below
+1%, every source at or below 2%, preserved old training recall, and retained at
+least 90% opened EvalGEN recall. No threshold pair satisfied all constraints,
+so neither core nor blind was opened. A separate weighted-ridge veto was then
+fit only on Model 1-positive `ai_train` embeddings and 256 hard photos from each
+of the original photo training pool and official Open Images mining pool. None
+of 37,875 penalty/threshold combinations passed the same development contract.
+The best positive-preserving frontier was nevertheless narrow: it retained
+95/100 EvalGEN and exactly matched Model 1 at 667/700 old AI development while
+calling only 18/4,171 aggregate photos AI (0.43%). Six of those errors were in
+the 100-image `open_images_1024` cell, a 6% source-specific rate; every other
+cell ranged from zero to 0.75%. The next ablation is therefore negative dose,
+not another threshold over the same fitted veto.
+
+Increasing the veto fit to 512 and 1,024 hard negatives per source did not move
+the `open_images_1024` failure: its best positive-preserving frontier remained
+6/100 while aggregate photo errors were 17/4,171 and 20/4,171. Route attribution
+showed that all six errors bypassed the veto through the unconditional new-AI
+branch. Raising that branch's score threshold as high as possible while keeping
+90/100 EvalGEN also retained all six. Applying the learned veto conjunctively to
+both branches did not close the gap either. Across 37,875 combinations at each
+hard-negative dose, the positive-preserving frontiers retained 91% EvalGEN and
+95.29-96.0% old-AI development recall but left 6-7% `open_images_1024` FPR. The
+negative-compliant frontiers reduced that cell to 2/100 and aggregate errors to
+5/4,171, but collapsed EvalGEN to 26-39% and old-AI development to 43.57-53.43%.
+The two learned CLIP representations therefore lack a separating direction for
+this source. The next veto must introduce an independent pixel-forensic
+representation rather than more data, thresholds, or routing over these scores.
+
+A metadata-free native-lattice forensic veto then added 47 pixel statistics:
+high-pass amplitude and correlation, CFA phase error, cross-channel residual
+agreement, intensity-conditioned noise, JPEG block phase, clipping, and
+Laplacian energy. It fit on deterministic 2,000-row samples from each old class
+and evaluated 37,875 frozen combinations. No candidate passed. Its best
+positive-preserving frontier reached 90% EvalGEN, 668/700 old-AI development,
+and 32/4,171 aggregate photo errors, but still accepted the same 6/100
+`open_images_1024` rows. The strict negative frontier reached 2/100 there only
+by collapsing to 6% EvalGEN and 187/700 old AI. Native-512 coverage was weak on
+the smaller COCO and general-photo cells, but it was 100% on EvalGEN, old-AI
+development, and the failing exact-1024 cell, so missing features do not explain
+the repeated six errors.
+
+Pixel inspection showed that the six are a semantically diverse and valid
+non-AI set: a scientific illustration, a logo, a studio object, a heavily
+processed fashion image, an abstract long-exposure photograph, and an ordinary
+flower-field photograph. This exposes a scope mistake in the provisional
+negative contract: a universal detector must reject human-created graphics and
+processed imagery as well as camera photographs. Camera-trace absence cannot be
+the general veto. The next hard-negative mining pass must therefore rank public
+negatives by the quarter-hard add score itself; the earlier top-128 replay was
+ranked by Model 1 and did not target the branch now producing errors.
+
+That aligned mining scored the same frozen 4,000-image official mining pool and
+1,000-image holdout with the quarter-hard head. Its top 128 overlapped Model 1's
+top 128 in only 78 rows (Jaccard 0.438), proving that the old mining missed 50
+of the new branch's hardest examples. At the frozen neural threshold,
+quarter-hard called 18/4,000 mining and 3/1,000 holdout images AI, versus Model
+1's 55/4,000 and 13/1,000. Re-fitting the conjunctive linear veto on the
+quarter-ranked negatives still failed at hard-negative doses 256, 512, and
+1,024. The best hard-512 positive frontier retained 91% EvalGEN and 671/700 old
+AI with 45/5,171 aggregate errors and 11/1,000 mining-holdout errors, but still
+accepted 6/100 `open_images_1024`. Its negative-compliant frontier reduced those
+cells to 1/1,000 and 2/100 only by falling to 29% EvalGEN and 302/700 old AI.
+Aligned examples therefore need to change the add representation itself; a
+linear veto over the original Model 1 embedding cannot use them sufficiently.
+
+A second-stage representation update changed only the quarter-hard replay row:
+the hard photo came from the top 128 quarter-hard mining scores instead of the
+top 128 Model 1 scores. The 256-step self-hard arm retained the same 97/100
+EvalGEN recall and 8/1,000 unused-photo errors in both pilot and formal neural
+development. It did not change the source failure. At each head's independently
+frozen 99th-percentile threshold, original quarter-hard and self-hard both
+accepted 11/100 `open_images_1024` rows, with zero repairs, zero regressions, and
+100/100 paired agreement. The self-hard arm therefore failed its source gate
+before old core and blind. Selecting harder examples from the same broad class
+is not equivalent to supplying the missing negative domains.
+
+The first explicit negative-taxonomy audit then froze seven human-created
+domains before scoring: historical camera photographs, drawings, prints,
+manuscripts, paintings, studio-shot objects, and textiles. Its 700 Cleveland
+Museum of Art images were CC0, content-hash unique, and unused by every fitted
+model. Model 1 called 270/700 AI, including 60/100 drawings, 58/100 manuscripts,
+and 46/100 textiles, while accepting 0/100 historical photographs. A second
+source held 350 public-domain Art Institute of Chicago images, 50 per domain;
+after a duplicate-hash guard rejected the first manifest and two repeated
+images were replaced, Model 1 called 85/350 AI. The combined error was therefore
+355/1,050 (33.81%), with 0/150 on the historical-camera control but 82/150 on
+manuscripts and 75/150 on drawings. This is a real non-photo domain failure,
+not a metadata observation or one museum's export artifact.
+
+The direct quarter-hard representation reduced those errors to 163/1,050
+(15.52%). Paired against Model 1, it repaired 201 rows and regressed on nine
+(two-sided sign test `p=2.34e-48`), but its already measured 88.50% AI-test
+recall still disqualifies it. Conditional routing again inherited the baseline
+failure, at 357/1,050. A source-disjoint domain-veto experiment then fit only on
+the Cleveland embeddings and selected its operating point only on AIC plus the
+opened positive development cells. A class-balanced multiclass ridge reduced
+the AIC route from 86/350 errors to 0/350 while retaining 97/100 opened EvalGEN
+and 288/300 FLUX. The frozen core rejected it: AI-test became 1,771/1,905 versus
+Model 1's 1,772 and the conditional route's 1,778, while fresh Open Images
+remained 56/3,000 versus Model 1's 50 and the conditional route's 58. It also
+left the exact-1024 cell at 8/100. The expert learned transferable museum-art
+separation but not the modern logos, composites, product imagery, processed
+photography, and ordinary-photo overlap represented by the public core.
+
+No candidate reached the prompt-disjoint blind cohort. The useful result is a
+bounded representation finding: diverse EvalGEN continuation adds a signal
+that Model 1 lacks, but its current CLIP-L tower and two-score combinations
+cannot add that signal without exchanging old generator recall or photo FPR.
+Hard negatives now provide a stronger non-AI training contract, and conditional
+routing provides the explicit anti-forgetting architecture. Broad calibration,
+a dedicated linear veto, negative-dose scaling, conjunctive routing, a native
+pixel-forensic veto, aligned mining, and self-hard continuation all failed on
+the same source-specific overlap. The negative-taxonomy audit closes the
+historical-art measurement gap but not the modern one. The next bounded campaign
+needs source-disjoint training and validation cells specifically for modern
+logos and graphic design, commercial product cutouts, composites, retouched
+fashion imagery, abstract or long-exposure photography, and ordinary camera
+photos. Another museum-art pool, generic photo pool, CLIP-space threshold,
+binary veto, or replay-ratio change is not sufficient.
+
+The modern-negative audit then filled that gap under the same frozen protocol,
+with two new source-disjoint runs. The first drew 200 photographer-uploaded
+photographs from the official Unsplash Lite dataset, 100 per cell for retouched
+fashion and long-exposure photography, with the Unsplash License recorded per
+row. The second drew 250 CC-licensed Flickr images through the Openverse API,
+50 per cell for modern logo/graphic design, commercial product cutouts,
+composites, and independent fashion and long-exposure replication cells, with
+the exact CC license recorded per row. Both manifests enforce global
+content-hash uniqueness plus perceptual near-duplicate rejection against every
+picsum training cell, because picsum serves Unsplash photography; the Openverse
+curation additionally excludes AI-marker, game-screenshot, and 3d-render
+wording, so those domain labels are query-level rather than hand-verified
+ground truth (46/50 logo-cell titles carry explicit logo or design wording).
+
+Model 1 accepted 85/450 modern negatives, 18.89%. A contamination audit
+then tightened the claim before it was trusted: a provenance-metadata scan of
+all 450 rows with the project's own `identify` command flagged 0/450 (no C2PA,
+SynthID, generator tags, or watermarks), and a date bound re-verified each row
+against the public diffusion era, using the Unsplash submission date or the
+Openverse `indexed_on` date. All 450 rows received a date; 421 predate
+2022-08-01 and 29 post-date it, and the 29 were dropped. The correction was
+material in exactly one cell: the Flickr fashion replication cell's 10 errors
+became 2, because 8 of them sat in post-2022 uploads that are plausibly real
+generations. On the date-clean 421 rows Model 1 accepted 69 (16.4%). The
+failure concentrates in stylized graphics and processed photography:
+logo/graphic design 18/47 (38.3%), retouched fashion 30/88 on the pre-2022
+Unsplash cell (34.1%; the Flickr replication cell fell to 2/40, so fashion is
+source-dependent rather than uniformly failing), and product cutouts 8/50
+(16.0%, unchanged). Long exposure stayed comparatively clean at 11/146 (7.5%)
+and composites at 0/50. Direct quarter-hard reduced the clean total to 47/421,
+repairing 27 rows and regressing five (sign test `p=1.13e-04`), repeating the
+museum pattern: it
+helps every human-made domain while its measured 88.50% AI-test recall still
+disqualifies it. Conditional routing inherited the baseline again at 86/450.
+The two audits together bound the whole negative space: Model 1 fires on
+stylized human graphics, logos, product cutouts, retouched fashion, and
+historical art, while staying far cleaner on historical, composite, and
+long-exposure photography and on ordinary camera photographs.
+
+The measured cells then fed the same source-disjoint veto recipe the museum
+audit used: pooled, per-domain, and multiclass ridge vetoes fit only on the
+235 date-clean Openverse embeddings, with the threshold selected only on the
+independent 186-image date-clean Unsplash run and applied to the frozen
+conditional route. Of the searched candidates, none satisfied both the
+negative cap (at most four dev errors) and the positive floor (95/100
+EvalGEN, 287/300 FLUX); the full-run variant with contaminated rows reached
+the same verdict over 5,265 candidates. The exchange curve shows why: at
+positive compliance the best reachable dev error count is 41/186, meaning
+zero of the route errors are repaired, while repairing roughly 39 of them
+drops EvalGEN to 40/100 and FLUX to 162/300. Across the whole grid, every
+repaired modern negative costs roughly 1.3 to 1.5 AI positives. The two
+audits
+therefore produced two different failure modes for the same recipe: museum art
+is linearly separable from AI in this embedding and fails only on transfer,
+while modern negatives are not separable at all. This closes the linear-veto
+family over the frozen Model 1 CLIP-L embedding for the modern domains as well
+and confirms the earlier aligned-mining finding: the add representation itself
+must change, not the example selection or the veto geometry.
+
+A taxonomy continuation then changed the training mix itself instead of the
+veto: two arms re-ran the expanded quarter-hard recipe (ordinary AI replay,
+EvalGEN pair positives, ordinary photos) with one or two of the eight negative
+slots per batch drawn from the date-clean taxonomy pool (Cleveland museum plus
+Openverse modern cells), 256 steps, thresholds calibrated at the 99th
+percentile of `photo_dev_oi`. Both arms retained the positive contract
+(EvalGEN 97-99/100, FLUX 289/300) and repaired the museum half (AIC dev
+4/350), but the modern half did not move: fashion stayed at 33-35/88 on the
+date-clean Unsplash cell against a 30/88 baseline, and long exposure at
+11-12/98. Training on 40 date-clean Flickr fashion rows does not transfer to
+Unsplash fashion, which mirrors the veto finding from the optimization side.
+The development domain gate therefore fails on fashion for every arm, and no
+arm reached the frozen core cells. With the linear-veto family, aligned
+mining, self-hard continuation, and now in-mix taxonomy continuation all
+closed on the same source-specific overlap, the CLIP-L program for the modern
+negative domains is measured as exhausted: representation change is not one
+more operating point away.
+
+Local reproducibility artifacts are under
+`.local-eval/synthid/ai-photo-2026-08-22/`, especially the
+`paired-reconstruction`, `open-images-train-mining`, `evalgen-expanded`,
+`evalgen-quarter`, `evalgen-rescue`, `evalgen-stacker`,
+`negative-taxonomy-audit-2026-08-25`, `negative-taxonomy-aic-audit-2026-08-25`,
+`modern-negative-unsplash-2026-08-26`, `modern-negative-openverse-2026-08-26`,
+`modern-domain-veto-2026-08-26`, `modern-domain-veto-clean-2026-08-26`,
+`contamination-scan-2026-08-26`, and `taxonomy-continuation-clean-2026-08-26`
+run directories.
+
+### Wild extras, not SynthID
+
+| Hypothesis | 2026-08-23 | Use |
+| --- | --- | --- |
+| Missing camera PRNU | Gray `gpt-image-2` highpass RMS 0.25 vs COCO 14.6 | Texture confound. A Wiener PRNU residual on *photographs* vs Model 1 errors is the real test |
+| JPEG ELA | COCO 3.13, s1 1.97, gray stamp 0.49 | Export history, leaks PNG vs JPEG, not a provider |
+| CFA / Bayer presence | Photo-edit ratio 0.117 vs camera 0.184 vs gray 0.588 | Weak camera vote, overlap. Inverse of the Bayer remover |
+| Double-JPEG ghosts | s1 / gpt-image-2 / camera all min at Q90 | Codec, not a provider |
+| Perfect-circle / text-edge rate | Circles/MP 385 vs 536, edge 0.052 vs 0.072 | Too noisy for abstain |
+| Wiener PRNU on photographs | Edits 4.61 vs camera 8.05 | Donor JPEG texture leftover, not a missing sensor |
+| PNG Paeth filter mix | gpt-image-2 PNG 99.9% Paeth vs camera 73% | Export fingerprint |
+
+None of these should be named a SynthID score.
+
+## External literature (surveyed 2026-08-23)
+
+AWPD / FSNet ([arXiv:2603.06723](https://arxiv.org/abs/2603.06723)) is
+the published "is there any invisible watermark" task. Leave-one-algorithm-out
+SynthID Acc 0.894 is *not* Model 1 and *not* a payload decoder. UniFreq's
+SynthID split is 2,000 Imagen-API AIGC crops at 256x256, no photographs,
+no Firefly, no OpenAI. A head trained that way can pass as watermark
+presence while actually reading generator/size texture, which is the L1
+failure mode.
+
+Model 1 remains AI-versus-camera on CLIP-L-ft. That is a published
+task, not a watermark task. Adjacent papers:
+
+| Source | Claim | Map to Model 1 |
+| --- | --- | --- |
+| Ojha, Li, Lee, [arXiv:2302.10174](https://arxiv.org/abs/2302.10174) (CVPR 2023, UnivFD) | A classifier trained to see "fake" treats unseen generators as the real sink. Frozen CLIP + nearest neighbor / linear probe generalizes better than a trained CNN | This is the architecture. We finetuned the last two CLIP-L vision blocks instead of freezing, and put Firefly and a locked Open Images fresh set in the gate |
+| Cozzolino et al., [arXiv:2312.00195](https://arxiv.org/abs/2312.00195) | CLIP linear probe, few shots from one generator, holds on DALL-E 3 / Midjourney / Firefly | Firefly is the cell we required. Their paper is why Firefly belongs in the test, not as a surprise |
+| Corvi et al., [arXiv:2304.06408](https://arxiv.org/abs/2304.06408) | Spectral peaks and mid-high power differences, GAN and diffusion | Generator fingerprint, not a payload. Explains why a Fourier codebook lights up Google *and* Open Images |
+| Zhong, Xu, Zou, [arXiv:2601.22778](https://arxiv.org/abs/2601.22778) (DCCT) | Self-supervised color-channel prediction under a Bayer mask; theoretical gap between photo CFA correlations and AIGC | Local Bayer interpolation-error ratio: edits 0.117 vs camera 0.184. Weak vote, not a payload |
+| Klier and Baier, DFRWS EU 2026 | AI noise is not predominantly additive. Standard PCE vs smartphone PRNU: FPR 61% Firefly Image 4, 100% ChatGPT 5. Center crop kills those false positives without hurting true camera matches | Do not call missing PRNU a SynthID score. If we ever add a Wiener residual, crop and a recorded PCE threshold come with it |
+| Popescu and Farid, IEEE Trans. Signal Process. 2005 | CFA interpolation leaves neighbor correlations; splicing breaks them | Classical forgery localization, not generation detection |
+| Wang, Wang, Zhang, Owens, Efros, [arXiv:1912.11035](https://arxiv.org/abs/1912.11035) (CVPR 2020, CNNDetect) | Classifier on ProGAN + JPEG/crop aug transfers to many CNNs | The "one generator is enough" claim. Ojha is the correction once diffusion exists |
+| Wang et al., DIRE, [arXiv:2303.09295](https://arxiv.org/abs/2303.09295) (ICCV 2023) | Reconstruction error under a frozen diffusion model | SDXL float32 at 512. VAE RMS: camera 11.84, photo edit 9.89, s1 9.15, gray stamp 1.24. DDIM DIRE RMS: camera 33.0, s1 31.5, photo 30.9, gray 2.40. Texture rank, not a payload. Float16 DDIM NaN'd on MPS |
+
+They do not substitute for `verify-openai-synthid`.

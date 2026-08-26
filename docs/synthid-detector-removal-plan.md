@@ -5,7 +5,8 @@
 > first:
 >
 > - [SynthID local detector research](synthid-detector-research.md)
-> - [Classifier models](synthid-classifiers.md)
+> - [AI-generated image classifiers](ai-generated-image-classifiers.md)
+> - [SynthID source classifiers](synthid-classifiers.md)
 > - [SynthID mark removal research](synthid-removal-research.md)
 >
 > Shipped behavior remains in [supported signals](supported-signals.md),
@@ -435,7 +436,7 @@ surfaces as separate strata because their export and metadata paths differ.
 
 The research harness remains outside the public API until the gates pass.
 
-1. **Implemented:** use the private corpus schema and auditor documented in
+1. **Implemented:** use the research corpus schema and auditor documented in
    [`data/synthid/research-manifest.md`](../data/synthid/research-manifest.md) to
    record provider, surface, model epoch, session, content stratum, parent hash,
    transform lineage, separate C2PA and SynthID outcomes, oracle session, and
@@ -5234,7 +5235,8 @@ small-on-canvas stay presentation bypasses, not removers.
 
 ### 2026-08-22: Model 1 result, provider CLIP, lattice re-check, Bayer close
 
-Numeric log: [`docs/synthid-classifiers.md`](synthid-classifiers.md) and
+Numeric log: [`docs/ai-generated-image-classifiers.md`](ai-generated-image-classifiers.md),
+[`docs/synthid-classifiers.md`](synthid-classifiers.md), and
 [`docs/synthid-removal-research.md`](synthid-removal-research.md).
 
 Model 1 is the AI-versus-camera research result, not a watermark detector.

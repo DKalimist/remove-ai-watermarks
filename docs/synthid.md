@@ -5,7 +5,7 @@
 > [supported signals](supported-signals.md), [known limitations](known-limitations.md),
 > and [module internals](module-internals.md). Campaign results are split:
 > [local detector](synthid-detector-research.md),
-> [classifier models](synthid-classifiers.md),
+> [SynthID source classifiers](synthid-classifiers.md),
 > [mark removal](synthid-removal-research.md). Dated measurements below are
 > historical evidence and should not be read as current CLI defaults.
 

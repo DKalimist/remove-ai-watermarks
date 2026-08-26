@@ -717,8 +717,8 @@ contribution is the solid-reference phase-consensus construction, not either
 published single-image threshold. Full methodology and the DALL-E reference-set
 confound are recorded in the detector research plan.
 A later exact repeat on the hash-disjoint v7 challenge confirmed the same
-failure: the published cut accepted 77/200 Google, 76/200 OpenAI, and 27/64
-personal cameras, for Google-versus-OpenAI/camera AUC 0.510.
+failure: the published cut accepted 77/200 Google and 76/200 OpenAI, so it did
+not separate the two target providers.
 A direct exact-1024 reproduction of the same V4 artifact confirmed rather than
 rescued that verdict: the union of its two published profiles accepted 177 of
 443 Google rows and 60 of 162 controls. The artifact's floor left only about two

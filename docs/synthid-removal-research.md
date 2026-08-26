@@ -6,7 +6,7 @@
 > [known limitations](known-limitations.md).
 >
 > Sister pages: [SynthID local detector](synthid-detector-research.md),
-> [classifier models](synthid-classifiers.md),
+> [SynthID source classifiers](synthid-classifiers.md),
 > [mechanism reference](synthid.md).
 
 ## Result
