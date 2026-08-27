@@ -694,6 +694,89 @@ family over the frozen Model 1 CLIP-L embedding for the modern domains as well
 and confirms the earlier aligned-mining finding: the add representation itself
 must change, not the example selection or the veto geometry.
 
+### Wild vendor-flagged AI, 2026-08-27
+
+A free wild-AI positive cell came from the stock providers behind the private
+veedma-blog image pipeline. Pixabay exposes a vendor-declared
+`isAiGenerated` flag and the query `ai generated` surfaces that pool (3,287
+results); 284 content-hash-unique rows were harvested (300 minus 16 lost to a
+duplicate-download bug, since fixed, manifest repaired to on-disk truth). The
+vendor flag is ground truth for AI-versus-human, not for the renderer, so the
+cell is eval-only. A metadata scan found 0/284 provenance signals (the stock
+CDN strips everything), making it a pure pixel task. Scored with frozen
+classifiers that never saw stock-site content, this produced the first
+source-disjoint wild-AI recall measurement: Model 1 accepted 183/284 (64.4%)
+at its frozen 1%-FPR threshold, far below its 93.0% curated AI-test recall
+(median score 0.43 above the 0.306 threshold, but a quarter of the cell scores
+below 0.13). Wild AI images of unknown renderers, re-encoded by a stock
+pipeline, are therefore a genuinely harder positive distribution, and curated
+test recall does not bound deployment recall. The frozen provider cascade
+under its photo-first margin called 255/284 `no_ai` with only 1 `openai`
+and 0 `meta` calls, so unknown-renderer AI does not fabricate provider
+attributions; under argmax it leans `google` (199) without evidence. The cell
+joins the dataset as the first wild-AI eval row source. Artifacts:
+`pixabay-ai-positive-2026-08-27/` (manifest, images,
+classification-report.json).
+
+A bias audit then rejected that cell's composition, though not its verdict:
+147/284 rows (52%) came from a single contributor and every row from one
+query, so the 64.4% recall was one author's dump plus a tail. Model 1 recall
+split 63.3% on that contributor versus 65.7% on the rest, so difficulty was
+homogeneous, but the sample was not. A stratified reharvest capped at 15 rows
+per contributor over eight AI-marker queries produced 300 unique images from
+180 contributors (top-10 share 33%) with the same sieves. On the balanced
+cell the frozen numbers are: Model 1 recall 209/300 (69.7%, median score 0.482,
+lowest quartile below 0.144), direct quarter-hard 189/300 repairing 22 Model 1
+misses and losing 2 (the one place the quarter representation still helps),
+conditional routing 210/300 adding one repair and nothing else, provider
+cascade margin 252/300 `no_ai` with 1 `openai` call, and 0/300 metadata
+signals. The wild-AI recall ceiling under Model 1 therefore settles near
+65-70% rather than 93%, robust to contributor stratification; unknown-renderer
+AI re-encoded by stock pipelines is the largest measured positive-side gap.
+Artifacts: `pixabay-ai-stratified-2026-08-27/` (the eval cell the dataset
+keeps; the first harvest is retained only as the audit trail of the bias
+finding).
+
+The stock-negative harvest from the same providers then tripled the modern
+negative cells under identical sieves: 150 Pixabay product cutouts
+(vendor `isAiGenerated=false`), 150 Pixabay fashion rows, and 152 Unsplash
+API fashion rows date-bounded before 2022-08-01 (452 total, 0/452 metadata
+signals, all content-hash unique). Frozen Model 1 false-positive rates on
+them: product cutouts 40/150 (26.7%), Pixabay fashion 93/150 (62.0%),
+Unsplash fashion 108/152 (71.1%). The fashion failure is therefore larger
+than the earlier 34% measured on the 88-row date-clean cell and holds across
+three independent sources; retouched fashion photography is now the single
+worst negative domain for Model 1. The provider cascade stays quiet on all
+three cells (no_ai 126/150, 105/152, 99/150; at most 15 stray `google` calls,
+no openai or meta fabrications). A second stochastic pass over the Meta
+muse-image-1.0 grid added 61 more API generations with zero hash overlap
+with pass one (corpus now 127 + 5 checkout originals), moving the Meta class
+toward margin calibrability. Artifacts:
+`stock-negative-2026-08-27/`, `meta-muse-corpus-pass2-2026-08-26/`.
+
+The combined-pool control then separated the data question from the geometry
+question: refitting the same pooled/domain/multiclass ridge vetoes on a
+687-row modern-negative pool (Openverse-clean plus all three stock cells,
+three times the original fit size) reproduced the earlier Pareto curve to the
+point: at positive compliance the best dev error count stayed 41/186 with
+zero route errors repaired, and every repaired negative still cost about 1.4
+AI positives. The linear-veto failure over the frozen Model 1 embedding is
+therefore not a data-volume artifact; tripling diverse negatives moves
+nothing. Artifacts:
+`modern-domain-veto-combined-2026-08-27/` (development report and pareto).
+
+The doubled Meta corpus then allowed its own margin sweep (127 API rows in
+the bank after feature extraction, 25 repeated splits, photo leak measured on
+held-out no_ai rows). The curve is steep exactly where the frozen 0.50 margin
+sat: margin 0.00 recalls 92.2% meta at 5.3% photo AI-rate, 0.10 gives 90.1%
+at 3.6%, 0.20 gives 85.2% at 2.2%, then the cliff: 0.30 falls to 70.2%, 0.40
+to 39.4%, and the frozen 0.50 lands at 12.4%. A workable photo-safe
+operating point exists at margin 0.20 (85% meta recall at 2.2% photo leak),
+but 2.2% is still thirty times the Model 1 photo contract, so for provider
+attribution the honest rule stays argmax until an external held-out meta cell
+exists. The margin, not the head, was always the limiter on the small class.
+Artifacts: `meta-margin-2026-08-27/report.json`.
+
 A taxonomy continuation then changed the training mix itself instead of the
 veto: two arms re-ran the expanded quarter-hard recipe (ordinary AI replay,
 EvalGEN pair positives, ordinary photos) with one or two of the eight negative

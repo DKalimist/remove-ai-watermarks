@@ -689,12 +689,22 @@ def test_non_divisible_fold_matches_modulo_cell_means() -> None:
     rng = np.random.default_rng(44041)
     pixels = rng.integers(0, 256, size=(53, 71, 3), dtype=np.uint8)
     source = pixels.astype(np.float32)
-    residual = source - cv2.GaussianBlur(
-        source,
-        (0, 0),
-        sigmaX=1.25,
-        sigmaY=1.25,
-        borderType=cv2.BORDER_REFLECT_101,
+    # Mirror the module's documented per-channel blur: OpenCV's multi-channel
+    # GaussianBlur is not bit-identical to per-channel calls (observed 3e-5 on
+    # cv2 4.10.0), so a three-channel reference cannot satisfy atol=0.
+    residual = np.stack(
+        [
+            source[:, :, channel]
+            - cv2.GaussianBlur(
+                source[:, :, channel].copy(),
+                (0, 0),
+                sigmaX=1.25,
+                sigmaY=1.25,
+                borderType=cv2.BORDER_REFLECT_101,
+            )
+            for channel in range(3)
+        ],
+        axis=2,
     )
     expected = np.empty((16, 16, 3), dtype=np.float64)
     for tile_y in range(16):

@@ -37,6 +37,71 @@ Firefly gate. CLIP-L-ft test accuracy 0.53; Firefly 35/31/18. CLIP-H 0.57;
 Firefly 36/33/15. OpenAI versus Gemini AUC on CLIP-L-ft is 0.845; on the
 124-d lattice bank it is 0.989. They are two pipelines, not one class.
 
+### Renderer, not front-end (cross-carrier validation, 2026-08-26)
+
+The Spaces catalog's C2PA issuer field allows a provider-label audit the
+family labels cannot express: Bing Image Creator rows signed `Microsoft,
+OpenAI` (renderer DALL-E, n=152), Microsoft-native rows (MAI-Image / Designer,
+n=85), Designer rows signed `Microsoft, Google LLC` (renderer Imagen, n=36),
+and the unattributed Instagram `made_with_ai` label set (n=275). Scored with
+the frozen 124-feature openai/google/no_ai cascade, no training, metadata
+used only to build cells: argmax called 124/152 (81.6%) of the Bing+DALL-E
+cell `openai` and 34/36 (94.4%) of the Microsoft+Imagen cell `google`. Pixel
+attribution therefore tracks the renderer behind the front-end, which is the
+correct semantic for a stripped file: a Bing export is an OpenAI-rendered
+image. The Microsoft-native cell split 48 openai / 35 google, consistent with
+Designer historically routing between DALL-E and Imagen rather than one
+pipeline. The Instagram `made_with_ai` set is not a Meta pixel class: argmax
+leaned `google` at 196/275 with 68 `openai`, and the photo-first 0.50 margin
+sent 182/275 to `no_ai`, so the label marks detected AI content of mixed
+origin, not Meta-rendered pixels. A real Meta class needs fresh
+`Imagined with AI` generations with known provenance; the catalog label is
+not one. Artifacts:
+`provider-renderer-cells-2026-08-26/report.json`.
+
+### A Meta class from muse-image-1.0, 2026-08-26
+
+The Meta Model API (`api.meta.ai/v1`, OpenAI-compatible images endpoint) made
+a known-provenance Meta corpus possible without any account browser session:
+61 images generated from a 61-prompt grid spanning portraits, product shots,
+scenes, food, animals, architecture, illustration styles, text posters, and
+abstract work across all three aspect ratios, plus the five oracle-verified
+samples already in `data/contentseal/originals/`. All 66 are content-hash
+unique, delivered at 1600x1600 / 1920x1280 / 1280x1920, and every API row
+carries IPTC `trainedAlgorithmicMedia` plus a Content Seal generation id
+recorded in the manifest. A four-head control with a `microsoft_native` class
+(83 issuer-verified rows) failed first: repeated-split argmax recall 0.38 mean
+with 0.16-0.56 spread, because Designer routes between renderers and the class
+is mixed. The same recipe with `meta_muse_image` in its place holds: argmax
+recall 0.86 mean (0.75-1.00) on just 66 images, openai 0.952 and google 0.956
+unharmed, and the frozen cross-carrier cells keep their renderer semantics
+(Bing+DALL-E 119/146 openai, Microsoft+Imagen 32/36 google) with only small
+meta leakage (14 and 3 argmax rows). The class label names what the corpus is:
+muse-image-1.0 API output, not the unverified assumption that the consumer
+Imagine feature renders identically. The full-data model calls 59/66 meta rows
+correctly, with seven leaking to google and none to openai. The photo-first
+0.50 margin does not transfer to a 66-image class (0.398 mean recall); argmax
+is the honest operating rule until the corpus grows. Muse Image is therefore
+a separable fourth provider class on pixels, unlike the Microsoft front-end.
+Artifacts: `meta-muse-corpus-2026-08-26/`, `four-head-provider-2026-08-26/`,
+`meta-provider-cells-2026-08-26/`.
+
+A paired chat-vs-API check then closed the label question. Two prompts from
+the API grid (weathered fisherman portrait, white-sneaker product shot) were
+submitted to the consumer Meta AI chat imagine flow in the user's own logged-in
+browser session; the chat delivered 1280x1920 and 1920x1280 WebP files from the
+`t39.105495-1` CDN family, each carrying IPTC `trainedAlgorithmicMedia` in the
+downloaded bytes. Scored by the frozen API-trained four-head model, which had
+never seen a chat image: both chat rows landed on `meta_muse_image` under
+argmax (0.251 and 0.233) with score profiles matching their API twins almost
+exactly, and the margin rule agreed pairwise (fisherman meta at margin, sneaker
+no_ai at margin 0.50, same as its API counterpart). The chat imagine pipeline
+and `muse-image-1.0` are therefore pixel-indistinguishable to the provider
+classifier on this pair, so `meta_muse_image` honestly names both
+distributions. Caveat: n=2 paired prompts from one session; this is a
+consistency result, not a deployment-scale equivalence claim. Artifact:
+`meta-chat-check-2026-08-26/`.
+
 Collapsing OpenAI and Gemini into one pixel class versus other generators
 does not fix that. Binary ridge AUC 0.686, TPR 75% at FPR 45%. Canva 98%,
 Microsoft 75%, Firefly 68% leak into the union; FLUX HF hold stays out at
