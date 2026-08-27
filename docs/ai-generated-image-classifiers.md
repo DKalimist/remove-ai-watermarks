@@ -777,6 +777,27 @@ attribution the honest rule stays argmax until an external held-out meta cell
 exists. The margin, not the head, was always the limiter on the small class.
 Artifacts: `meta-margin-2026-08-27/report.json`.
 
+## Representation-change campaign closed, 2026-08-27
+
+A pre-registered two-candidate campaign (plan in `data/research/REPRESENTATION-CAMPAIGN.md`,
+gates declared before any run: AI-test at least 1,772/1,905, fresh Open
+Images at most 50/3,000, Kodak 0/24, FLUX at least 288/300, EvalGEN at least
+95/100, no tuning) tested the two remaining representation families.
+Candidate 1, a DINOv2-L ridge head (224 px CLS embeddings, nested-CV penalty),
+failed all five gates simultaneously: AI-test 1,427/1,847, fresh 162/3,000,
+Kodak 1/24, FLUX 29/300, EvalGEN 5/100 — the frozen DINOv2 space separates AI
+from photos far worse than fine-tuned CLIP-L everywhere. Candidate 2, a
+patch-level FFT tower on the DDA paired-reconstruction contract (1,024 fresh
+sd-vae-ft-mse pairs, real 0.549 versus reconstruction 0.457 medians, 0.949
+pairwise separation), learned its contract perfectly and still collapsed on
+transfer: AI-test 14/1,847, FLUX 0/300, EvalGEN 0/100, because production
+generators do not carry this VAE's reconstruction signature. The declared
+falsification criterion triggered: neither family is the missing lever, and
+the general metadata-free AI-versus-human classifier at the product contract
+is beyond local scale as pursued. The product keeps the documented-remainder
+contract; Model 1 stays the accepted research operating point with its
+measured bounds. Reopening requires a materially new lever.
+
 A taxonomy continuation then changed the training mix itself instead of the
 veto: two arms re-ran the expanded quarter-hard recipe (ordinary AI replay,
 EvalGEN pair positives, ordinary photos) with one or two of the eight negative
