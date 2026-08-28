@@ -893,6 +893,20 @@ contract, consistent with every previous finding: CLIP-L encodes appearance,
 not provenance, and no head on top of it can satisfy both contracts
 simultaneously.
 
+### Y-phase campaign: frequency convention fix, 2026-08-27
+
+The initial Y-phase campaign used FFT bin indices (16-32) instead of spatial
+periods (16-32 pixels = 1/32 to 1/16 cycles/pixel), targeting the wrong band
+at native resolution. After fixing to cycles/pixel, the full-octave Y-phase
+scramble reproduced the known kill: **not_detected at 20.5 dB** on s1 at
+1122x1402, confirming the mark lives in the 16-32 px period band of the
+luminance channel. Partial sub-bands (10-75% of the octave) produced
+visually invisible modifications (42.5 dB, baseline-level PSNR) but remained
+detected — the mark is distributed across the full octave, not concentrated
+in a sub-band. Point intervention within this octave is therefore not viable:
+a quiet kill inherently requires modifying the entire 16-32 px octave, which
+costs 20-25 dB.
+
 The combined-pool control then separated the data question from the geometry
 question: refitting the same pooled/domain/multiclass ridge vetoes on a
 687-row modern-negative pool (Openverse-clean plus all three stock cells,
