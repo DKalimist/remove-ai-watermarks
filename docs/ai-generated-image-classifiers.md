@@ -754,6 +754,99 @@ with pass one (corpus now 127 + 5 checkout originals), moving the Meta class
 toward margin calibrability. Artifacts:
 `stock-negative-2026-08-27/`, `meta-muse-corpus-pass2-2026-08-26/`.
 
+### Documents and receipts, 2026-08-27
+
+Two public pre-diffusion research datasets filled the unmeasured document
+domain: CORD-v2 thermal-printed photographed receipts (99 rows) and FUNSD
+scanned forms (150 rows), both provenance-metadata-clean on a spot scan. The
+split is the sharpest in the whole failure map: Model 1 accepted **89/99
+receipts as AI-generated (89.9%, score median 0.469 against the 0.306
+threshold)** while form scans stayed near the contract at 5/150 (3.3%,
+median -0.001). Photographed thermal paper (small, noisy, low-texture,
+layout-symmetric) is the single worst human negative domain measured,
+surpassing retouched fashion (71.1%); clean high-fidelity scans pass. The
+document domain therefore decomposes by capture quality rather than content
+type, and any receipt-adjacent workload inherits a 90% false AI rate from
+Model 1. Artifacts: `documents-negative-2026-08-27/`.
+
+Diagnostics then fixed what can be done about it. Receipt embeddings sit
+**99.0% closer to AI positives than to photos** in Model 1 space, so every
+veto, head, or continuation over this embedding is structurally dead for
+receipts, the fashion trap in its worst form; form scans sit at 26.7% and are
+fine. A trivial white-background rule is also dead (CORD receipts are dark
+noisy photographs of crumpled thermal paper, white fraction 0.021, at photo
+levels). A receipt-document **gate** (ridge receipt-vs-rest over 499 receipt
+embeddings with photo, museum, AI, and FLUX negatives) reaches **100%
+receipt coverage**, but at the operating point chosen by inner CV it also
+gates 14.4% of AI-test, 12.0% of FLUX, and 2% of EvalGEN, with family losses
+up to 25.3% (fal) and 25.2% (xAI) — infographic-like generators trip the
+document gate. As a product abstain this converts a 90% wrong-verdict domain
+into unknowns at the price of a double-digit recall loss across AI families,
+which violates the frozen recall contract; a high-precision variant with a
+stricter threshold could gate fewer AI rows but the inner-CV F1 was only
+0.444, so precision headroom is thin. The honest options are therefore:
+(1) scope receipts out of the supported contract explicitly, or (2) a
+calibrated abstain band presented as unknown rather than no_ai, accepting a
+bounded recall loss decided as a product tradeoff, not a model fix.
+Artifacts: `receipt-gate-2026-08-27/report.json`.
+
+Batch-1 then filled four more unmeasured domains under the same sieves
+(428→421 rows after phantom repair: UI screenshots from own products, 150;
+Danbooru community digital art, 145; software-rendered matplotlib charts,
+82; OpenStreetMap tiles, 44). Frozen Model 1 false-positive rates: **UI
+screenshots 149/150 (99.3%)**, **digital art 144/145 (99.3%)**, charts 55/82
+(67.1%), map tiles 21/44 (47.7%). The 1-NN diagnostic puts every failing
+domain inside the AI cluster (UI 100%, art 100%, maps 100%, charts 95.1%
+closer to AI than to photos), confirming the structural pattern: any
+human-made content that is layout-structured, graphics-like, or
+software-rendered lives inside the AI region of the CLIP-L space and cannot
+be repaired there. Combined with receipts (89.9%), fashion (62-71%), logos
+(38%), and museum art (33.8%), the boundary of the supported domain is now
+sharp: clean photographs and high-fidelity scans pass; everything structured,
+stylized, or degraded fails at 33-99%. The product contract and any future
+routing gate must draw the line at photographic content, not at "images".
+Artifacts: `batch1-negative-2026-08-27/`.
+
+### Batch-2 and the full failure map, 2026-08-27
+
+Batch-2 added four more domains under the same sieves (memes from imgflip
+top-100, whiteboard photos, ticket/stamp scans, book pages; 396 rows):
+memes 58/97 (59.8%), book pages 27/100 (27.0%), whiteboards 3/100 (3.0%),
+tickets 3/99 (3.0%). Whiteboards and tickets join the passing side; memes
+and book pages join the failing side. The complete failure map now covers
+**20 measured negative domains**.
+
+### H2 domain router falsified, 2026-08-27
+
+A binary photographic-vs-structured router on Model 1 embeddings, trained on
+all 16 failing domains vs photo cells, reached 98.2% structured coverage and
+4.4% photo false-structured rate, but routed **97.9% of AI-test and 98.0% of
+FLUX as structured**: every AI family (94.3-100%) looks non-photographic to
+the router. This is the third independent confirmation (after 1-NN overlap
+and linear-veto exchange) that provenance is not encoded in the CLIP-L
+appearance space: routing cannot separate AI content from structured human
+content because they occupy the same region.
+
+### H3 process detector: generator-specific traces do not transfer, 2026-08-27
+
+Contrastive pairs (same content, different process) were generated from 125
+source images across five domains (charts, logos, art, documents, UI), each
+recreated by three generators: OpenAI gpt-image-1-mini (edits/img2img), Meta
+muse-image-1.0 (prompt), and Gemini 2.5-flash-image (prompt), totaling 369
+pairs. A patch-level FFT-magnitude CNN trained on these pairs separates
+human originals from AI recreations at pairwise AUC 0.909 (0.885 with two
+generators, 0.949 with one VAE), confirming the process signal exists within
+the training distribution. Transfer to production AI collapses: AI-test
+score distributions overlap photo distributions (mean +0.013 to +0.026 above
+photos), giving AUC 0.55-0.60 — near chance — while human receipts score
++0.095 above photos, higher than any AI family. Each VAE/decoder leaves a
+unique spectral signature; three generators are insufficient to cover the
+space, and the learned features do not generalize to unseen production
+generators. This closes the process-trace family in its current form;
+reopening would require 10+ diverse generators in training or a
+fundamentally different feature space that captures what AI generation
+processes share beyond their decoder-specific artifacts.
+
 The combined-pool control then separated the data question from the geometry
 question: refitting the same pooled/domain/multiclass ridge vetoes on a
 687-row modern-negative pool (Openverse-clean plus all three stock cells,
