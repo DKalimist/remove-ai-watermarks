@@ -847,6 +847,52 @@ reopening would require 10+ diverse generators in training or a
 fundamentally different feature space that captures what AI generation
 processes share beyond their decoder-specific artifacts.
 
+### Provider cascade across all 20 domains, 2026-08-27
+
+The frozen provider cascade (margin 0.50) was scored on every measured
+negative and positive domain. Photo negatives are quiet (COCO 0.7% stray,
+Kodak 0%), museum/modern/stock cells leak 2.9-11.9% into `google` (mostly
+stylized content that pattern-matches Imagen), but documents are the
+exception: **69.8% of document/receipt content receives a stray provider
+call** (48 openai, 19 google out of 96), and batch-2 content (memes, tickets,
+whiteboards, book pages) leaks 27.0% (35 google calls out of 137). Wild AI
+leans google at 15.1% with only 1 openai call. The provider cascade is
+therefore safe on photographic content, partially safe on stylized content,
+and unsafe on document-like content — mirroring the Model 1 failure map. A
+production integration of the provider layer must gate on the same
+photographic-content condition as the detector itself.
+Artifacts: `provider-all-domains-2026-08-27/report.json`.
+
+### Research-driven hypotheses H4-H6, 2026-08-27
+
+Three approaches from 2025 literature (C2P-CLIP prompt learning from AAAI,
+spectral invariant from CVPR, TTA voting) were run against the frozen gates.
+
+**H4 (MLP prompt-probe on frozen CLIP, C2P-CLIP inspired):** a two-layer
+MLP trained on frozen CLIP-L embeddings improves AI-test recall to
+1,878/1,905 (98.6%, gate passed) and FLUX to 298/300, but at the cost of
+fresh Open Images 473/3,000 (15.8% FPR, gate failed) and Kodak 6/24. The
+nonlinear head trades photo safety for recall — same direction as quarter-hard
+but via MLP instead of continuation. Gates: 2/4 passed.
+
+**H5 (spectral invariant, CVPR 2025):** radial power-spectrum deviation from
+a camera-image reference detected only 7/297 AI-test (2.4%) and 1/300 FLUX.
+The 1/f^alpha spectral profile does not discriminate current AI generators
+from camera photos at any useful operating point. Gates: 0/4 passed.
+
+**H6 (TTA voting, 6 views):** averaging scores over center + 4 corners + flip
+preserves photo gates (fresh 5/300, Kodak 0/24) but reduces AI-test from
+273→264 and does not rescue any negative domain: documents still 65/80 FP,
+batch1 80/80, museum drops to 1/80 but fashion stays 14/80. TTA helps museum
+but hurts everything else. Gates: 2/4 passed (AI-test and fresh marginally,
+Kodak and FLUX lost).
+
+All three hypotheses are closed. The H4 MLP is the strongest non-continuation
+result (98.6% AI-test recall from frozen embeddings) but fails the photo
+contract, consistent with every previous finding: CLIP-L encodes appearance,
+not provenance, and no head on top of it can satisfy both contracts
+simultaneously.
+
 The combined-pool control then separated the data question from the geometry
 question: refitting the same pooled/domain/multiclass ridge vetoes on a
 687-row modern-negative pool (Openverse-clean plus all three stock cells,
