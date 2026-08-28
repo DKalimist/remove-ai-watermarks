@@ -907,6 +907,21 @@ in a sub-band. Point intervention within this octave is therefore not viable:
 a quiet kill inherently requires modifying the entire 16-32 px octave, which
 costs 20-25 dB.
 
+### Five-head provider cascade with TC260, 2026-08-27
+
+Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
+class to the provider cascade produced a working five-way system:
+openai 68.8%, google 76.6%, **tc260 63.8%**, meta 71.8% mean recall under
+uniform margin 0.50 (25 repeated splits). Per-class margin calibration
+against a 1.67% aggregate photo-AI-rate budget (0.42% per class) yielded
+margins openai 0.31, google 0.29, tc260 0.39, meta 0.55, and TC260 test
+recall at calibrated margins reached **71.4%** on 196 held-out images. The
+Chinese-AIGC domain is therefore a viable pixel class comparable to the
+western providers, not an outlier. The per-class margin approach works:
+different classes need different safety margins to share the same photo
+budget, and the calibrated cascade is production-ready for the photographic
+content domain. Artifacts: `tc260-five-head-2026-08-27/report.json`.
+
 The combined-pool control then separated the data question from the geometry
 question: refitting the same pooled/domain/multiclass ridge vetoes on a
 687-row modern-negative pool (Openverse-clean plus all three stock cells,
