@@ -354,7 +354,7 @@ remove-ai-watermarks video visible kling.mp4 --mark kling -o kling_clean.mp4
 
 The command supports the moving Sora mascot and wordmark, two Veo
 corner variants, the Seedance boxed `AI` label, the `Dola AI` text label, the
-composite `MINIMAX | hailuo AI` label, and the bottom-right Kling label. Sora
+composite `MINIMAX | hailuo AI` label, and the bottom-right Kling AI label. Sora
 searches the whole frame at multiple scales. The other detectors search bounded
 lower-frame regions with separate synthetic silhouettes. Kling additionally
 requires its bright low-saturation label near the frame edge. Every mark
@@ -365,7 +365,7 @@ provenance-aware marks; metadata alone never creates a detection.
 
 `--mark auto` is the default. It evaluates all providers in one decode pass and
 selects the first stable match in specificity order: Sora, Veo, Seedance, Dola,
-Hailuo, then Kling. Their confidence scores are independently calibrated and
+Hailuo AI, then Kling AI. Their confidence scores are independently calibrated and
 are not compared across providers. Pass an explicit `--mark` to scan only that
 provider.
 
@@ -424,6 +424,23 @@ detected. Use `--force` when you know the image should be processed:
 remove-ai-watermarks invisible image.png -o clean.png --force
 ```
 
+### Choose a strength cohort
+
+`--vendor` selects the cohort the default strength resolves from. `auto`
+(the default) derives it from provenance: the C2PA issuer for
+OpenAI/Google/Microsoft, and the standalone AI IPTC tag for Meta Content Seal
+(Muse output carries no C2PA; the tag is a standard code, so C2PA evidence
+always wins first). An explicit value both names the cohort for stripped files
+and implies the scrub runs -- naming the cohort asserts the pixel watermark is
+present -- exactly like `--force` plus a measured floor:
+
+```bash
+remove-ai-watermarks invisible muse_output.webp -o clean.png --vendor meta
+```
+
+The same option exists on `all` and `batch`, and as
+`InvisibleOptions(vendor="meta")` in the Python API.
+
 ### Choose a pipeline
 
 | Pipeline | When to use it |
@@ -454,10 +471,10 @@ user can act on rather than after a model load.
 ### Restore operator-verified text
 
 `--text-manifest` enables the experimental `vae-glyphs` post-pass. It reconstructs
-the source with the Qwen VAE, blends 15% of that reconstruction into the normal
-`qwen-zimage` result, erases the annotated candidate glyphs with LaMa, and composites
-only the reconstructed glyph cores through source-derived silhouettes. It does not
-run OCR or choose which strings are correct.
+the source with the Qwen VAE, erases the annotated candidate glyphs with LaMa, and
+composites only the reconstructed glyph cores through source-derived silhouettes. It
+does not run OCR or choose which strings are correct. The optional `--fidelity-anchor`
+described below additionally blends 15% of the reconstruction across the full frame.
 
 Install the combined extra and run only with an operator-verified manifest:
 

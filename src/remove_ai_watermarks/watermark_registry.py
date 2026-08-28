@@ -17,17 +17,18 @@ localizer stays cheap (cv2/numpy, CPU) so a memory-tight caller can run it on a
 small worker; the heavy fill (MI-GAN / LaMa) is opt-in and chosen by the caller.
 
 Entries:
-  - ``gemini`` -- Google Gemini / Nano Banana sparkle, bottom-right.
+  - ``gemini`` -- Google Gemini / Nano Banana visible watermark (sparkle), bottom-right.
   - ``doubao`` -- ByteDance Doubao "豆包AI生成" text strip, bottom-right.
   - ``jimeng`` -- ByteDance Jimeng / Dreamina "★ 即梦AI" wordmark, bottom-right.
-  - ``qwen`` -- Alibaba Qwen "千问AI生成" text strip, bottom-right.
-  - ``kling`` -- Kuaishou Kling "可灵AI 3.0" text strip, bottom-right.
+  - ``qwen`` -- Alibaba Cloud Qwen "千问AI生成" text strip, bottom-right.
+  - ``kling`` -- Kuaishou Kling AI "可灵AI 3.0" text strip, bottom-right.
   - ``yuanbao`` -- Tencent Yuanbao "元宝 / AI生成" two-line mark, bottom-right.
   - ``samsung`` -- Samsung Galaxy AI "Contenuti generati dall'AI" strip, bottom-left.
   - ``jimeng_pill`` -- Jimeng-basic "AI生成" pill, top-left (capture-less).
   - ``runninghub`` -- RunningHub "RunningHub AI生成" text, top-left (gray front-end).
   - ``baidu`` -- Baidu "百度 AI生成" text + white tag, bottom-right.
-  - ``liblib`` -- LibLibAI "LibLibAI" wordmark, bottom-center.
+  - ``liblib`` -- LiblibAI "LiblibAI" wordmark, bottom-center.
+  - ``microsoft`` -- one measured Microsoft white AI-badge variant, top-right.
 """
 
 from __future__ import annotations
@@ -147,7 +148,7 @@ _REMOVED_SENSITIVITIES = {
         "vendor made it or where the mark is. If you can see a mark the detector missed, "
         "act on what you see: erase(image, region=(x, y, w, h)), or the CLI "
         "`--mark <name> --no-detect` for a known text mark. Use sensitivity='auto' for "
-        "the default evidence-driven behaviour."
+        "the default evidence-driven behavior."
     )
 }
 
@@ -156,7 +157,7 @@ def validate_sensitivity(value: str) -> Sensitivity:
     """Reject a removed sensitivity LOUDLY instead of silently falling back to ``auto``.
 
     ``Sensitivity`` is a ``Literal``, which is not enforced at runtime, so a caller
-    upgrading from 0.15 would pass ``"assume_ai"`` and quietly get ``auto`` behaviour --
+    upgrading from 0.15 would pass ``"assume_ai"`` and quietly get ``auto`` behavior --
     a silent semantic change on the one release where they most need to be told.
     """
     if value in _REMOVED_SENSITIVITIES:
@@ -368,7 +369,7 @@ _GEMINI_AUTO_MIN_CONF = GEMINI_SPARKLE_TRUST_CONF
 # that never had a mark rather than on moved ones.
 #
 # Measured blind on 954 unique Google-metadata uploads (detector never saw the
-# metadata), hand-labelled against a two-sided control (labeller sensitivity ~88%,
+# metadata), hand-labeled against a two-sided control (labeler sensitivity ~88%,
 # specificity 100%). "Additions" = accepted with provenance but not without:
 #
 #   band         precision   95% CI    population
@@ -409,6 +410,7 @@ _ENGINE_CLASS: dict[str, tuple[str, str]] = {
     "runninghub": ("runninghub_engine", "RunningHubEngine"),
     "baidu": ("baidu_engine", "BaiduEngine"),
     "liblib": ("liblib_engine", "LibLibEngine"),
+    "microsoft": ("microsoft_engine", "MicrosoftEngine"),
 }
 
 
@@ -485,7 +487,14 @@ def fill(image: NDArray[Any], mask: NDArray[Any], *, backend: Backend = "auto") 
 def _gemini_wrap(d: Any, *, provenance: bool) -> MarkDetection:
     gate = _GEMINI_PROVENANCE_MIN_CONF if provenance else _GEMINI_AUTO_MIN_CONF
     detected = bool(d.detected) and d.confidence >= gate
-    return MarkDetection("gemini", "Google Gemini sparkle", "bottom-right", detected, d.confidence, d.region)
+    return MarkDetection(
+        "gemini",
+        "Google Gemini visible watermark (sparkle)",
+        "bottom-right",
+        detected,
+        d.confidence,
+        d.region,
+    )
 
 
 def _gemini_detect(image: NDArray[Any], *, provenance: bool = False) -> MarkDetection:
@@ -561,12 +570,14 @@ def _text_mark(
     label_regime: str | None = "tc260",
     provenance_signals: tuple[str, ...] = ("aigc",),
     tc260_producer_codes: tuple[str, ...] = (),
+    provenance_platform_tokens: tuple[str, ...] = (),
 ) -> KnownMark:
     """Build a text-mark registry row from its shared detector and mask adapters.
 
     ``product`` defaults to the key (one mark, one product); pass it only when two
     marks share a product. ``label_regime`` and ``provenance_signals`` default to the
-    China-AIGC label because every text mark registered so far except Samsung uses it.
+    China-AIGC label because every text mark registered so far except Samsung and
+    Microsoft uses it.
     """
     return KnownMark(
         key,
@@ -580,6 +591,7 @@ def _text_mark(
         _text_mark_mask(key),
         provenance_signals=provenance_signals,
         tc260_producer_codes=tc260_producer_codes,
+        provenance_platform_tokens=provenance_platform_tokens,
         _detect_both=_text_mark_detect_both(key, label, location),
     )
 
@@ -616,11 +628,11 @@ def _pill_features(image: NDArray[Any]) -> dict[str, float]:
 
 
 _REGISTRY: tuple[KnownMark, ...] = (
-    # Gemini is a Google C2PA/SynthID product, not a China-AIGC labeller: label_regime
+    # Gemini is a Google C2PA/SynthID product, not a China-AIGC labeler: label_regime
     # is None so it can never act as a TC260 sibling in _keep_pill.
     KnownMark(
         "gemini",
-        "Google Gemini sparkle",
+        "Google Gemini visible watermark (sparkle)",
         "bottom-right",
         True,
         "gemini",
@@ -651,14 +663,14 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "qwen",
         "Qwen 千问AI生成 text",
         "bottom-right",
-        platform="Alibaba Qwen (visible 千问AI生成 mark detected)",
+        platform="Alibaba Cloud Qwen (visible 千问AI生成 mark detected)",
         tc260_producer_codes=("91440101MA9Y9T4H7A",),
     ),
     _text_mark(
         "kling",
-        "Kling 可灵AI 3.0 text",
+        "Kling AI 可灵AI 3.0 text",
         "bottom-right",
-        platform="Kuaishou Kling (visible 可灵AI 3.0 mark detected)",
+        platform="Kuaishou Kling AI (visible 可灵AI 3.0 mark detected)",
         tc260_producer_codes=("91110108335469089C",),
     ),
     _text_mark(
@@ -693,10 +705,22 @@ _REGISTRY: tuple[KnownMark, ...] = (
     ),
     _text_mark(
         "liblib",
-        "LibLibAI wordmark",
+        "LiblibAI wordmark",
         "bottom-center",
-        platform="LibLibAI (visible LibLibAI mark detected)",
+        platform="LiblibAI (visible LiblibAI mark detected)",
         tc260_producer_codes=("91110105MACJ6K1C8A",),
+    ),
+    # One measured Microsoft visible-mark variant: a white top-right pill with
+    # dark internal shapes. Microsoft's documented feature also permits other
+    # icon, text, and placement variants, which this detector does not cover.
+    _text_mark(
+        "microsoft",
+        "Microsoft top-right AI badge",
+        "top-right",
+        label_regime=None,
+        provenance_signals=(),
+        platform="Microsoft (visible top-right AI badge detected)",
+        provenance_platform_tokens=("microsoft",),
     ),
     # Same product as the Jimeng wordmark -- the one pair that cross-relaxes.
     KnownMark(
@@ -794,7 +818,7 @@ def tc260_producer_vendors() -> dict[str, str]:
 def _pill_suppressors() -> set[str]:
     """Marks whose detection vetoes the capture-less pill: same label regime as the
     pill, different product. Derived so a newly registered TC260 mark cannot be
-    forgotten here -- which is exactly how LibLibAI ended up missing."""
+    forgotten here -- which is exactly how LiblibAI ended up missing."""
     pill = get_mark("jimeng_pill")
     return {
         m.key
@@ -822,9 +846,9 @@ def _keep_pill(keys: set[str], *, provenance: frozenset[str], footprint_flat: bo
     No confirmation at all -> never remove (blocks false fires on non-Jimeng content).
 
     The suppressor set is DERIVED from the registry (same label regime, different
-    product), not hand-listed. The hand-written list had drifted: LibLibAI was
+    product), not hand-listed. The hand-written list had drifted: LiblibAI was
     registered alongside RunningHub and Baidu but never added to it, so a confident
-    LibLibAI detection did not veto the pill the way its two siblings did. Marks
+    LiblibAI detection did not veto the pill the way its two siblings did. Marks
     outside the TC260 regime (Gemini, Samsung) are deliberately NOT suppressors --
     neither can put ``"jimeng"`` into ``provenance``, so neither can enable the arm
     they would be vetoing."""

@@ -25,6 +25,7 @@ class TestCatalog:
             "runninghub",
             "baidu",
             "liblib",
+            "microsoft",
             "jimeng_pill",
         ]
 
@@ -113,6 +114,7 @@ class TestScan:
             "runninghub",
             "baidu",
             "liblib",
+            "microsoft",
             "jimeng_pill",
         }
 
@@ -219,7 +221,7 @@ class TestProvenanceGate:
         # 0.38 is inside the measured 13%-precision band and above the engine's own
         # 0.35 floor, so the engine reports `detected` and only the registry gate can
         # reject it. Hardcoded on purpose: if the gate is ever lowered back under this
-        # value, this test must fail on the BEHAVIOUR below, not on its own arithmetic.
+        # value, this test must fail on the behavior below, not on its own arithmetic.
         self._stub(monkeypatch, 0.38)
         img = np.zeros((256, 256, 3), np.uint8)
         assert reg.get_mark("gemini").detect(img).detected is False
@@ -529,7 +531,7 @@ class TestMarkKnowledgeIsOnTheRow:
 
     Product family, label regime, the platform sentence and the metadata signals that
     confirm the vendor all used to live in separate hand-maintained tables across
-    ``watermark_registry``, ``identify`` and ``api``. That is how LibLibAI ended up
+    ``watermark_registry``, ``identify`` and ``api``. That is how LiblibAI ended up
     registered but absent from the pill veto.
     """
 
@@ -555,15 +557,18 @@ class TestMarkKnowledgeIsOnTheRow:
             if mark.label_regime == "tc260" and mark.key != "jimeng_pill":
                 assert "aigc" in mark.provenance_signals, mark.key
 
-    def test_only_gemini_claims_platform_tokens(self):
+    def test_platform_token_marks_are_the_c2pa_attributed_ones(self):
+        # Gemini (Google C2PA) and Microsoft (issuer "Microsoft") are the marks whose
+        # vendor a C2PA platform string can confirm; every other mark reaches its
+        # provenance through TC260 codes or product signals instead.
         by_token = {m.key for m in reg.known_marks() if m.provenance_platform_tokens}
-        assert by_token == {"gemini"}
+        assert by_token == {"gemini", "microsoft"}
 
 
 class TestPillSuppressors:
     """The pill veto is derived from the registry, not hand-listed.
 
-    The hand-written list drifted: LibLibAI was registered in the same commit as
+    The hand-written list drifted: LiblibAI was registered in the same commit as
     RunningHub and Baidu, both of which were added to the veto, and it was not. A
     derived set cannot be forgotten by the next registration.
     """
@@ -581,7 +586,7 @@ class TestPillSuppressors:
         assert not reg._keep_pill({"liblib"}, provenance=frozenset({"jimeng"}), footprint_flat=1.0)
 
     def test_pill_dropped_on_liblib_even_with_the_jimeng_wordmark(self):
-        """The veto precedes the wordmark arm, so a co-firing LibLibAI wins.
+        """The veto precedes the wordmark arm, so a co-firing LiblibAI wins.
 
         This is the broader half of the change: it needs neither TC260 provenance nor
         a flat footprint, so it is reachable on more inputs than the metadata arm.
@@ -589,7 +594,7 @@ class TestPillSuppressors:
         assert not reg._keep_pill({"liblib", "jimeng"}, provenance=frozenset(), footprint_flat=1.0)
 
     def test_pill_survives_gemini_and_samsung(self):
-        """Neither is a TC260 labeller, and neither can put "jimeng" into provenance,
+        """Neither is a TC260 labeler, and neither can put "jimeng" into provenance,
         so neither may veto the arm it could not have enabled."""
         assert reg._keep_pill({"gemini", "jimeng"}, provenance=frozenset(), footprint_flat=1.0)
         assert reg._keep_pill({"samsung", "jimeng"}, provenance=frozenset(), footprint_flat=1.0)
@@ -632,4 +637,4 @@ class TestProvenanceMaskThreading:
         )
         monkeypatch.setattr(eng, "footprint_mask", lambda image, *, force=False, region=None, dilate=None: None)
         _, removed = reg.remove_auto_marks(np.zeros((256, 256, 3), np.uint8), sensitivity="strict", backend="cv2")
-        assert "Google Gemini sparkle" not in removed
+        assert "Google Gemini visible watermark (sparkle)" not in removed

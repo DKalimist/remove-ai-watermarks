@@ -10,7 +10,7 @@ The `visible` command registers these mark keys:
 
 | Key | Mark | Expected area | Important limit |
 | --- | --- | --- | --- |
-| `gemini` | Google Gemini sparkle | Usually bottom right | Detection includes a false positive gate. |
+| `gemini` | Google Gemini visible watermark (sparkle) | Usually bottom right | Detection includes a false positive gate. |
 | `doubao` | `豆包AI生成` | Bottom right | Vendor specific text detector. |
 | `jimeng` | `★ 即梦AI` | Bottom right | Vendor specific text detector. |
 | `qwen` | `千问AI生成` | Bottom right | Strict visual gate. |
@@ -19,7 +19,8 @@ The `visible` command registers these mark keys:
 | `samsung` | `✦ Contenuti generati dall'AI` | Bottom left | Calibrated for the Italian text variant. |
 | `runninghub` | `RunningHub AI生成` | Top left | Strict visual and position gates. |
 | `baidu` | `百度 AI生成` | Bottom right | Detector and extended removal footprint. |
-| `liblib` | `LibLibAI` | Bottom center | Includes a minimum image size gate. |
+| `liblib` | `LiblibAI` | Bottom center | Includes a minimum image size gate. |
+| `microsoft` | One Microsoft white AI-badge variant | Top right | Strict gate; other documented icon, text, and position variants are not covered. |
 | `jimeng_pill` | `AI生成` pill | Top left | Weak detector with additional product and background gates. |
 
 `--mark auto` evaluates all registered marks and removes every selected match.
@@ -38,7 +39,7 @@ when you can select the affected area yourself.
 | `seedance` | Boxed `AI` label | Fixed bottom-right corner | Requires an anchored recurring match; the full localized box is filled because a thinner synthetic shape mask leaves the real translucent rim behind. |
 | `dola` | `Dola AI` text | Fixed bottom-right corner | Requires an anchored recurring match; ByteDance or BytePlus provenance can relax only an existing visual run. |
 | `hailuo` | `MINIMAX \| hailuo AI` composite label | Fixed lower edge | Uses a synthetic waveform, text, separator, and ring silhouette; the complete recurring label box is filled. A TC260 label naming MiniMax as producer can relax only an existing stable run. |
-| `kling` | Kling swirl, `KLING AI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font variants, an edge gate, a white-label gate, and anchored temporal recurrence. |
+| `kling` | Kling AI swirl, `KLING AI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font variants, an edge gate, a white-label gate, and anchored temporal recurrence. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
@@ -163,7 +164,47 @@ inspection cannot independently verify the output. Microsoft's official
 [Content Provenance Detection API](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection)
 is the external oracle: it reports pixel `Watermark` and embedded `C2PA` results
 separately; a control-positive, output-negative pair is the available per-file
-verification path.
+verification path. The API needs Azure credentials; the page a human can check
+without an account is <https://ai.azure.com/nextgen/validate>. Its verdict is
+weaker than the API's: it collapses watermark and C2PA into one rendered result
+and tops out at `Inconclusive` rather than a watermark-negative, so treat
+`Inconclusive` on a processed file as "not confirmed", not as "detected still".
+
+Meta Muse Image stamps every output with Content Seal, a proprietary invisible
+pixel watermark, and ships no visible mark (the legacy `Imagined with AI`
+corner mark belongs to the pre-2026 Imagine pipeline and is not registered).
+This project has no local Content Seal decoder. Meta Model API outputs and
+Meta CDN copies carry an XMP `iptcExt:DigitalSourceType =
+trainedAlgorithmicMedia` companion tag, which `identify` reports through the
+existing Made-with-AI path; that IPTC code is a standard, not a Meta-exclusive
+signal, so it cannot key a strength cohort the way the C2PA issuer does. Since
+0.33.0 a standalone AI digital-source tag (no C2PA manifest) additionally emits
+the additive `content_seal` signal - the strength router's Meta bet as evidence,
+medium confidence, with the same caveat - so clients select pixel removal from
+the signal list exactly the way InvisMark is additive over `soft_binding`. It
+is an attribution, never a decode. The
+external oracle is `https://meta.ai/identification`: anonymous, no login,
+accepts image, video, and audio, enforces an unspecified daily identification
+limit, and answers with model attribution (`Muse Image 1 - Meta`) plus a
+per-generation ID and creation timestamp read from the watermark payload. No
+identification endpoint exists in the Meta Model API itself (the reference at
+dev.meta.ai documents only generation and edits for images), and the official
+documentation never mentions the seal. The
+default `qwen-zimage` profile clears Content Seal at the default
+resolution-adaptive strength (oracle-verified on 2.56 MP generations); measured
+strength boundaries are recorded in `data/contentseal/manifest.csv` and
+[module internals](module-internals.md#meta-content-seal-boundaries-for-qwen-zimage).
+The derived Meta floor (0.1 by the standard spread method) ships as a measured
+cohort: auto mode routes a file whose only provenance is the standalone AI IPTC
+tag to it (the tag is not Meta-exclusive; other tag users ship no invisible
+watermark this profile targets, and Google/OpenAI/Microsoft C2PA evidence
+always wins first), and `invisible --vendor meta` (also `all` and `batch`, and
+`InvisibleOptions.vendor` in the API) names the cohort explicitly on stripped
+files. An explicit vendor implies the scrub runs: naming the cohort asserts the
+pixel watermark is present.
+The seal survives resizing, JPEG recompression, and metadata stripping; it dies
+to center crops of a third to a half, matching the Reuters 2026-07-11 finding
+that Meta's detector missed 55% of cropped Muse images.
 
 For MP4, MOV, and M4V, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
@@ -184,8 +225,10 @@ not a universal clean verdict.
 | --- | --- | --- | --- |
 | Google Gemini | Sparkle | Diffusion regeneration | C2PA and related source signals |
 | Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID | C2PA and related source signals |
-| OpenAI image generators | None registered | Official remote pixel verifier; diffusion regeneration for supported invisible signals | C2PA and generator provenance |
+| OpenAI image generators | None registered | Diffusion regeneration for supported invisible signals | C2PA and generator provenance |
+| Meta Muse Image | None on Muse output (legacy `Imagined with AI` unregistered) | Diffusion regeneration for Content Seal, oracle-verified on the default profile | XMP IPTC `trainedAlgorithmicMedia` companion tag; no local Content Seal decoder |
 | Microsoft Paint and Photos | None registered | External Microsoft oracle for InvisMark; no validated local decoder | Paint C2PA soft-binding algorithm and identifier |
+| Microsoft image outputs (measured variant) | One top-right white AI-badge variant | No registered pixel decoder | C2PA attribution |
 | Stable Diffusion and SDXL | None registered | Diffusion regeneration; optional open decoder | Embedded parameters and text metadata |
 | FLUX | None registered | Diffusion regeneration; optional open decoder | C2PA for supported sources |
 | Adobe Firefly | None registered | Optional TrustMark Variant P decoder | C2PA |
@@ -193,10 +236,10 @@ not a universal clean verdict.
 | Luma AI | None registered | No registered pixel decoder | PNG text generator tags (Uni-1) |
 | ByteDance generators | Doubao and Jimeng marks | No registered pixel decoder | TC260 AIGC, supported C2PA, and exact app-export AIGC disclosures |
 | Qwen | Qwen mark | No registered pixel decoder | TC260 AIGC |
-| Kling | Kling image and video marks | No registered pixel decoder | TC260 AIGC |
-| Hailuo / MiniMax video | Hailuo composite video label | No registered pixel decoder | TC260 AIGC where present |
+| Kling AI | Kling AI image and video marks | No registered pixel decoder | TC260 AIGC |
+| Hailuo AI / MiniMax video | Hailuo AI composite video label | No registered pixel decoder | TC260 AIGC where present |
 | Baidu | Baidu mark | No registered pixel decoder | TC260 AIGC |
-| LibLibAI | LibLibAI mark | No registered pixel decoder | TC260 AIGC |
+| LiblibAI | LiblibAI mark | No registered pixel decoder | TC260 AIGC |
 | RunningHub | RunningHub mark | No registered pixel decoder | TC260 AIGC |
 | Samsung Galaxy AI | One locale specific mark | No registered pixel decoder | C2PA and Samsung markers |
 

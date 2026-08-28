@@ -296,13 +296,13 @@ from the gate. The full-clip oracle floor is
 detected while `0.15` did not.
 
 [`video_visible.py`](../src/remove_ai_watermarks/video_visible.py) implements
-the first pixel stages for Sora, Veo, Seedance, Dola, Hailuo, and Kling. The
+the first pixel stages for Sora, Veo, Seedance, Dola, Hailuo AI, and Kling AI. The
 Sora detector searches a normalized frame with a fully synthetic
 mascot-and-text silhouette at several scales. The Veo detector uses separate
 synthetic silhouettes for the current four-point diamond and legacy `Veo`
 text. Seedance uses a synthetic rounded boxed-`AI` silhouette, while Dola uses
-an OpenCV-font `Dola AI` silhouette. Hailuo uses a synthetic waveform,
-MINIMAX/Hailuo text, separator, and ring. Kling combines synthetic font
+an OpenCV-font `Dola AI` silhouette. Hailuo AI uses a synthetic waveform,
+MINIMAX/Hailuo AI text, separator, and ring. Kling AI combines synthetic font
 variants with a ring approximation of its swirl; the logo path rescues
 wordmarks whose version or font differs, while the edge and white-label gates
 reject recurring scene texture. All fixed-mark searches are bounded to the
@@ -323,23 +323,23 @@ Every per-frame result is untrusted. Each provider's floors, minimum-run policy,
 fill padding and mask style are one row in `VISIBLE_MARK_POLICIES`, and every mark
 enters the same `stabilize_localizations` entry point; the recurrence
 implementation underneath knows nothing about providers. That policy row also
-carries `accepts_provenance`, which forces `provenance=False` for Hailuo and Kling
+carries `accepts_provenance`, which forces `provenance=False` for Hailuo AI and Kling AI
 — they have no metadata that could confirm them, and the guarantee used to be
 structural (their wrappers took no `provenance` parameter at all). Provenance can relax a low-contrast run only
 after recurring visual evidence exists. Sora transition frames follow the
 nearest confirmed moving position only with Sora provenance. Seedance, Dola,
-Hailuo, and Kling additionally require candidates to remain anchored to the
+Hailuo AI, and Kling AI additionally require candidates to remain anchored to the
 start of a run. This rejects slowly drifting scene details that still have
-high frame-to-frame overlap. Hailuo and Kling do not infer provenance from
+high frame-to-frame overlap. Hailuo AI and Kling AI do not infer provenance from
 technical encoder tags; their confirmed public samples carried no provider
 metadata.
 
 Removal runs in a second decode pass. Sora, legacy Veo text, Dola text,
-Seedance, Hailuo, and Kling use box masks. Seedance deliberately fills the
+Seedance, Hailuo AI, and Kling AI use box masks. Seedance deliberately fills the
 complete localized box: a synthetic outline mask passed repeat detection but
 left part of the real translucent border visible during visual end-to-end
-review. Hailuo expands beyond the matched core to cover both provider icons.
-Kling expands around the wordmark or swirl to include the version and optional
+review. Hailuo AI expands beyond the matched core to cover both provider icons.
+Kling AI expands around the wordmark or swirl to include the version and optional
 `PRO` suffix. The square Veo diamond uses a synthetic shape mask so transparent
 corners do not erase unrelated pixels. Every mask goes through the shared
 `watermark_registry.fill` backends. ffmpeg encodes the changed video stream and
@@ -451,7 +451,9 @@ For an AI C2PA claim, a recognized product in `claim_generator` takes precedence
 over the certificate issuer: an application can sign through an upstream model
 provider without becoming that provider's product. Only exact product mappings
 receive this precedence; an unknown claim generator still falls back to issuer
-attribution.
+attribution. An unmapped issuer org reads as unknown-signer C2PA with no platform;
+that is how Ideogram was surfaced (4 corpus uploads signed "Ideogram, Inc",
+2026-08-08) before its vendor row was added on 2026-08-27.
 
 ### Metadata scanning and stripping
 
@@ -1121,9 +1123,9 @@ capture-less pill is too weak to attribute.
 
 The set of marks that veto the pill is DERIVED from the registry rows: every mark
 under the same label regime (`tc260`) belonging to a different product. It used to
-be a hand-written list of keys, and that list drifted -- LibLibAI was registered
-alongside RunningHub and Baidu, both of which were added to it, and LibLibAI was
-not, so a confident LibLibAI detection did not suppress the pill the way its two
+be a hand-written list of keys, and that list drifted -- LiblibAI was registered
+alongside RunningHub and Baidu, both of which were added to it, and LiblibAI was
+not, so a confident LiblibAI detection did not suppress the pill the way its two
 siblings did. Marks outside the TC260 regime (Gemini, Samsung) are deliberately
 not vetoers: neither can put `jimeng` into `provenance`, so neither can enable the
 arm it would be vetoing.
@@ -1175,6 +1177,33 @@ be represented by the shared base:
 - [`runninghub_engine.py`](../src/remove_ai_watermarks/runninghub_engine.py)
 - [`baidu_engine.py`](../src/remove_ai_watermarks/baidu_engine.py)
 - [`liblib_engine.py`](../src/remove_ai_watermarks/liblib_engine.py)
+- [`microsoft_engine.py`](../src/remove_ai_watermarks/microsoft_engine.py)
+
+The measured Microsoft badge variant (2026-08-27 registration) is the first
+`tr`-corner mark and the first `long`-side scale basis: the pill tracks the
+render dimension, so a
+1024x1536 portrait carries the same pill as 1536x1024, and a width basis
+undersized the template by the aspect ratio (portrait carriers fell to
+0.15-0.32 NCC until the basis was measured). The silhouette is a white pill with
+its synthetic internal shapes knocked out - the holes are what separate it from
+any other bright rounded corner element (a plain white pill scores below the gate
+in the tests). It does not claim coverage of Microsoft's other documented icon,
+wording, or position variants.
+
+The 2026-08-27 rerun used the registered engine through
+`scripts/registered_mark_calibrate.py`, rather than a copied detector
+configuration. The manifest kept three evidence classes separate: 17 visually
+confirmed carriers, 343 Microsoft-provenance files without a visual adjudication,
+and 1200 non-overlapping no-signal controls. At the strict 0.38 gate, 15/17
+confirmed carriers fired (min 0.249, p50 0.519, p90 0.578, max 0.579), while
+0/1200 controls fired (p99 0.200, max 0.293). The provenance cohort produced
+78/343 fires, but that is not a recall measurement because provenance identifies
+the provider, not the presence of this visible layout. That cohort was later
+labeled by an OCR badge census (2026-08-28: 86 badge carriers, 257 badge-less,
+badge-less max 0.251 / p99 0.213), which is what enabled the shipped provenance
+relaxation 0.7: the relaxed band [0.251, 0.38) holds three faint badges and
+zero false fills, re-verified as 3 band detections with 0/257 badge-less fires
+on the provenance path.
 
 The detector and removal mask must use compatible geometry. A detector that
 fires while producing an empty or misplaced mask is a removal failure even if
@@ -1193,7 +1222,7 @@ were briefly skipped there for exactly that reason.
 A mark whose removable footprint differs from what the detector localizes
 overrides `_footprint_rect` (which policy) and `_extend_match_box` (how far the
 box grows), not the whole `footprint_mask`. Baidu extends right to the corner tag
-and LibLibAI extends left to the triangle logo; both inherit every guard around
+and LiblibAI extends left to the triangle logo; both inherit every guard around
 that arithmetic.
 
 Yuanbao uses the polarity-independent `contrast` front end because its standard
@@ -1395,11 +1424,13 @@ Validation happens before model loading. The library never treats OCR confidence
 verification, and geometry-only operators do not need to invent text or script fields.
 
 When enabled, `QwenZImagePipeline` reconstructs the source once through its already
-loaded Qwen VAE, runs the ordinary global and face stages, blends 15% of the VAE
-reconstruction into that clean result, and calls the shared restoration compositor.
-The compositor derives binary source and candidate silhouettes, groups nearby lines,
-uses LaMa for the initial and residual-glyph erase passes, paints fresh silhouette
-edges, then copies the Qwen-VAE core with a 0.5-pixel feather. The evaluation script
+loaded Qwen VAE, runs the ordinary global and face stages, and calls the shared
+restoration compositor. The optional fidelity anchor first blends 15% of the VAE
+reconstruction into the clean result; it is off by default because the blend returned
+detector-visible OpenAI SynthID in the measured poster fixtures. The compositor derives
+binary source and candidate silhouettes, groups nearby lines, uses LaMa for the initial
+and residual-glyph erase passes, paints fresh silhouette edges, then copies the Qwen-VAE
+core with a 0.5-pixel feather. The evaluation script
 imports these same mask and compositing helpers so the two implementations cannot
 silently drift. Silhouette crops start 12% of line height beyond each horizontal
 side, then expand each side independently while a foreground component anchored
@@ -1523,6 +1554,44 @@ the 4.33 MP Gemini boundary the sub-1 MP rungs of 0.084-0.098 look short, but at
 sizes the curve's own values verify clean, which is what a resolution-scaled
 requirement would predict. There is no measured size at which the shipped curve fails,
 so it is left alone.
+
+### Meta Content Seal boundaries for qwen-zimage
+
+Measured 2026-08-26 against the anonymous oracle `meta.ai/identification`
+(verdicts read from the settled page text; corpus and full row-level provenance in
+`data/contentseal/manifest.csv`). Muse Image carries no C2PA, so
+`vendor_for_strength` returns None for it and these images ride the default
+resolution-adaptive curve; there is deliberately no `meta` entry in the flat vendor
+map, because no provenance signal can establish that cohort automatically and an
+unreachable constant would be dead code.
+
+| source (2.56 MP generation) | detected at | clean from |
+|---|---|---|
+| gen_lighthouse_watercolor | 0.0525 | 0.06 |
+| gen_fox_forest | 0.03 | 0.0375 |
+| gen_night_city | 0.03 | 0.0375 |
+| gen_studio_mug | -- | 0.03 |
+| gen_text_poster | -- | 0.015 |
+
+Full spread: worst first-clean boundary (0.0525, 0.06] on lighthouse, easiest
+source already clean at 0.015. Following the same derivation as the OpenAI and
+Microsoft floors (worst clean boundary plus one full observed cross-source
+spread): 0.06 + (0.0525 - 0.015) = 0.0975, rounded up to **0.1**. Shipped as
+`QWEN_ZIMAGE_META_STRENGTH` with two routing paths: auto mode routes a file
+whose only provenance is the standalone AI IPTC tag onto the cohort
+(`vendor_for_strength` checks C2PA issuers first, so Google/OpenAI/Microsoft
+evidence always wins, and the tag's other users ship no invisible watermark
+this profile targets), and `--vendor meta` / `InvisibleOptions.vendor` names the
+cohort explicitly on stripped files, implying the scrub runs (naming the cohort
+asserts the watermark is present). sdxl-zimage has no measured Meta rung and an
+explicit meta vendor there falls to the conservative unknown 0.25. The default
+resolution-adaptive curve (~0.1305 at 2.56 MP) also clears every measured
+source, so default behavior needed no change. Oracle verdicts carry a
+generation ID and creation timestamp embedded in the watermark payload; both
+survived the 512 px resize and JPEG q85 rows, so payload recovery outlives the
+detection threshold. Oracle session limits are per-IP, server-side, and
+sliding-window: clearing cookies and storage does not reset them, and a burst
+exhausts the window minutes after it reopens.
 
 ### Static prompt embeddings
 

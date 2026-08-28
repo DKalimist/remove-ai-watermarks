@@ -70,7 +70,7 @@ C2PA_AI_VENDORS: tuple[C2paAiVendor, ...] = (
     _vendor(
         b"OpenAI",
         "OpenAI",
-        "OpenAI (ChatGPT / gpt-image / DALL-E / Sora)",
+        "OpenAI (ChatGPT / GPT Image / DALL·E / Sora)",
         "OpenAI",
         synthid=True,
         synthid_requires_watermark_action=True,
@@ -81,29 +81,32 @@ C2PA_AI_VENDORS: tuple[C2paAiVendor, ...] = (
     _vendor(
         b"volcengine",
         "ByteDance (Volcano Engine)",
-        "ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)",
-        "ByteDance",
+        "ByteDance Volcano Engine",
+        "Volcano Engine",
     ),
     _vendor(
         "北京火山引擎科技有限公司",
         "ByteDance (Volcano Engine)",
-        "ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)",
-        "ByteDance",
+        "ByteDance Volcano Engine",
+        "Volcano Engine",
     ),
-    _vendor(
-        b"Byteplus", "BytePlus (ByteDance)", "ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)", "ByteDance"
-    ),
+    _vendor(b"Byteplus", "BytePlus (ByteDance)", "BytePlus (ByteDance)", "BytePlus"),
     _vendor(
         b"Dreamina",
         "ByteDance (Dreamina)",
-        "ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)",
-        "ByteDance",
+        "ByteDance Dreamina",
+        "Dreamina",
         asserts_ai=True,
     ),
     _vendor(b"Canva", "Canva", "Canva (Magic Media)", "Canva"),
     _vendor(b"Eleven Labs", "ElevenLabs", "ElevenLabs", "ElevenLabs"),
     _vendor(b"fal-ai", "fal.ai", "fal.ai", "fal.ai", asserts_ai=True),
     _vendor(b"Bria", "Bria Artificial Intelligence", "Bria AI", "Bria", asserts_ai=True),
+    # Ideogram signs its downloads' Content Credentials with "Ideogram, Inc"; the
+    # issuer token is the org prefix (same substring-match class as "Bria" in
+    # "Bria Artificial Intelligence"). Found as an unmapped signer on 4 corpus
+    # uploads 2026-08-08 that identify reported as unknown-signer C2PA.
+    _vendor(b"Ideogram", "Ideogram", "Ideogram", "Ideogram", asserts_ai=True),
     _vendor(b"Truepic", "Truepic", None, None),
 )
 
@@ -116,7 +119,7 @@ C2PA_IDENTITY_AI_ORGS = frozenset(vendor.org for vendor in C2PA_AI_VENDORS if ve
 C2PA_CLAIM_GENERATOR_PLATFORMS: tuple[tuple[str, str], ...] = (
     ("adobe_firefly", "Adobe Firefly"),
     ("firefly", "Adobe Firefly"),
-    ("dreamina", "ByteDance (Doubao / Jimeng / Dreamina / Volcano Engine)"),
+    ("dreamina", "ByteDance Dreamina"),
     ("higgsfield ai", "Higgsfield AI"),
     ("topaz labs image api", "Topaz Labs"),
     ("tiktok ad creative toolbox", "TikTok Ad Creative Toolbox"),
@@ -128,8 +131,8 @@ C2PA_AI_TOOLS = {
         ("GPT-4o", "GPT-4o"),
         ("ChatGPT", "ChatGPT"),
         ("Sora", "Sora"),
-        ("DALL-E", "DALL-E"),
-        ("DALL", "DALL-E"),
+        ("DALL-E", "DALL·E"),
+        ("DALL", "DALL·E"),
         ("Imagen", "Imagen"),
         ("Firefly", "Firefly"),
         ("Dreamina", "Dreamina"),
@@ -138,16 +141,18 @@ C2PA_AI_TOOLS = {
 
 C2PA_SOFT_BINDINGS = {
     b"com.adobe.trustmark": "Adobe TrustMark",
-    b"com.adobe.icn": "Adobe (content fingerprint)",
-    b"com.digimarc": "Digimarc",
+    b"com.adobe.icn": "Adobe Image Comparator Network",
+    b"com.digimarc": "Digimarc Validate",
     b"com.imatag.lamark": "Imatag (Lamark)",
     b"ai.steg": "Steg.AI",
     b"com.microsoft.invismark": "Microsoft InvisMark",
     b"com.microsoft.wavmark": "Microsoft WavMark",
     b"com.verimatrix": "Verimatrix",
     b"com.nagra.nexguard": "NAGRA NexGuard",
-    b"com.aiwatermark": "AIWatermark (Meta PixelSeal)",
-    b"ai.trufo": "Trufo",
+    b"com.aiwatermark.pixelseal": "AIWatermark PixelSeal",
+    b"com.aiwatermark.videoseal": "AIWatermark VideoSeal",
+    b"com.aiwatermark.audioseal": "AIWatermark AudioSeal",
+    b"ai.trufo": "Trufo PawPrint",
     b"app.overlai": "Overlai",
     b"com.markany": "MarkAny",
     b"com.mentaport": "Mentaport",
@@ -199,7 +204,7 @@ C2PA_ACTIONS = {f"c2pa.{action}".encode(): action for action in _C2PA_ACTION_NAM
 # what stops a newly registered TC260 vendor from silently falling back to ByteDance.
 #
 # What a TC260 label confirms when its producer is absent or unmapped. Historical
-# behaviour, kept as the fallback so an unrecognized producer never regresses to no
+# behavior, kept as the fallback so an unrecognized producer never regresses to no
 # relaxation at all: ByteDance's two products are the ones the relaxed band was
 # calibrated on (see _text_mark_engine._DEFAULT_PROVENANCE_NCC_FACTOR).
 TC260_FALLBACK_VENDORS: frozenset[str] = frozenset({"doubao", "jimeng"})

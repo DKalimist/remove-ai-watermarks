@@ -135,12 +135,17 @@ _C2PA_INVALID_CAVEAT = (
     "are retained only as removal hints, not as verified provenance."
 )
 _IPTC_ONLY_CAVEAT = "The IPTC 'Made with AI' tag flags AI provenance but does not identify the specific platform."
+_CONTENT_SEAL_CAVEAT = (
+    "Meta Muse Image outputs carry the invisible Content Seal pixel watermark, which has no "
+    "local decoder; `invisible` removes it (auto when this tag is present, or `--vendor meta` "
+    "on stripped files) and meta.ai/identification verifies it."
+)
 _INVISIBLE_WM_CAVEAT = (
     "The open invisible watermark is fragile: it does not survive JPEG re-encoding "
     "or resizing, so it confirms origin only on a pristine (un-re-encoded) file."
 )
 _HF_JOB_CAVEAT = (
-    "The hf-job-id tag marks a HuggingFace-hosted job (commonly diffusion "
+    "The hf-job-id tag marks a Hugging Face-hosted job (commonly diffusion "
     "generation) but names neither the model nor the content type, so it is a "
     "medium-confidence signal, not proof the pixels are AI-generated."
 )
@@ -440,7 +445,7 @@ def evidence_from_metadata_record(
     if iptc_system:
         ai_metadata.setdefault("ai_system", f"IPTC 2025.1 AI disclosure ({iptc_system})")
     if hf_job:
-        ai_metadata.setdefault("huggingface_job", f"HuggingFace-hosted job ({hf_job})")
+        ai_metadata.setdefault("huggingface_job", f"Hugging Face-hosted job ({hf_job})")
     if samsung is not None:
         ai_metadata.setdefault("samsung_genai", f"Samsung Galaxy AI editing marker (genAIType={samsung})")
 
@@ -948,7 +953,7 @@ def _visible_sparkle(image_path: Path, *, image: NDArray[Any] | None = None) -> 
 # metadata label); the per-engine detection thresholds live in the registry.
 # Text mark -> the platform sentence this report prints when that mark is the strongest
 # evidence, DERIVED from the registry rows so registering a mark is one edit. It was a
-# hand-maintained copy, and that class of copy is how LibLibAI ended up registered but
+# hand-maintained copy, and that class of copy is how LiblibAI ended up registered but
 # missing from the pill veto. Insertion order is the registry's, which is what fixes the
 # scan order below. The Gemini sparkle and the capture-less pill carry no platform of
 # their own (`KnownMark.platform is None`) and are excluded here: the sparkle has its
@@ -1100,7 +1105,7 @@ def _collect_visible_signals(
     sparkle_conf = _visible_sparkle(image_path, image=image)
     if sparkle_conf is not None and sparkle_conf >= _SPARKLE_THRESHOLD:
         signals.append(Signal("visible_sparkle", f"NCC confidence {sparkle_conf:.2f}", "medium"))
-        watermarks.append(f"Visible Gemini sparkle (confidence {sparkle_conf:.2f})")
+        watermarks.append(f"Google Gemini visible watermark (sparkle; confidence {sparkle_conf:.2f})")
         if platform is None:
             platform = "Google Gemini family (visible sparkle detected)"
 
@@ -1268,7 +1273,19 @@ def _identify_from_evidence(
     # reusing the derived `has_c2pa` / `source_kind` above, which are broader:
     # the file path's answer must not move.
     trained_source = b"trainedAlgorithmicMedia" in head or b"TrainedAlgorithmicMedia" in head
-    if not synthid and trained_source and c2pa_marker_in(head) and (vendors := synthid_evidence_vendors_in(region)):
+    # Same suppression as every other inference site: bytes that name their own
+    # forensic soft-binding algorithm carry that vendor's mark, and the generic
+    # vendor-token inference must not add a second, differently-attributed
+    # invisible watermark (Microsoft Designer: "Azure OpenAI ImageGen" agent +
+    # the InvisMark watermarked action read as "SynthID per OpenAI").
+    soft_binding_vendors = soft_binding_vendors_in(region)
+    if (
+        not synthid
+        and trained_source
+        and c2pa_marker_in(head)
+        and not soft_binding_vendors
+        and (vendors := synthid_evidence_vendors_in(region))
+    ):
         synthid = synthid_verdict(", ".join(vendors))
     if synthid:
         watermarks.append(
@@ -1283,7 +1300,7 @@ def _identify_from_evidence(
     # ── C2PA soft-binding: a named forensic/third-party watermark vendor ─
     # (Adobe TrustMark, Digimarc, Imatag, ...). Present in the manifest even when
     # the watermark itself can't be decoded; names whose watermark stamped the pixels.
-    soft_binding = meta.get("soft_binding") or (", ".join(v) if (v := soft_binding_vendors_in(region)) else None)
+    soft_binding = meta.get("soft_binding") or (", ".join(soft_binding_vendors) if soft_binding_vendors else None)
     if soft_binding:
         soft_binding_algorithm = meta.get("soft_binding_algorithm") or info.get("soft_binding_algorithm")
         soft_binding_value = meta.get("soft_binding_value") or info.get("soft_binding_value")
@@ -1317,17 +1334,38 @@ def _identify_from_evidence(
     if standalone_iptc:
         signals.append(Signal("iptc", "digitalSourceType (Made with AI)", "high"))
         watermarks.append("IPTC digitalSourceType (Made with AI)")
+        # Muse Image stamps every output with the invisible Content Seal, and this
+        # tag is the only provenance such a file carries - the same measured bet
+        # the strength router makes (vendor_for_strength -> "meta"). Emit the seal
+        # as its own stable signal, the way InvisMark is additive over
+        # soft_binding, so clients select pixel removal from the signal list
+        # instead of parsing caveats. It is an attribution, not a decode: no
+        # public Content Seal decoder exists, hence "medium".
+        signals.append(
+            Signal(
+                "content_seal",
+                "Meta Muse Content Seal pixel watermark (attributed by the standalone AI digital-source tag)",
+                "medium",
+            )
+        )
+        watermarks.append("Invisible Content Seal watermark (Meta Muse attribution)")
         caveats.append(_IPTC_ONLY_CAVEAT)
+        caveats.append(_CONTENT_SEAL_CAVEAT)
         if platform is None:
             # Apple Photos Clean Up (Apple Intelligence object removal) marks
             # the edit with photoshop:Credit / IPTC "Apple Photos Clean Up"
             # next to compositeWithTrainedAlgorithmicMedia. It was detected but
             # previously never attributed.
-            platform = (
-                "Apple Photos (Clean Up AI edit)"
-                if b"Apple Photos Clean Up" in head
-                else "Made-with-AI tag (e.g. Meta AI); platform not specified"
-            )
+            if b"Apple Photos Clean Up" in head:
+                platform = "Apple Photos (Clean Up AI edit)"
+            else:
+                # The platform line follows the same measured bet the seal signal
+                # and the strength router make: Muse Image is the tag writer whose
+                # outputs this profile targets, so a hedged Muse attribution is
+                # more useful than "platform not specified" while the panel below
+                # already prices the Content Seal removal. The hedge stays in the
+                # wording - it names the attribution basis, not a detection.
+                platform = "Meta Muse Image (attributed by the standalone AI digital-source tag)"
 
     # ── IPTC 2025.1 AI-disclosure fields (Iptc4xmpExt:AISystemUsed etc.) ─
     iptc_ai = any(m in head for m in IPTC_AI_FIELD_MARKERS)
@@ -1388,17 +1426,17 @@ def _identify_from_evidence(
             platform = "xAI (Grok / Aurora)"
         ai_vendor_claims["xai"] = "xAI"
 
-    # ── HuggingFace-hosted job marker (hf-job-id PNG text chunk) ─────
+    # ── Hugging Face-hosted job marker (hf-job-id PNG text chunk) ─────
     # Marks the hosting job, not a model -- medium confidence (commonly diffusion
     # output). Like the visible sparkle, it lifts an otherwise-Unknown verdict to
     # a tentative AI, but never overrides a high-confidence metadata signal.
     hf_job = evidence.huggingface_job
     if hf_job:
-        signals.append(Signal("hf_job", f"HuggingFace job {hf_job}", "medium"))
-        watermarks.append("HuggingFace-hosted job (hf-job-id)")
+        signals.append(Signal("hf_job", f"Hugging Face job {hf_job}", "medium"))
+        watermarks.append("Hugging Face-hosted job (hf-job-id)")
         caveats.append(_HF_JOB_CAVEAT)
         if platform is None:
-            platform = "HuggingFace-hosted job (model not identified)"
+            platform = "Hugging Face-hosted job (model not identified)"
 
     # ── Samsung Galaxy AI editing marker (genAIType) ─────────────────
     # Galaxy AI tools stamp a proprietary genAIType in PhotoEditor_Re_Edit_Data.

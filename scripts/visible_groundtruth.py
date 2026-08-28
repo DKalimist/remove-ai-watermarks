@@ -1,6 +1,6 @@
-"""Consolidate the hand-labelled contact-sheet rounds into ONE ground-truth file.
+"""Consolidate the hand-labeled contact-sheet rounds into ONE ground-truth file.
 
-Ground truth is `uid -> the set of visible marks actually present`, hand-labelled
+Ground truth is `uid -> the set of visible marks actually present`, hand-labeled
 blind against contact sheets with a two-sided control in every round. Rounds so far:
 
   2026-07-18 text-mark/pill round : 423 cells (doubao / jimeng / jimeng_pill arms)
@@ -10,20 +10,20 @@ DATA SAFETY: treat the input dataset as sensitive. This script reads a gitignore
 dataset and writes a gitignored ground-truth file. Neither the images nor this
 output may be committed; only the harness is. See the repo CLAUDE.md.
 
-The labels record what the LABELLER SAW in the crop, one of:
+The labels record what the labeler saw in the crop, one of:
   doubao | jimeng | pill | sparkle | other_ai_label | none | uncertain
 `other_ai_label` is a real visible AI label from a vendor we do NOT have a mark for
 (千问 / 百度 / 星绘 / 抖音); it is NOT a positive for any registered mark, but it is
 also not "clean" -- it is exactly what the relaxed jimeng detector confuses.
-`uncertain` rows are EXCLUDED from scoring rather than coerced, so a labeller's
+`uncertain` rows are EXCLUDED from scoring rather than coerced, so a labeler's
 honest doubt never becomes a fabricated data point.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
-import sys
 from pathlib import Path
 
 SEEN_TO_MARK = {
@@ -32,7 +32,7 @@ SEEN_TO_MARK = {
     "pill": "jimeng_pill",
     "sparkle": "gemini",
 }
-# Which marks a crop centred on `key` lets the labeller rule on (same corner = visible
+# Which marks a crop centered on `key` lets the labeler rule on (same corner = visible
 # in the same crop). Doubao and Jimeng share the bottom-right corner.
 _ADJUDICATES = {
     "doubao": ("doubao", "jimeng"),
@@ -46,6 +46,7 @@ ROUNDS = [
     ("textmark", "labels.csv", "manifest.csv"),
     ("gemini", "gemini_labels.csv", "gemini_manifest.csv"),
 ]
+_HELP_DESCRIPTION = "Consolidate hand-labeled contact-sheet rounds into one ground-truth file."
 
 
 def metadata_provenance(path: str) -> list[str]:
@@ -77,7 +78,15 @@ def metadata_provenance(path: str) -> list[str]:
 
 
 def main() -> None:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else ".local-eval/textmark-relaxation")
+    parser = argparse.ArgumentParser(description=_HELP_DESCRIPTION)
+    parser.add_argument(
+        "root",
+        type=Path,
+        nargs="?",
+        default=Path(".local-eval/textmark-relaxation"),
+        help="Directory containing the blinded labeling rounds",
+    )
+    root = parser.parse_args().root
     out = root / "groundtruth.jsonl"
     rows: dict[str, dict] = {}
     stats: dict[str, int] = {}
@@ -97,8 +106,8 @@ def main() -> None:
                 m["uid"],
                 {"uid": m["uid"], "path": m["path"], "present": [], "seen": [], "rounds": [], "adjudicated": []},
             )
-            # ADJUDICATION SCOPE -- load-bearing. A crop centred on one mark only lets
-            # the labeller rule on marks visible IN THAT CROP. A pill crop (top-left)
+            # ADJUDICATION SCOPE -- load-bearing. A crop centered on one mark only lets
+            # the labeler rule on marks visible IN THAT CROP. A pill crop (top-left)
             # says nothing about a bottom-right wordmark, so scoring jimeng against a
             # pill-round image would book real detections as false fires (~61% of pills
             # carry a wordmark). Bottom-right marks co-adjudicate each other: one crop

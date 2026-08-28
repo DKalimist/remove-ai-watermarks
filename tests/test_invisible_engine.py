@@ -60,6 +60,7 @@ class TestVerifiedTextMode:
         manifest.write_text("{}", encoding="utf-8")
         cases = (
             ("sdxl-zimage", {}, "qwen-zimage"),
+            ("qwen-zimage", {"tile": True}, "not calibrated with --tile"),
             ("qwen-zimage", {"max_resolution": 1024}, "max-resolution 0"),
             ("qwen-zimage", {"humanize": 1.0}, "humanize=0"),
             ("qwen-zimage", {"adaptive_polish": True}, "polish disabled"),
@@ -127,10 +128,6 @@ class TestVerifiedTextMode:
         engine.remove_watermark(source, output, text_manifest=manifest, fidelity_anchor=True)
 
         assert seen["fidelity_anchor"] is True
-
-        engine.remove_watermark(source, output, text_manifest=manifest, tile=True)
-
-        assert seen["tile"] is True
 
 
 class TestNativeOutputSize:
@@ -248,7 +245,7 @@ class TestEngineResolvesThePolishPerProfile:
 
     This is the change that stopped a library caller and a CLI caller on one profile
     from producing different pixels, and it had no test: rebinding
-    ``resolve_adaptive_polish`` to ``bool(value)`` -- exactly the pre-commit behaviour --
+    ``resolve_adaptive_polish`` to ``bool(value)`` -- exactly the pre-commit behavior --
     left the whole suite green.
     """
 

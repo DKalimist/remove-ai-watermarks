@@ -31,11 +31,14 @@ an unsupported locale, a different position, or a crop may be missed.
 
 Known examples:
 
+- The Microsoft detector covers one calibrated top-right white pill. Microsoft's
+  [documented feature](https://support.microsoft.com/en-us/topic/include-a-watermark-when-content-from-microsoft-365-is-ai-generated-b00a656e-ae61-4692-8086-67d004421030)
+  can instead use a Copilot icon, `AI-Generated` text, or another position.
 - Samsung detection is calibrated for the Italian
   `Contenuti generati dall'AI` text variant.
 - The Jimeng top-left pill has a weak visual detector and is intentionally
   subject to additional product and background checks.
-- Kling support covers the calibrated variants rather than every Kling label.
+- Kling AI support covers the calibrated variants rather than every Kling AI label.
 
 Use `erase --region` when you can see and select an unsupported or missed mark.
 
@@ -112,6 +115,14 @@ For important outputs:
 
 Provider systems can change, so a result verified on one file, seed, or version
 is not a permanent certification.
+
+Meta Content Seal (Muse Image) is in the same family: no local decoder, presence
+recognizable only through the XMP `trainedAlgorithmicMedia` companion tag while
+that metadata survives, and removal verifiable only through the anonymous
+`meta.ai/identification` oracle, which rate-limits by IP per day. The oracle's
+negative is weaker than its positive: Reuters measured it missing 55% of cropped
+Muse images, so treat a negative on a cropped or heavily edited file as
+inconclusive rather than clean.
 
 ### Video SynthID removal is lossy and content-dependent
 
@@ -304,11 +315,11 @@ supported AI provenance metadata without transcoding streams.
 
 `video visible` and `remove_video_visible` additionally support the moving
 Sora 2 mascot and wordmark, the current Veo four-point diamond, the legacy
-`Veo` text, the Seedance boxed `AI` label, the fixed `Dola AI` text, the Hailuo
-MINIMAX/Hailuo composite label, and the bottom-right Kling label with its
+`Veo` text, the Seedance boxed `AI` label, the fixed `Dola AI` text, the Hailuo AI
+MINIMAX/Hailuo AI composite label, and the bottom-right Kling AI label with its
 version suffix. Detection requires a recurring visual candidate across
 adjacent frames. Fixed-mark candidates must remain anchored rather than
-drifting with a scene object. Kling also requires a bright low-saturation
+drifting with a scene object. Kling AI also requires a bright low-saturation
 candidate near the expected frame edge. Provider provenance can recover
 low-contrast runs only after visual evidence exists for the marks that define a
 provenance prior, so metadata alone does not erase a clean API export.
@@ -319,7 +330,7 @@ policies and selects the first stable result in specificity order. Use an
 explicit mark when the provider is already known.
 Historical Sora Turbo exports use a small OpenAI swirl in the corner rather
 than the moving mascot-and-wordmark design; that earlier variant is not
-detected by the `sora` video mark. Hailuo and Kling coverage is specific to the
+detected by the `sora` video mark. Hailuo AI and Kling AI coverage is specific to the
 verified lower-edge layouts; a new provider layout needs a separate calibrated
 silhouette. Other provider video labels are not supported yet. Google video
 SynthID has an oracle-certified VAE removal path, while other proprietary
@@ -410,7 +421,7 @@ remain identical because isolated decoder hits can otherwise be content noise.
 It accepts Variant P schemas 0-2. Variant Q requires a different model, and
 schema 3 is rejected at the measured precision threshold. Its NumPy 1.x runtime
 limits the extra to Python 3.11-3.12; the rest of the package remains supported
-through Python 3.14. Through 0.29.0 the extra also resolves lightning 2.6.5
+through Python 3.14. The current TrustMark dependency line also resolves lightning 2.6.5
 (PYSEC-2026-3624, no fixed release yet); the vulnerable `load_from_checkpoint`
 path is unreachable here because TrustMark loads its checksummed checkpoints
 with plain `torch.load`. Bump lightning and cut a patch release when a fix

@@ -199,7 +199,7 @@ def parse_tc260_aigc_json(value: bytes) -> dict[str, str] | None:
     return fields if TC260_AIGC_FIELDS & fields.keys() else None
 
 
-# HuggingFace-hosted GPU jobs (Jobs / Spaces) stamp generated PNGs with this
+# Hugging Face-hosted GPU jobs (Jobs / Spaces) stamp generated PNGs with this
 # ``tEXt`` chunk key holding the job UUID. It marks the hosting job, not a
 # specific model -- a medium-confidence AI signal (commonly diffusion output).
 _HF_JOB_KEY: str = "hf-job-id"
@@ -413,7 +413,7 @@ def _scan_head_impl(image_path: Path, size: int) -> bytes:
 # packet larger than this is not a provenance label.
 _DECODED_TEXT_LIMIT = 512 * 1024
 # Decoder values that are binary payloads with their own readers, not metadata text.
-# An ICC profile is colour data and can run to hundreds of kilobytes; appending it
+# An ICC profile is color data and can run to hundreds of kilobytes; appending it
 # would bloat the buffer every later detector re-scans, for no signal.
 _DECODER_BINARY_KEYS = frozenset({"icc_profile"})
 
@@ -510,7 +510,7 @@ def has_ai_metadata(image_path: Path) -> bool:
     # only the XMP form; the raw-JSON tEXt chunk needs the PIL-based parse).
     if aigc_label(image_path) is not None:
         return True
-    # HuggingFace-hosted job marker (hf-job-id PNG text chunk).
+    # Hugging Face-hosted job marker (hf-job-id PNG text chunk).
     if huggingface_job(image_path):
         return True
     # xAI / Grok: no C2PA/IPTC/XMP -- only the EXIF Signature + UUID-Artist pair.
@@ -682,10 +682,10 @@ def c2pa_cloud_manifest(image_path: Path) -> str | None:
 
 
 def _huggingface_job_impl(image_path: Path) -> str | None:
-    """Return the HuggingFace job id if the image carries an ``hf-job-id`` PNG
+    """Return the Hugging Face job id if the image carries an ``hf-job-id`` PNG
     text chunk, else None.
 
-    HuggingFace-hosted GPU jobs (Jobs / Spaces) stamp generated PNGs with an
+    Hugging Face-hosted GPU jobs (Jobs / Spaces) stamp generated PNGs with an
     ``hf-job-id`` ``tEXt`` chunk holding the job's UUID. It identifies the
     *hosting job*, not a specific model, and is most commonly seen on diffusion-
     generation output -- a medium-confidence AI signal, not proof of AI pixels
@@ -839,6 +839,13 @@ def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None)
     # Matches both "trainedAlgorithmicMedia" and "compositeWithTrainedAlgorithmicMedia".
     ai_source = b"trainedAlgorithmicMedia" in data or b"TrainedAlgorithmicMedia" in data
     if not (has_c2pa and ai_source):
+        return None
+    from remove_ai_watermarks._internal.c2pa import soft_binding_vendors_in
+
+    # A scan that names its own forensic soft-binding algorithm carries that
+    # vendor's mark; the generic vendor-token inference must not add a second,
+    # differently-attributed invisible watermark from the same bytes.
+    if soft_binding_vendors_in(data):
         return None
     matched = synthid_evidence_vendors_in(data)
     return ", ".join(matched) if matched else None
@@ -1210,9 +1217,9 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     if system := iptc_ai_system(image_path):
         result.setdefault("ai_system", f"IPTC 2025.1 AI disclosure ({system})")
 
-    # HuggingFace-hosted job marker (hf-job-id PNG text chunk).
+    # Hugging Face-hosted job marker (hf-job-id PNG text chunk).
     if job := huggingface_job(image_path):
-        result.setdefault("huggingface_job", f"HuggingFace-hosted job ({job})")
+        result.setdefault("huggingface_job", f"Hugging Face-hosted job ({job})")
     # Samsung Galaxy AI editing marker (genAIType in PhotoEditor_Re_Edit_Data).
     if (genai := samsung_genai(image_path)) is not None:
         result.setdefault("samsung_genai", f"Samsung Galaxy AI editing marker (genAIType={genai})")

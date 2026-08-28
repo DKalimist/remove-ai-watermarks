@@ -1,17 +1,18 @@
-"""Build BLIND contact sheets for hand-labelling relaxation additions.
+"""Build BLIND contact sheets for hand-labeling relaxation additions.
 
 Crops are centered on the DETECTED REGION (not the corner), padded by ~0.9x the mark
 size, and resized to 240px with INTER_NEAREST -- a downscaled preview destroys a faint
 mark, so nothing here may smooth. The manifest is written to a separate file that must
-NOT be read until labelling is finished.
+NOT be read until labeling is finished.
 
 Each sheet mixes three strata in shuffled order:
   add    - the relaxation additions whose precision we are measuring
-  pos    - strict-consistent detections (a mark is really there): labeller sensitivity
-  clean  - verified-clean negatives (no mark can be there): labeller specificity
+  pos    - strict-consistent detections (a mark is really there): labeler sensitivity
+  clean  - verified-clean negatives (no mark can be there): labeler specificity
 The two control strata are what make a low measured precision trustworthy.
 """
 
+import argparse
 import csv
 import json
 import random
@@ -62,9 +63,13 @@ def crop(path: str, region: tuple[int, int, int, int] | None, pad_factor: float 
 
 
 def main() -> None:
-    with open(sys.argv[1]) as fh:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input", type=Path, help="JSON candidate list")
+    parser.add_argument("output", type=Path, help="Directory for blinded contact sheets")
+    args = parser.parse_args()
+    with args.input.open() as fh:
         items = json.load(fh)  # [{uid,path,key,stratum,conf}]
-    outdir = Path(sys.argv[2])
+    outdir = args.output
     outdir.mkdir(parents=True, exist_ok=True)
     random.Random(1234).shuffle(items)  # noqa: S311 -- sheet ordering, not cryptography
 

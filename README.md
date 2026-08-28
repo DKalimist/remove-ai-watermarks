@@ -2,18 +2,19 @@
 
 Remove AI provenance marks from images and video you generated yourself:
 
-- known visible labels such as the Gemini sparkle and vendor text marks;
+- known visible labels such as the Google Gemini sparkle watermark and vendor text marks;
 - invisible pixel watermarks through diffusion regeneration;
 - C2PA, EXIF, XMP, IPTC, and related AI metadata.
 
 Video support covers provenance identification, complete visible-plus-metadata
-cleaning, directory batches, visible Sora, Veo, Seedance, Dola, Hailuo, and
-Kling mark removal, and oracle-certified VAE regeneration for video SynthID
+cleaning, directory batches, visible Sora, Veo, Seedance, Dola, Hailuo AI, and
+Kling AI mark removal, and oracle-certified VAE regeneration for video SynthID
 removal.
 
 > [raiw.cc](https://raiw.cc) runs this library as a hosted service, with the GPU
-> included and nothing to install. Visible mark and metadata removal are free
-> there; invisible watermark removal is paid.
+> included and nothing to install. Visible mark and metadata removal at Standard
+> output up to 12 MP are free there; original resolution above 12 MP and invisible
+> watermark removal are paid.
 
 [![PyPI](https://img.shields.io/pypi/v/remove-ai-watermarks?logo=pypi&logoColor=white)](https://pypi.org/project/remove-ai-watermarks/)
 [![Python](https://img.shields.io/pypi/pyversions/remove-ai-watermarks?logo=python&logoColor=white)](https://pypi.org/project/remove-ai-watermarks/)
@@ -188,8 +189,8 @@ the specificity order shown below. Pass an explicit mark to restrict detection
 to one provider.
 Sora covers the moving Sora 2 mascot and wordmark. Veo covers both the current
 four-point diamond and the legacy `Veo` text. Seedance covers the fixed boxed
-`AI` label, Dola covers the fixed `Dola AI` text, Hailuo covers the composite
-`MINIMAX | hailuo AI` label, and Kling covers the bottom-right `KLING AI`
+`AI` label, Dola covers the fixed `Dola AI` text, Hailuo AI covers the composite
+`MINIMAX | hailuo AI` label, and Kling AI covers the bottom-right `KLING AI`
 label with its version suffix. A completed encode is published atomically. No
 output is written when no stable mark is found.
 HDR, PQ/HLG, and greater-than-8-bit inputs are rejected before encoding rather
@@ -249,6 +250,13 @@ features, and development setup.
 | Before | After |
 | --- | --- |
 | ![Image with a visible Gemini watermark](demo_banana_before.png) | ![Image after visible watermark removal](demo_banana_after.png) |
+
+The `after` raster is generated from the tracked `before` raster by the public path:
+
+```bash
+uv run remove-ai-watermarks visible demo_banana_before.png \
+  --backend cv2 -o demo_banana_after.png
+```
 
 ### High quality invisible removal
 
@@ -331,8 +339,9 @@ remove-ai-watermarks batch ./images --mode all
 
 Visible mark support includes:
 
-- Google Gemini and Nano Banana sparkle;
-- Doubao, Jimeng, Qwen, Kling, Yuanbao, Baidu, LibLibAI, and RunningHub labels;
+- Google Gemini and Nano Banana visible sparkle watermark;
+- Doubao, Jimeng, Qwen, Kling AI, Yuanbao, Baidu, LiblibAI, and RunningHub labels;
+- one calibrated Microsoft top-right white AI-badge variant;
 - one calibrated Samsung Galaxy AI label variant.
 
 Metadata and provenance inspection covers C2PA, EXIF, XMP, IPTC, common
@@ -419,7 +428,7 @@ invisible removal.
   detail.
 - Visible video removal recognizes the moving Sora 2 wordmark, the current Veo
   diamond plus legacy `Veo` text, the Seedance boxed `AI` label, and the fixed
-  Dola, Hailuo, and Kling labels. It does not recognize the older Sora Turbo
+  Dola, Hailuo AI, and Kling AI labels. It does not recognize the older Sora Turbo
   corner swirl or unregistered layouts from those providers.
   The classical OpenCV backend can smear structured backgrounds; use MI-GAN or
   LaMa when recovery quality matters.

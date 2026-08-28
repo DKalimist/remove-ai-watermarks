@@ -73,7 +73,7 @@ def _tc260_vendors(path: Path) -> frozenset[str]:
 
     An absent, unreadable or unmapped producer falls back to the historical pair rather
     than to nothing: the caller has already established that the AIGC signal fired, so
-    the image IS China-AIGC labelled, and dropping to no relaxation would lose the
+    the image IS China-AIGC labeled, and dropping to no relaxation would lose the
     detections the fallback recovers today. The re-read is deliberately isolated -- a
     failure here must narrow the answer, never discard the rest of the provenance.
     """
@@ -156,9 +156,10 @@ def remove_visible(
 ) -> tuple[NDArray[Any], list[str]]:
     """Remove every detected known visible AI mark through localize then fill.
 
-    The registry currently covers the Gemini sparkle; Doubao, Jimeng, Qwen, Kling,
-    Yuanbao, Samsung, RunningHub, Baidu, and LibLibAI text marks; and the Jimeng
-    pill. Returns ``(result_bgr, [labels removed])``.
+    The registry currently covers the Gemini visible watermark; Doubao, Jimeng,
+    Qwen, Kling AI, Yuanbao, Samsung, RunningHub, Baidu, and LiblibAI text marks;
+    one Microsoft top-right AI-badge variant; and the Jimeng pill. Returns
+    ``(result_bgr, [labels removed])``.
 
     ``source`` is a file path OR a BGR ndarray. For a PATH, metadata provenance is read
     automatically (so ``sensitivity="auto"`` recovers a moved/faint mark whenever the
@@ -184,7 +185,7 @@ def remove_visible(
     from remove_ai_watermarks import watermark_registry
 
     # Reject a removed sensitivity loudly; `Sensitivity` is a Literal and not enforced
-    # at runtime, so a 0.15 caller would otherwise get `auto` behaviour in silence.
+    # at runtime, so a 0.15 caller would otherwise get `auto` behavior in silence.
     watermark_registry.validate_sensitivity(sensitivity)
     loaded = _load_visible_input(source)
     result, removed = watermark_registry.remove_auto_marks(
@@ -232,6 +233,7 @@ class InvisibleOptions:
 
     strength: float | None = None
     pipeline: str = "qwen-zimage"
+    vendor: str | None = None
     seed: int | None = None
     hf_token: str | None = None
     humanize: float = 0.0
@@ -487,13 +489,17 @@ def _run_invisible(
     if not is_available():
         say("invisible", "unavailable")
         return "unavailable"
-    if not (force or evidence.has_invisible_target()):
+    if not (force or opts.vendor is not None or evidence.has_invisible_target()):
         say("invisible", "no-signal")
         return "no-signal"
 
     from remove_ai_watermarks._internal.watermark_profiles import resolve_strength, vendor_for_strength
 
-    vendor = vendor_for_strength(vendor_source)
+    # An explicit vendor override wins over detection and implies the scrub runs:
+    # naming the cohort (e.g. "meta" for Muse Image Content Seal, which carries no
+    # provenance to detect) asserts the pixel watermark is present, so the no-signal
+    # gate must not skip it.
+    vendor = opts.vendor or vendor_for_strength(vendor_source)
     # Report the strength the engine will actually execute, resolved the same way it
     # resolves it, so the reported value cannot drift from the executed one.
     with suppress(Exception):

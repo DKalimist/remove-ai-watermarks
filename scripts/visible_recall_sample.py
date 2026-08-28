@@ -1,8 +1,8 @@
 """Build an UNBIASED random sample for measuring visible-mark RECALL.
 
-Every earlier labelling round sampled where detectors FIRED, so images that every
+Every earlier labeling round sampled where detectors FIRED, so images that every
 detector missed were absent by construction and recall was unmeasurable. This round
-samples at random within a provenance class and shows the labeller the corners where
+samples at random within a provenance class and shows the labeler the corners where
 a mark can physically be, so a MISSED mark is visible as such.
 
 Design decisions that matter:
@@ -13,19 +13,19 @@ Design decisions that matter:
   recall over all uploads would mostly measure how often each vendor appears.
 * NATIVE RESOLUTION crops, never a downscaled whole image: a 220px preview destroys a
   faint mark (measured in an earlier round), which would inflate the miss count with
-  the labeller's own blindness rather than the detector's.
+  the labeler's own blindness rather than the detector's.
 * BOTH corners per image (top-left pill, bottom-right wordmark/strip/sparkle), so one
   pass adjudicates every registered mark instead of one mark per crop.
 * The detector's verdict is NOT shown and is not in the sheet order -- the manifest
-  holds it and must not be opened until labelling ends.
+  holds it and must not be opened until labeling ends.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import random
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +34,8 @@ import numpy as np
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+
+import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from remove_ai_watermarks.image_io import imread
@@ -63,10 +65,16 @@ def corner_strip(img: NDArray[Any]) -> NDArray[Any] | None:
 
 
 def main() -> None:
-    scan = Path(sys.argv[1])
-    out = Path(sys.argv[2])
-    n_tc260 = int(sys.argv[3]) if len(sys.argv) > 3 else 160
-    n_google = int(sys.argv[4]) if len(sys.argv) > 4 else 80
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("scan", type=Path, help="JSONL corpus scan produced by the visible evaluation harness")
+    parser.add_argument("output", type=Path, help="Directory for contact sheets and the blinded manifest")
+    parser.add_argument("--tc260", type=int, default=160, help="Number of TC260 carriers to sample")
+    parser.add_argument("--google", type=int, default=80, help="Number of Google-provenance carriers to sample")
+    args = parser.parse_args()
+    scan = args.scan
+    out = args.output
+    n_tc260 = args.tc260
+    n_google = args.google
     out.mkdir(parents=True, exist_ok=True)
 
     recs = [json.loads(line) for line in scan.open() if '"marks"' in line]

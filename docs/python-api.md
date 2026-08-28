@@ -129,6 +129,18 @@ raiw.remove_all(
 )
 ```
 
+`vendor="meta"` names a strength cohort explicitly (the measured Content Seal
+floor) for a stripped file whose provenance no longer carries the AI IPTC tag,
+and implies the scrub runs:
+
+```python
+raiw.remove_all(
+    "muse_output.webp",
+    "clean.png",
+    invisible=InvisibleOptions(vendor="meta"),
+)
+```
+
 `InvisibleOptions` carries only what `InvisibleEngine` itself takes, and uses the
 engine's own parameter names and defaults. `force`, which decides whether the
 engine runs at all, is a parameter of `remove_all` and `remove_batch` alongside
@@ -568,8 +580,8 @@ independently and are not compared across detectors. Pass one of those explicit
 values to restrict the scan to a single provider. The Veo detector recognizes
 the current four-point diamond and the
 legacy `Veo` text. Seedance recognizes the boxed `AI` label, Dola recognizes
-its compact text label, Hailuo recognizes the composite MINIMAX/Hailuo label,
-and Kling recognizes its bottom-right logo, wordmark, and version suffix. Each
+its compact text label, Hailuo AI recognizes the composite MINIMAX/Hailuo AI label,
+and Kling AI recognizes its bottom-right logo, wordmark, and version suffix. Each
 variant has an independent synthetic silhouette and calibrated temporal policy.
 After each accepted frame is filled, `temporal_consistency=True` motion-aligns
 the preceding accepted fill and blends it only when the warped prior mask
@@ -649,10 +661,10 @@ engine.remove_watermark(
 Install `remove-ai-watermarks[text-restoration]`. The manifest schema and safety
 constraints are documented in the CLI guide. The engine verifies its decoded RGB
 hash before loading the diffusion models and rejects SDXL, downscaling, and
-postprocessing combinations that were not evaluated. Tiling is allowed: the VAE
-donor uses the same overlapping tiles as the global pass. `InvisibleOptions` exposes the
-same field for `remove_all`; after a visible-stage edit, the manifest must be built
-against the staged pixels rather than the pristine source.
+postprocessing combinations that were not evaluated. Tiling is also rejected because
+the combined tiled-restoration path has no provider-oracle calibration. `InvisibleOptions`
+exposes the same field for `remove_all`; after a visible-stage edit, the manifest must
+be built against the staged pixels rather than the pristine source.
 
 Use manifest schema 1 for manually reviewed text plus script metadata. Automated
 operators that verify only text-region geometry should emit schema 2 lines with a
