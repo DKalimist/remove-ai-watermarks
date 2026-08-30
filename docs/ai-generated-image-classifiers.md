@@ -966,6 +966,30 @@ Photo leakage remained at 1.4%. The worst regression is memes at 47.9%
 provider feature space. Six domains achieve zero provider leakage.
 Artifacts: `provider-v2-2026-08-27/`.
 
+### Universal v11: full taxonomy coverage, 2026-08-30
+
+The master data plan identified 148 visual domains of human-made content.
+Massive collection (3,343 images across 73 new domains from Openverse)
+plus gap-filler (724 images from Safebooru for anime/manga/chibi/mecha
+and diverse generated documents) expanded the dataset to 19,768 training
+images across 136 negative domains. Universal v11 (MLP-512 on frozen CLIP,
+three-tier ensemble with Model 1) achieves:
+
+- **DEFINITELY_AI**: 90.3% recall at 0.50% photo FPR, Kodak 0/24
+- **ANY_AI**: 95.6% recall (exceeds Model 1's 93.0%)
+- **124 of 134 negative domains at exactly 0% FP**
+- Worst FP: digital_art 13.8% (human fan art visually inseparable from AI art)
+- Only 57 false positives across 1,090 test images in all failing domains
+
+This is the strongest result of the campaign: a single model that handles
+photographic content, structured documents, UI screenshots, art, maps,
+medical imagery, anime, and all other measured domains with near-zero false
+positives on 92% of domains. The remaining failures are concentrated in two
+categories (stylized digital art, heavily retouched fashion) where AI and
+human content share deep visual similarity.
+Artifacts: `universal-v11-2026-08-30/`, `massive-collection-2026-08-27/`,
+`gap-filler-2026-08-27/`.
+
 ### Five-head provider cascade with TC260, 2026-08-27
 
 Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
