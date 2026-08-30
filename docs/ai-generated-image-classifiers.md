@@ -954,6 +954,18 @@ that works across ALL content types (photographic, structured, documents,
 UI, art) with per-tier calibrated error rates.
 Artifacts: `three-tier-2026-08-27/`, `ensemble-v8-m1-2026-08-27/`.
 
+### Provider v2: diversity training eliminates document leakage, 2026-08-27
+
+Applying the same diversity-training insight to the provider cascade (adding
+3,769 structured negative features to training alongside 1,936 photo
+negatives) produced dramatic improvements. **Document/receipt leakage dropped
+from 69.8% to 5.1%**, UI from 10% to 4.3%, fashion from 5-15% to 0-3%. AI
+recall improved for OpenAI (84%, from 75%) and Google (88.8%, from 79%).
+Photo leakage remained at 1.4%. The worst regression is memes at 47.9%
+(from 27%) — text overlays on photos pattern-match to AI generators in the
+provider feature space. Six domains achieve zero provider leakage.
+Artifacts: `provider-v2-2026-08-27/`.
+
 ### Five-head provider cascade with TC260, 2026-08-27
 
 Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
