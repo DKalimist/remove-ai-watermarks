@@ -934,6 +934,26 @@ human-made content share deep visual similarity. Photo-side gates (fresh OI
 ≤50, Kodak 0/24) remain the open constraint.
 Artifacts: `universal-v7-2026-08-27/`, `auto-pipeline-2026-08-27/`.
 
+### Three-tier ensemble detector, 2026-08-27
+
+Combining Model 1 and v8 into a three-tier output transforms the binary
+detector into a calibrated confidence system:
+
+- **DEFINITELY_AI** (both models agree): 79.6% recall at 0.50% photo FPR,
+  Kodak 0/24, 46 of 49 negative domains at zero FP, worst FP 2.1% (digital
+  art). This tier is production-safe for verification and moderation.
+- **POSSIBLY_AI** (one model fires): 13.8% additional recall at moderate
+  FP. This tier flags images for human review.
+- **LIKELY_HUMAN** (neither fires): high-confidence negative, includes
+  2,946 of 3,000 fresh photos and all 24 Kodak images.
+
+The union (DEFINITELY + POSSIBLY) achieves 93.3% recall at 1.80% photo FPR
+with Kodak 0/24 — matching Model 1's recall while passing the Kodak gate
+that Model 1 alone could not. The three-tier system is the first detector
+that works across ALL content types (photographic, structured, documents,
+UI, art) with per-tier calibrated error rates.
+Artifacts: `three-tier-2026-08-27/`, `ensemble-v8-m1-2026-08-27/`.
+
 ### Five-head provider cascade with TC260, 2026-08-27
 
 Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
