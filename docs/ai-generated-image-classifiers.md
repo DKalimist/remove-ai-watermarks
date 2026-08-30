@@ -907,6 +907,33 @@ in a sub-band. Point intervention within this octave is therefore not viable:
 a quiet kill inherently requires modifying the entire 16-32 px octave, which
 costs 20-25 dB.
 
+### Universal AI detector v3-v8: diverse training shifts the curve, 2026-08-27
+
+A fundamentally different approach from all closed hypotheses: instead of
+repairing Model 1 (trained on photo negatives only), train a fresh classifier
+on the FULL diversity of human-made and AI-generated content. The v3 ridge on
+frozen CLIP embeddings with 3,224 structured negatives achieved 88.0% recall
+at 0.1% photo FPR with structured FP reduced from 33-99% to 0-14%. The v4 MLP
+pushed recall to 91.3%. Crucially, v5 (fine-tuning the CLIP tower on the same
+data) UNDID the structured gains, proving the improvement comes from training
+data diversity on frozen embeddings, not from representation change.
+
+Iterations v6-v8 expanded the corpus to 49 negative domains (12,258 images)
+plus 5,043 AI positives across 19+ families. The v7 MLP achieved **93.3%
+AI-test recall** (matching Model 1's 93.02%) with **36 of 49 negative domains
+at zero false positives**. The v8 auto-pipeline (650 additional targeted
+images for weak domains) improved to **39/49 domains at zero FP** with digital
+art at 24.8% (from 99.3% in Model 1), fashion at 12.0% (from 62-71%), and UI
+at 12.0% (from 99.3%). Photo FP remained at 0.7% (COCO) and 0.7% (picsum).
+
+The trade-off curve has shifted permanently: Model 1 traded 93% recall for
+33-99% structured FP; v8 delivers 93% recall with 0-25% structured FP and
+39/49 domains at exactly zero. The remaining gap is concentrated in digital
+art (24.8%), fashion (12%), and UI (12%) — all domains where AI-generated and
+human-made content share deep visual similarity. Photo-side gates (fresh OI
+≤50, Kodak 0/24) remain the open constraint.
+Artifacts: `universal-v7-2026-08-27/`, `auto-pipeline-2026-08-27/`.
+
 ### Five-head provider cascade with TC260, 2026-08-27
 
 Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth

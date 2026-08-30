@@ -218,7 +218,7 @@ addopts = "-v --tb=short"
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-exclude = ["_refs"]
+exclude = ["_refs", ".local-eval"]
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
@@ -241,7 +241,7 @@ indent-style = "space"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
-exclude = ["_refs"]
+exclude = ["_refs", ".local-eval"]
 
 [[tool.pyright.executionEnvironments]]
 root = "tests"
