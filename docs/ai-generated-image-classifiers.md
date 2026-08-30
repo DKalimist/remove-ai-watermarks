@@ -990,6 +990,19 @@ human content share deep visual similarity.
 Artifacts: `universal-v11-2026-08-30/`, `massive-collection-2026-08-27/`,
 `gap-filler-2026-08-27/`.
 
+### Fine-tune v12: representation limit confirmed, 2026-08-30
+
+Fine-tuning the CLIP tower on the full 19,518-image dataset (6x the data
+that failed in v5) achieved 95.1% standalone AI-test recall at 2.9% photo
+FPR — but destroyed structured-content discrimination: 100% FP on digital
+art and UI screenshots, 80% on receipts, 14/59 domains at zero FP. This
+confirms that the v5 failure was not a data-volume issue but a fundamental
+property: fine-tuning the CLIP embedding space causes the model to lose the
+structured-content separation that frozen embeddings provide. The frozen
+CLIP + MLP approach (v11) remains the only working architecture. Provider v3
+trained on all negative domains achieved 1.4% photo leak.
+Artifacts: `fine-tune-v12-2026-08-30/`, `provider-v3-2026-08-30/`.
+
 ### Five-head provider cascade with TC260, 2026-08-27
 
 Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
