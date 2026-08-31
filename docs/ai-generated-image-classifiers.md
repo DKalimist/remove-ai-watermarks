@@ -1173,7 +1173,7 @@ provider by the sha256 of the bytes on disk (`both-models-2026-08-31/catalog.jso
 32,690 files, 590 listed missing). Roles cover Model 1 splits, taxonomy
 struct/AI extras, and provider OpenAI/Google/TC260/Meta/no_ai plus the Meta
 and meme hold-outs. OpenAI and Google are a fresh seed-`20260821` sample of
-2,000 existing Spaces files each, with catalog sha256 verified at sample
+2,000 existing labeled files each, with catalog sha256 verified at sample
 time; they are not the anonymous `provider-class-features.npz` arrays.
 `no_ai` is a documented 2,000-draw from `photo_train` (1,848 yielded 124-d
 features).
@@ -1226,8 +1226,7 @@ Re-run: `uv run python .local-eval/synthid/ai-photo-2026-08-22/replace_private_u
 then `uv run python .local-eval/synthid/ai-photo-2026-08-22/collect_meta_holdout_v3.py`
 then `uv run python .local-eval/synthid/ai-photo-2026-08-22/integrate_meta_holdout_v3.py`
 then `uv run python .local-eval/synthid/ai-photo-2026-08-22/freeze_both_models.py`.
-Durable copy: `data/research/reports/both-models-2026-08-31/` in the main
-checkout.
+Durable copy: `data/research/reports/both-models-2026-08-31/` (gitignored).
 
 Verification (`verify_both_models_freeze.py`) re-hashed all 32,690 catalog
 files: every path exists, every sha256 matches disk, `own_products_ui` is
@@ -1243,7 +1242,7 @@ pass; the Openverse screenshot queries are not a UI-only cell. Re-run:
 
 ### Five-head provider cascade with TC260, 2026-08-27
 
-Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
+Adding TC260 (721 Chinese-AIGC images from the local research catalog) as a fifth
 class to the provider cascade produced a working five-way system:
 openai 68.8%, google 76.6%, **tc260 63.8%**, meta 71.8% mean recall under
 uniform margin 0.50 (25 repeated splits). Per-class margin calibration

@@ -508,11 +508,11 @@ Official `POST /v1/content_provenance_checks`, metadata stripped, pixels
 preserved. Raw files stay gitignored under
 `.local-eval/synthid/prc-oklab-attack-2026-08-15/`.
 
-| Seed | Path | Size |
-| --- | --- | --- |
-| s1 | `originals/2026-05-31/31e55ea8a4de42029659654a80814630_src.png` | 1024x1536 |
-| s2 | `originals/2026-05-31/37ae95821a3447c78f94e56bdebf0c88_src.png` | 1024x1536 |
-| s3 | `originals/2026-07-10/d76f35fee69e4531865e88b786fa52e5_src.png` | 1086x1448 |
+| Seed | Size |
+| --- | --- |
+| s1 | 1024x1536 |
+| s2 | 1024x1536 |
+| s3 | 1086x1448 |
 
 All three `detected` before attacks.
 

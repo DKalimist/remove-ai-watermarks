@@ -39,7 +39,7 @@ Firefly 36/33/15. OpenAI versus Gemini AUC on CLIP-L-ft is 0.845; on the
 
 ### Renderer, not front-end (cross-carrier validation, 2026-08-26)
 
-The Spaces catalog's C2PA issuer field allows a provider-label audit the
+A local C2PA-labeled collection's issuer field allows a provider-label audit the
 family labels cannot express: Bing Image Creator rows signed `Microsoft,
 OpenAI` (renderer DALL-E, n=152), Microsoft-native rows (MAI-Image / Designer,
 n=85), Designer rows signed `Microsoft, Google LLC` (renderer Imagen, n=36),
@@ -66,7 +66,7 @@ a known-provenance Meta corpus possible without any account browser session:
 61 images generated from a 61-prompt grid spanning portraits, product shots,
 scenes, food, animals, architecture, illustration styles, text posters, and
 abstract work across all three aspect ratios, plus the five oracle-verified
-samples already in `data/contentseal/originals/`. All 66 are content-hash
+oracle-verified content-seal samples already on disk. All 66 are content-hash
 unique, delivered at 1600x1600 / 1920x1280 / 1280x1920, and every API row
 carries IPTC `trainedAlgorithmicMedia` plus a Content Seal generation id
 recorded in the manifest. A four-head control with a `microsoft_native` class
@@ -503,7 +503,7 @@ Not a watermark and not in `identify`. `scripts/synthid_runtime/`
 Firefly 18% and PixelBin 14% match the 2026-08-16 signed-foreign rates
 (24% and 14%) in order of magnitude. Both Microsoft hits have issuer
 `Microsoft, Google LLC`. A 2 px crop killed every sampled positive,
-including Firefly and PixelBin. Google TPR 56% is mixed Spaces eras, not
+including Firefly and PixelBin. Google TPR 56% is mixed collection eras, not
 the oracle-positive 147/148 cell. Honest name:
 `google_lineage_renderer` = Gemini/Imagen + Firefly + PixelBin.
 
@@ -511,25 +511,8 @@ Registered-v3 photographic controls remain 0/5,993 Open Images and 0/2,366
 COCO. Against 223 C2PA-named non-Google generators on 2026-08-16: 29
 accepted (0.130), Firefly 0.241. `.local-eval/synthid/lattice-check-2026-08-22/`.
 
-## Spaces catalog sizes (2026-08-21)
+## Local collection note (2026-08-21)
 
-49,082 unique sha256. Unlabeled 24,832 rows are not photographs. Microsoft
-127/279 and Firefly 64/210 also carry `synthid_from_provenance=true`, so
+Unlabeled rows in the local C2PA-labeled collection are not photographs.
+Microsoft and Firefly rows also carry `synthid_from_provenance=true`, so
 that flag is not an OpenAI-plus-Gemini class.
-
-| Platform | n |
-| --- | ---: |
-| none / unlabeled | 24,832 |
-| OpenAI | 11,722 (11,347 SynthID-from-provenance) |
-| Google / Gemini | 6,875 (plus 94 Google C2PA without a named generator) |
-| China AIGC TC260 (not a brand) | 3,610 |
-| Microsoft | 279 |
-| Meta-style Made-with-AI tag | 275 |
-| Adobe Firefly | 210 |
-| xAI | 179 |
-| local SD / Comfy | 178 |
-| ByteDance platform | 88 |
-| fal.ai | 98 |
-| Canva | 79 |
-| ByteDance Aweme tag | 40 |
-| Dreamina tag | 4 |
