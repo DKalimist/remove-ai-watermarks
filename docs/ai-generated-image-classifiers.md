@@ -811,6 +811,20 @@ calibrated abstain band presented as unknown rather than no_ai, accepting a
 bounded recall loss decided as a product tradeoff, not a model fix.
 Artifacts: `receipt-gate-2026-08-27/report.json`.
 
+The 2026-08-31 layout probe (OpenCV stacked text-lines, no CLIP, no
+retraining) splits that failure into two domains. Photoreal AI receipts
+are easy layout positives (16 and 26 lines on the two probes, gated at
+every cut from 3 to 15). Photographed thermal CORD is the hard cell
+(median 6 lines). Photos and AI-test sit at median 1 line. A
+high-precision cut `n_lines >= 11` covers both AI-receipt probes, 14.1%
+of CORD, 0.3% of a 300-photo sample, 0/24 Kodak, and 3.7% of a 300-image
+AI-test sample, versus the CLIP receipt-gate's 14.4% AI-test loss. Paddle
+OCR on the two AI receipts reads brand and totals and garbles the
+surrounding Spanish; that is a specialist signal, not a Model 1 feature.
+Do not add receipts to CLIP-L train. Next: a layout-first router into an
+OCR specialist, with thermal CORD still uncovered at a photo-safe cut.
+Artifacts: `receipt-layout-gate-2026-08-31/report.json`.
+
 Batch-1 then filled four more unmeasured domains under the same sieves
 (428→421 rows after phantom repair: UI screenshots, 150; Danbooru community
 digital art, 145; software-rendered matplotlib charts, 82; OpenStreetMap
