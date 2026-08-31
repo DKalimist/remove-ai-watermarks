@@ -1003,6 +1003,19 @@ CLIP + MLP approach (v11) remains the only working architecture. Provider v3
 trained on all negative domains achieved 1.4% photo leak.
 Artifacts: `fine-tune-v12-2026-08-30/`, `provider-v3-2026-08-30/`.
 
+### v13: plateau confirmed, 2026-08-30
+
+Top-plan data expansion (1,169 images: TC260 500, art 500 from Safebooru,
+fashion 300 from Unsplash, memes 250, Meta 79, OpenAI 40) confirmed the
+frozen-CLIP plateau. v13 achieves 89.6% DEFINITELY / 95.1% ANY with
+**128 of 136 domains at zero FP** (up from 124/134 in v11) and only 8
+non-zero FP domains. Fashion dropped from 9.3% to 5.3%. Digital art
+remains at the representation limit (15.9%, was 13.8% — the Safebooru
+expansion did not help). The frozen CLIP + MLP architecture has reached
+its ceiling: further data diversity improves domain coverage but cannot
+push DEFINITELY recall past ~90% or reduce art FP below ~15%.
+Artifacts: `v13-final-2026-08-30/`, `top-plan-data-2026-08-30/`.
+
 ### Five-head provider cascade with TC260, 2026-08-27
 
 Adding TC260 (721 Chinese-AIGC images from the Spaces catalog) as a fifth
