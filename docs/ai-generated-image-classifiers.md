@@ -15,6 +15,27 @@ are the first negative, Firefly and PixelBin are in the test, and a watermark
 claim uses an independent oracle. CLIP content embeddings and the 124-d
 origin-locked residual bank are different features for different jobs.
 
+## Frozen result, 2026-08-31
+
+The freeze is **AI versus camera**, not a universal detector, and it is not
+wired into `identify`. Detector: CLIP-L-ft ridge AND freeze MLP.
+Provider: 124-d focal heads, only after DEFINITELY or POSSIBLY.
+
+| Cell | Value |
+| --- | ---: |
+| Detector DEFINITELY, AI-test | 92.4% (n=1,847) |
+| Detector DEFINITELY, fresh | 1.3% (n=3,000) |
+| Detector DEFINITELY, Kodak | 0/24 |
+| Detector DEFINITELY, FLUX | 83.0% (n=300) |
+| Provider OpenAI / Google / TC260 | 90.8% / 90.9% / 78.6% |
+| Provider Meta hold-out v3 | 89.4% (177/198) |
+
+Out of contract: receipts and other documents, UI, digital art without the
+illustration veto, and ungated memes. A photorealistic AI receipt can score
+as human; a real CORD thermal receipt can score as AI. Catalog 32,690 files,
+two CPU retrains byte-identical. Weights stay outside git
+(`data/research/reports/both-models-2026-08-31/`). Details below.
+
 ## Research task hierarchy
 
 The primary classifier task is metadata-free AI-generation detection: given an
@@ -791,11 +812,13 @@ bounded recall loss decided as a product tradeoff, not a model fix.
 Artifacts: `receipt-gate-2026-08-27/report.json`.
 
 Batch-1 then filled four more unmeasured domains under the same sieves
-(428→421 rows after phantom repair: UI screenshots from own products, 150;
-Danbooru community digital art, 145; software-rendered matplotlib charts,
-82; OpenStreetMap tiles, 44). Frozen Model 1 false-positive rates: **UI
-screenshots 149/150 (99.3%)**, **digital art 144/145 (99.3%)**, charts 55/82
-(67.1%), map tiles 21/44 (47.7%). The 1-NN diagnostic puts every failing
+(428→421 rows after phantom repair: UI screenshots, 150; Danbooru community
+digital art, 145; software-rendered matplotlib charts, 82; OpenStreetMap
+tiles, 44). Frozen Model 1 false-positive rates: **UI screenshots 149/150
+(99.3%)**, **digital art 144/145 (99.3%)**, charts 55/82 (67.1%), map tiles
+21/44 (47.7%). The 150 UI files in that measurement were local product
+screenshots; they were replaced on 2026-08-31 with CC-licensed Flickr
+images (see the both-model freeze). The 149/150 figure is the original cell. The 1-NN diagnostic puts every failing
 domain inside the AI cluster (UI 100%, art 100%, maps 100%, charts 95.1%
 closer to AI than to photos), confirming the structural pattern: any
 human-made content that is layout-structured, graphics-like, or
@@ -1015,6 +1038,208 @@ expansion did not help). The frozen CLIP + MLP architecture has reached
 its ceiling: further data diversity improves domain coverage but cannot
 push DEFINITELY recall past ~90% or reduce art FP below ~15%.
 Artifacts: `v13-final-2026-08-30/`, `top-plan-data-2026-08-30/`.
+
+### CLIP-H ensemble, multi-scale TTA, and patch attention, 2026-08-30
+
+The 19,950 CLIP-H embeddings (1024-d, `laion/CLIP-ViT-H-14-laion2B-s32B-b79K`)
+already had a ridge head from the Model 1 sweep (81.2% AI-test at 1.4% fresh
+FPR). What had not been measured was using that ridge as a third voter next
+to Model 1 and v13, plus a new MLP on the same cache, native-resolution TTA,
+and patch-token attention.
+
+On the original paired cells (n=1,905 AI-test, 3,000 fresh, 24 Kodak, 300
+FLUX) the current DEFINITELY rule `Model 1 AND v13` is 89.6% / 1.17% / 0/24 /
+85.3%. Replacing the AND of v13 with an OR of the CLIP-H ridge inside that
+rule is the only positive result of the three:
+
+| Rule | AI-test | Fresh FPR | Kodak | FLUX |
+| --- | ---: | ---: | ---: | ---: |
+| Model 1 AND v13 | 89.6% | 1.17% | 0/24 | 85.3% |
+| Model 1 AND (v13 OR CLIP-H ridge) | **91.9%** | 1.40% | 0/24 | **91.7%** |
+| CLIP-H MLP, photo negatives only | 89.8% | 2.40% | 0/24 | 56.3% |
+
+The CLIP-H MLP without structured negatives repeats the v12 pattern: in-grid
+recall holds, FLUX hold collapses. Multi-scale TTA on CLIP-L-ft (letterbox
+224/336/448, mean embedding, ridge recalibrated on `photo_dev_oi`) raised
+AI-test from 93.1% to 95.4% on 1,847 files and broke the operating point:
+fresh 1.8% to 3.2%, Kodak 0/24 to 1/24, FLUX 92.7% to 87.3%. Patch-token
+attention (256 projected patches, CLS-query, photo negatives only) was 92.2%
+AI-test at 1.4% fresh and 0/24 Kodak, with FLUX at 39%. Extra views and extra
+tokens without diversity training do not survive the 1% photo contract.
+
+The frozen CLIP-L MLP plateau in v13 still stands as a single-backbone
+result. A second frozen backbone as an OR branch inside DEFINITELY is a
+different lever.
+Artifacts: `cliph-ensemble-2026-08-30/`, `multiscale-tta-2026-08-30/`,
+`patch-attention-2026-08-30/`.
+
+### CLIP-H diversity MLP, 2026-08-30
+
+The 8,333 taxonomy images that v13 added were embedded with the same CLIP-H
+tower (1024-d). A v13-protocol MLP (5,330 pos including 809 extra AI, 6,129
+photos, 6,674 structured negatives, 113 domains) was trained on that cache.
+
+Diversity training gave CLIP-H the structured-content property: **113/113
+taxonomy domains at 0% FP** for the CLIP-H MLP. It did not repair FLUX.
+Standalone CLIP-H diversity is 83.0% AI-test / 1.20% fresh / 0/24 Kodak /
+66.0% FLUX, better than the photo-only CLIP-H MLP (56.3% FLUX) and still
+worse than the original CLIP-H ridge (91.3% FLUX). Linear CLIP-H stays the
+robust voter; the MLP spends that robustness on domain coverage.
+
+| Rule | AI-test | Fresh FPR | Kodak | FLUX |
+| --- | ---: | ---: | ---: | ---: |
+| Model 1 AND v13 | 89.6% | 1.17% | 0/24 | 85.3% |
+| Model 1 AND (v13 OR CLIP-H ridge) | 91.9% | 1.40% | 0/24 | 91.7% |
+| Model 1 AND (v13 OR CLIP-H diversity) | 91.1% | 1.27% | 0/24 | 88.3% |
+| Model 1 AND (v13 OR ridge OR diversity) | 92.2% | 1.43% | 0/24 | 92.0% |
+
+The production-shaped DEFINITELY rule remains Model 1 AND (v13 OR CLIP-H
+ridge). Adding the diversity MLP on top is +0.3 pp recall at +0.03 pp fresh.
+The 113/113 zero-FP count is only over taxonomy cells CLIP-H actually
+embedded, not a re-score of v13's original `scores.npz` domains.
+Artifacts: `cliph-diversity-2026-08-30/`, `embeddings-clip-h-taxonomy.npz`.
+
+### Provider v4: focal loss and TC260 expansion, 2026-08-30
+
+Provider v4 refit the five-head 124-d cascade on the v2 bank plus top-plan
+expansion (TC260 1,213, Meta 199, OpenAI 2,038, 4,087 structured negatives,
+250 imgflip memes as extra negatives). A one-vs-rest ridge and a focal-loss
+MLP (`gamma=2`) were trained on the same rows. Full `ai_test` family cells,
+not the 100-row v2 subsample:
+
+| Head | OpenAI | Google | TC260 | photo COCO | `meme_template` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| v4 ridge | 83.2% | 83.9% | 68.1% | 1.4% | 50.7% |
+| v4 focal | **93.4%** | 84.7% | **80.5%** | **0.7%** | **33.8%** |
+
+Focal meets the TC260 ≥75% target and lifts OpenAI. Imgflip memes used in
+training score 0% leak on themselves and are not a test; the honest meme
+cell remains `meme_template` at 33.8%, down from 47.9% but short of 15%.
+Meta 38/39 was a train-end slice and is not a hold-out. Artifacts:
+`provider-v4-2026-08-30/`.
+
+### Holes: digital art, memes, Meta hold-out, 2026-08-30
+
+Three remaining cells were re-measured with disjoint splits.
+
+**Digital art.** The 145 Danbooru rows are in v13 training and still
+DEFINITELY at 15.9% (`m1 AND v13`). Adding CLIP-H ridge as an OR branch,
+the rule that lifts AI-test to 91.9%, fires on 138/145 (95.2%): that
+branch is unsafe on illustration. A CLIP-H diversity MLP, trained on
+taxonomy art and not on these 145, scores 4.8% AI. A global AND with
+that MLP drops FLUX from 91.7% to 64.7%. An illustration-versus-photo
+ridge (807 taxonomy art/anime/paintings vs `photo_train`, 1% photo-dev
+FPR) restricts the veto to illustration-like images: digital art 95.2%
+to **4.8%**, AI-test 91.9% to 88.7%, FLUX 91.7% to 89.7%, Kodak 0/24,
+fresh 1.40% to 1.27%. SD/Comfy takes the largest family drop (93.2% to
+81.4%). The 145 were not in the illustration or diversity training
+caches.
+
+**Memes.** `meme_extra` is a content-hash duplicate of `meme_template`
+(97/100). Holding the 97 hashes out of provider training and evaluating
+them against 250 disjoint imgflip negatives yields **40.7% ungated
+leak**. Training on 48 of the 97 and testing the other 49 still leaks
+34.8%, so 124-d forensic features do not represent this domain.
+Under the detector, DEFINITELY is 2/97 and those two stay `no_ai`:
+**gated provider leak 0%**. Provider must run only on DEFINITELY /
+POSSIBLY, not on every file.
+
+**Meta.** Training on the 122 muse-image rows and testing the later
+`photo_ai_meta_v2` pass (77 readable of 79) is **70.1%**. That is the
+hold-out. The earlier 38/39 figure was a train-end slice and is
+withdrawn. Adding the 95 disjoint `photo_ai_meta` files already on disk
+from `targeted-data-2026-08-27` (same model, different collection, zero
+file-sha256 overlap with muse or v2) lifts the same hold-out to **67/77
+= 87.0%** without new generation.
+
+That number is only reproducible from a frozen split. The collectors
+hashed the API payload and then re-encoded PNG, so `targeted-data` and
+`top-plan` Meta rows had a `sha256` that did not match the file on
+disk (95/95 and 79/79). Muse webp rows already matched. The repaired
+identity is sha256 of the file bytes; the old payload hash is kept as
+`payload_sha256`. The freeze is `meta-split-2026-08-31/split.json`
+(217 train = 122 muse + 95 targeted, 79 hold-out). Training reads that
+file, re-hashes every path, and records extractor refusals instead of
+dropping them: two hold-out 1280x1920 images and one 1600x1600 train
+image return no 124-d features (`n_scored=77` of 79 listed). Seed
+`20260956`. Re-run: `uv run python .local-eval/synthid/ai-photo-2026-08-22/meta_provider_split.py`.
+Artifacts: `holes-2026-08-30/`, `meta-expand-2026-08-31/`,
+`meta-split-2026-08-31/`.
+
+### Both-model freeze and repeated training, 2026-08-31
+
+A single catalog now identifies every file used by the detector and the
+provider by the sha256 of the bytes on disk (`both-models-2026-08-31/catalog.json`,
+32,690 files, 590 listed missing). Roles cover Model 1 splits, taxonomy
+struct/AI extras, and provider OpenAI/Google/TC260/Meta/no_ai plus the Meta
+and meme hold-outs. OpenAI and Google are a fresh seed-`20260821` sample of
+2,000 existing Spaces files each, with catalog sha256 verified at sample
+time; they are not the anonymous `provider-class-features.npz` arrays.
+`no_ai` is a documented 2,000-draw from `photo_train` (1,848 yielded 124-d
+features).
+
+The first CPU repeat that morning still trained on 150 local product UI
+screenshots in `batch1-negative-2026-08-27` (`own_products_ui`). Those files
+are not public internet. They were replaced the same day with 150
+CC-licensed Flickr screenshots via Openverse (`license_type=all-cc`, host
+`live.staticflickr.com` only): CC BY 2.0 42, CC BY-NC 2.0 42, CC BY-SA 2.0
+29, CC BY-NC-SA 2.0 28, CC BY-NC-ND 2.0 6, CC BY-ND 2.0 2, CC0 1. Collector:
+`replace_private_ui.py`. File sha256 after PNG save is identity. Catalog
+`own_products_ui` is now 0; the 150 Flickr rows carry `source=openverse_flickr`
+and a license. CLIP-L extras for those hashes live in `extra-clip-l.npz`
+(150 × 768). 127 of 150 yielded 124-d features; 23 are listed in
+`features-124d-failed.json` (1,808 refusals in the catalog after the swap).
+CLIP-L embeddings keyed by sha256: 26,573.
+
+Training is CPU, seeds `detector=20260940` and `provider=20260956`. Two
+consecutive runs from the updated freeze were **byte-identical**
+(`compare.json`, zero diffs). Pre-replacement: AI-test DEF 92.7%, FLUX
+84.0%, OpenAI 90.0%, Google 89.8%, TC260 79.2%, Meta 83.1%, meme leak 33.7%.
+After the public UI swap:
+
+| Head | Cell | Run 1 = run 2 |
+| --- | --- | ---: |
+| Detector DEFINITELY | AI-test | 92.4% (n=1,847) |
+| Detector DEFINITELY | Fresh | 1.3% (n=3,000) |
+| Detector DEFINITELY | Kodak | 0/24 |
+| Detector DEFINITELY | FLUX | 83.0% (n=300) |
+| Provider | OpenAI test | 90.8% (345/380 of 381) |
+| Provider | Google test | 90.9% (339/373 of 377) |
+| Provider | TC260 test | 78.6% (298/379 of 384) |
+| Provider | Meta hold-out v2 | **85.7%** (66/77 listed 79) |
+| Provider | Meta hold-out v3 | **89.4%** (177/198) |
+| Provider | Meta hold-out pooled | **88.4%** (243/275 listed 277) |
+| Provider | meme_template ungated | 29.1% leak (86 of 97) |
+
+A second Meta hold-out (`photo_ai_meta_v3`, 198 of 200 requested; two
+near-duplicates rejected) was generated the same day from 50 new
+photographic prompts, four passes, requested size 1024x1024 (delivered
+1600x1600). It is eval-only: not in `provider_meta_train` and not in
+detector extras. File sha256 after PNG save is identity. Scoring the
+already-frozen `run1/provider.pt` and the retrained freeze both give
+177/198. Pooled with v2 the lower 95% Wald bound sits above 80%
+(243/275). Collector: `collect_meta_holdout_v3.py`. Split:
+`meta-split-2026-08-31/split.json` (train 217, hold-out v2 79, hold-out
+v3 198).
+
+Re-run: `uv run python .local-eval/synthid/ai-photo-2026-08-22/replace_private_ui.py`
+then `uv run python .local-eval/synthid/ai-photo-2026-08-22/collect_meta_holdout_v3.py`
+then `uv run python .local-eval/synthid/ai-photo-2026-08-22/integrate_meta_holdout_v3.py`
+then `uv run python .local-eval/synthid/ai-photo-2026-08-22/freeze_both_models.py`.
+Durable copy: `data/research/reports/both-models-2026-08-31/` in the main
+checkout.
+
+Verification (`verify_both_models_freeze.py`) re-hashed all 32,690 catalog
+files: every path exists, every sha256 matches disk, `own_products_ui` is
+0, Meta v3 is disjoint from train by file hash and by prompt, v3 is
+eval-only, all 198 v3 rows yielded 124-d, and the two freeze runs stay
+byte-identical. One v2 hold-out is a Hamming-15 phash neighbor of a
+Venice-canal train image (rainy Paris boulevard, different prompt and
+aspect); that file also failed 124-d extraction, so it is not in the 77
+scored. A 16-image visual sample of the Flickr UI cell is **12
+screenshots, 3 photographs, 1 product still**. License and host checks
+pass; the Openverse screenshot queries are not a UI-only cell. Re-run:
+`uv run python .local-eval/synthid/ai-photo-2026-08-22/verify_both_models_freeze.py`.
 
 ### Five-head provider cascade with TC260, 2026-08-27
 
