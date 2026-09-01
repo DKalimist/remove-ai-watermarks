@@ -31,6 +31,8 @@ Optional features and installation groups are documented in [`docs/installation.
 
 `maintain.sh` runs dependency freshness and security checks, Ruff, Pyright scoped to `src/`, and the parallel test suite. Full-project Pyright is not the project gate because the ML dependency graph can exhaust Node memory.
 
+This gate does NOT pass `--ignore-unfixed` to uv-secure, so a transitive CVE with no released fix stops it before Ruff, Pyright and the tests ever run. That is deliberate and it is not a blocker: run those three separately and report them, per the triage in [`docs/development.md`](docs/development.md). A red gate here is not the same signal as a red gate in a sibling repository that does ignore unfixed findings.
+
 Command, gate, typing, and model-test invariants auto-load from [`.claude/rules/development.md`](.claude/rules/development.md). Environment recovery, CI behavior, and fixture policy live in [`docs/development.md`](docs/development.md).
 
 Before a release, read [`docs/release-and-distribution.md`](docs/release-and-distribution.md). Treat the release as complete only after PyPI, Homebrew, the Hugging Face Space, and the ComfyUI Registry are verified; conda is not published. Keep the source-distribution public allowlist.
@@ -51,4 +53,4 @@ Topic-specific rules live in `.claude/rules/*.md` and are auto-loaded when match
 
 | File | Covers |
 |---|---|
-| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, and the detection-path measurement rule |
+| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage seam, and the detection-path measurement rule |

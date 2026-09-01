@@ -146,6 +146,31 @@ engine's own parameter names and defaults. `force`, which decides whether the
 engine runs at all, is a parameter of `remove_all` and `remove_batch` alongside
 `backend` and `sensitivity`.
 
+The complete field set, with the shipped defaults:
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| `strength` | `None` | Denoising strength. `None` resolves per profile and vendor cohort. |
+| `pipeline` | `"qwen-zimage"` | Profile: `qwen-zimage`, `sdxl-zimage`, `chroma-zimage`, or `auto`. |
+| `vendor` | `None` | Strength cohort, and an assertion that the watermark is present. |
+| `seed` | `None` | `None` uses the certified seed 0. Removal near the floor is seed-dependent. |
+| `hf_token` | `None` | Hugging Face token for the model download; the environment and a local `.env` are read when unset. |
+| `humanize` | `0.0` | Analog film grain. 0 is off; 2.0-6.0 is the useful band. |
+| `unsharp` | `0.0` | Unsharp-mask sharpening. 0 is off. |
+| `adaptive_polish` | `None` | `None` lets the profile decide (off for `qwen-zimage`, on for `sdxl-zimage`); `True`/`False` override it. |
+| `max_resolution` | `0` | Cap the long side before diffusion. 0 keeps native geometry and the most detail. |
+| `controlnet_conditioning_scale` | `1.0` | Canny ControlNet conditioning on the global stage. Higher stays closer to the original structure and text. |
+| `cpu_offload` | `False` | Stream model components between CPU and GPU. Lower CUDA memory, slower. |
+| `tile` | `False` | Regenerate large inputs in overlapping tiles instead of downscaling. |
+| `tile_size` | `1024` | Tile side in pixels when `tile` is set. |
+| `tile_overlap` | `128` | Tile overlap in pixels. More overlap hides seams and costs time. |
+| `text_manifest` | `None` | Path to an operator-verified text manifest; see the text-restoration section. |
+| `fidelity_anchor` | `False` | Opt into the fidelity-anchor pass. |
+
+`tests/test_docs_cover_the_public_surface.py` fails when a field is added here
+and not to this table, because this seam had already drifted by eight fields
+before anything checked it.
+
 If AI metadata survives the strip, `remove_all` raises `MetadataStripIncomplete`
 **before** writing anything: an AI-readable output is worse than no output.
 

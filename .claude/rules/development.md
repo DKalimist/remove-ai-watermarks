@@ -92,6 +92,23 @@ status set; `TestIdentifyRealSamples::test_no_committed_fixture_reports_a_truste
 is that guard. Read a capability the stack does not have as a missing input, never as a
 negative finding.
 
+## The docs are a seam, and they drift like one
+
+`tests/test_docs_cover_the_public_surface.py` reads the live Click tree and the
+live `InvisibleOptions` dataclass and requires every knob to be NAMED in the
+user-facing pages. The code-to-code seams were already guarded and the
+code-to-docs seam was not, so it drifted exactly the way an unguarded seam does:
+`docs/cli.md` named none of `--adaptive-polish`, `--controlnet-scale`,
+`--detect/--no-detect`, `--humanize`, `--strength`, `--tile-size`,
+`--tile-overlap` or `--unsharp`, and `docs/python-api.md` named 9 of the 16
+option fields.
+
+Group option spellings by the Click PARAMETER, never by string surgery on the
+names. A boolean pair can be spelled anything -- `--strip-metadata/--keep-metadata`,
+`--keep-standard/--remove-all` -- so deriving the partner from a `--no-` prefix
+silently splits those pairs and demands both halves. Either spelling documents
+the pair.
+
 ## One measurement, one gate seam
 
 A detector is split into a trust-level-blind scan and a verdict that applies the
