@@ -274,8 +274,9 @@ per-stage schedule, CFG 1.0 and CUDA.
 ### Small images are processed at their native size
 
 There is no minimum-resolution floor. It existed to enlarge small inputs toward
-SDXL's ~1024 training resolution and was removed with the SDXL profiles, which
-never applied it anyway. Both surviving profiles run at native geometry, so a
+SDXL's ~1024 training resolution and was removed with the standalone SDXL and
+ControlNet profiles, which never applied it anyway. The surviving `sdxl-zimage`
+is a different profile and is unaffected. All three surviving profiles run at native geometry, so a
 small input is neither enlarged before diffusion nor restored afterward.
 
 `--max-resolution` still caps very large inputs, and only ever scales down.

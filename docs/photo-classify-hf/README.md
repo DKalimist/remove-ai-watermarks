@@ -13,7 +13,6 @@ tags:
   - photo
   - provider-attribution
 datasets:
-  - hugging-face/open-images
   - detection-datasets/coco
 ---
 

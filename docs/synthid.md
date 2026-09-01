@@ -1092,7 +1092,7 @@ a resolution trend here; measure it.
 **Current implication:** the old floor table remains evidence about the dated
 test set, not the current resolver. The SDXL and ControlNet profiles it measured
 no longer exist; the shipped defaults are defined in `watermark_profiles.py`, and
-both surviving profiles run face repair as a built-in second stage rather than as
+all three surviving profiles run face repair as a built-in second stage rather than as
 an optional restore. Removal near a threshold remains seed dependent, so
 reproducible verification requires a fixed seed.
 

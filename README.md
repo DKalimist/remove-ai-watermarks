@@ -7,8 +7,8 @@ Remove AI provenance marks from images and video you generated yourself:
 - C2PA, EXIF, XMP, IPTC, and related AI metadata.
 
 Video support covers provenance identification, complete visible-plus-metadata
-cleaning, directory batches, visible Sora, Veo, Seedance, Dola, Hailuo AI, and
-Kling AI mark removal, and oracle-certified VAE regeneration for video SynthID
+cleaning, directory batches, visible Sora, Veo, Seedance, Doubao, Dola,
+Hailuo AI, and Kling AI mark removal, and oracle-certified VAE regeneration for video SynthID
 removal.
 
 > [raiw.cc](https://raiw.cc) runs this library as a hosted service, with the GPU
@@ -446,7 +446,7 @@ invisible removal.
   detail.
 - Visible video removal recognizes the moving Sora 2 wordmark, the current Veo
   diamond plus legacy `Veo` text, the Seedance boxed `AI` label, and the fixed
-  Dola, Hailuo AI, and Kling AI labels. It does not recognize the older Sora Turbo
+  Doubao, Dola, Hailuo AI, and Kling AI labels. It does not recognize the older Sora Turbo
   corner swirl or unregistered layouts from those providers.
   The classical OpenCV backend can smear structured backgrounds; use MI-GAN or
   LaMa when recovery quality matters.
@@ -486,8 +486,11 @@ reinterpret the pixel result returned `UNAVAILABLE`; that follow-up was not a
 verifier rerun and does not invalidate the built-in verdicts. A 2026-07-31
 full-clip check on a public eight-second Veo sample found `0.10` still detected
 and `0.15` not detected, so `0.15` is now the certified default. The
-reproducible hashes and verdicts live in
-`data/evaluations/video-synthid-oracle.csv`.
+reproducible hashes and verdicts for that full-clip check -- one carrier, two
+rows -- live in `data/evaluations/video-synthid-oracle.csv`. The earlier
+two-clip calibration is narrative only: its verdicts were not recorded in a
+tracked manifest, so treat the certified default as resting on the 2026-07-31
+rows.
 
 ## Documentation
 
