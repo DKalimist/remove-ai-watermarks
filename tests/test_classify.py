@@ -45,7 +45,7 @@ def _scores(
 
 
 def test_hub_snapshot_is_the_freeze_revision() -> None:
-    assert WEIGHTS_REPO == "wiltodelta/raiw-models"
+    assert WEIGHTS_REPO == "wiltodelta/raiw-photo-classify"
     assert WEIGHTS_REVISION == "c0ac82b6f1ae9fc0b92c467562282e9422da6da6"
 
 

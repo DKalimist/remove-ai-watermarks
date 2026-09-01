@@ -73,7 +73,7 @@ Upgrading the Hugging Face Space is a separate, manual step: bump
 pin. Its callback smoke tests run in that repository's CI on every push; they
 are the scenario check for the demo surface.
 
-The Hugging Face **model** `wiltodelta/raiw-models` is not part of that
+The Hugging Face **model** `wiltodelta/raiw-photo-classify` is not part of that
 release fan-out. It holds the photo-classify freeze weights. The library extra
 `classify` downloads that snapshot on first use, or reads
 `RAIW_CLASSIFY_WEIGHTS`. Update the Hub repo only with
@@ -135,9 +135,14 @@ requests an older supported one.
 
 After publication, the `verify-release.yml` workflow runs automatically once
 `distribute.yml` completes and checks every surface below. It can also be
-dispatched manually with a specific version. The ComfyUI check verifies the
-sync workflow's latest run succeeded rather than querying the registry directly
-(the registry has no public JSON API). The full checklist for completeness:
+dispatched manually with a specific version. Every check fails the job; none of
+them warns and continues, because a surface nobody can confirm is not a verified
+surface. The ComfyUI check reads the published node from the registry's JSON API
+(`https://api.comfy.org/nodes/remove-ai-watermarks`) and asserts the active
+version declares this library release. It deliberately does NOT proxy through
+the sync workflow's run status: the node repository also runs that workflow on a
+daily schedule, so a green nightly run says nothing about whether this release
+was synced. The full checklist for completeness:
 
 - both wheel and source distribution exist on PyPI;
 - the package version matches the tag;

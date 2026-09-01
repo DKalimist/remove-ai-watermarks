@@ -38,7 +38,7 @@ Missing extra raises `RuntimeError` with
 parameter (`None` / `"auto"` / `"cpu"` / `"cuda"`), not a CLI option.
 
 Weights are not in git. First call downloads
-[`wiltodelta/raiw-models`](https://huggingface.co/wiltodelta/raiw-models)
+[`wiltodelta/raiw-photo-classify`](https://huggingface.co/wiltodelta/raiw-photo-classify)
 at the freeze revision pinned in `classify.py`, or reads
 `RAIW_CLASSIFY_WEIGHTS` if that directory already has `clip-l-ft.pt`,
 `probe-weights-clip-l-ft.npz`, `detector.pt`, and `provider.pt`. The training

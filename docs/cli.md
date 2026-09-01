@@ -129,7 +129,7 @@ The contract is AI versus camera. Receipts, UI, and digital art are out of
 scope. Microsoft is not a pixel class: a DALL-E Bing image scores as `openai`,
 an Imagen Designer image as `google`. `tc260` is the China AIGC label
 standard, not one producer. Weights download on first use from
-[`wiltodelta/raiw-models`](https://huggingface.co/wiltodelta/raiw-models),
+[`wiltodelta/raiw-photo-classify`](https://huggingface.co/wiltodelta/raiw-photo-classify),
 or from `RAIW_CLASSIFY_WEIGHTS` if that directory already holds the freeze
 files.
 Guide: [photo pixel classification](photo-classify.md). Hub card:
@@ -174,6 +174,18 @@ Use the strict visual gate without metadata or sibling corroboration:
 ```bash
 remove-ai-watermarks visible image.png --sensitivity strict -o clean.png
 ```
+
+Act on a mark you can see but the detector will not confirm, by naming it and
+skipping the gate:
+
+```bash
+remove-ai-watermarks visible image.png --mark gemini --no-detect -o clean.png
+```
+
+`--detect` is the default. `--no-detect` removes the named mark's footprint
+unconditionally, so it only makes sense together with an explicit `--mark`; on
+an image that never carried that mark it inpaints a region for nothing. Prefer
+`erase --region` when you know the geometry.
 
 When no known mark is detected, the command does not write a new output. Use
 `erase` if you can identify the affected region yourself.
@@ -575,7 +587,33 @@ remove-ai-watermarks invisible image.png -o clean.png \
 ```
 
 Tiling avoids the explicit downscale but each tile is regenerated separately.
-It is a memory strategy, not a guarantee of better quality.
+It is a memory strategy, not a guarantee of better quality. `--tile-size` and
+`--tile-overlap` set the tile geometry (defaults 1024 and 128 px); a larger
+overlap costs time and hides seams.
+
+### Every tuning option
+
+These apply to `invisible`, `all`, and `batch`. Each has a measured default, so
+reach for one only when you know why the default is wrong for your file.
+
+| Option | Effect |
+| --- | --- |
+| `--strength` | Denoising strength, 0.0-1.0. Default is profile- and vendor-adaptive; see [choose a strength cohort](#choose-a-strength-cohort). Raising it removes more and drifts further from the original. |
+| `--vendor` | Strength cohort, and an assertion that the watermark is present. |
+| `--pipeline` | Profile: `qwen-zimage` (default), `sdxl-zimage`, `chroma-zimage`, `auto`. |
+| `--seed` | Fixed at 0 by default: every profile is certified at that seed, and removal near the floor is seed-dependent. |
+| `--controlnet-scale` | Canny ControlNet conditioning on the global stage. Higher keeps the original structure and text closer. |
+| `--humanize` | Analog film grain, 0 = off, typical 2.0-6.0. |
+| `--unsharp` | Unsharp-mask sharpening, 0 = off. |
+| `--adaptive-polish` / `--no-adaptive-polish` | Overrides the profile's own choice. Unset lets the profile decide: off for `qwen-zimage`, whose output already matches the input's detail level, on for `sdxl-zimage`. |
+| `--max-resolution` | Cap the long side before diffusion; 0 = native. |
+| `--tile`, `--tile-size`, `--tile-overlap` | Tiled regeneration for large inputs, as above. |
+| `--cpu-offload` | Stream model components between CPU and GPU to lower CUDA memory pressure, at the cost of speed. |
+| `--hf-token` | Hugging Face token for the model download; also read from the environment and a local `.env`. |
+
+There is no `--model`, `--steps`, `--guidance-scale` or `--device` option; the
+profile pins all four. See [exit behavior](#exit-behavior) for what each command
+returns.
 
 ## Run the full pipeline
 

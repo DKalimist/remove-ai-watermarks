@@ -968,7 +968,7 @@ file keys the Muse Image head `meta_muse_image`. Tests in
 `tests/test_classify.py` pin the gate without downloads and pin that
 `identify` does not import this module.
 
-Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-models`.
+Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
 `RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. User guide:
 [photo-classify.md](photo-classify.md). Hub card:
 [photo-classify-hf/README.md](photo-classify-hf/README.md).
@@ -1835,7 +1835,8 @@ grain, unsharp masking, and adaptive polish helpers.
 
 `upscaler.py` held an optional Real-ESRGAN path, reachable only when enlarging a
 small image to the minimum-resolution floor. That floor existed to lift small
-inputs toward SDXL's ~1024 training size; when the SDXL profiles were removed it
+inputs toward SDXL's ~1024 training size; when the standalone SDXL and ControlNet
+profiles were removed (`sdxl-zimage` is a later, surviving profile) it
 was forced to 0 on every path, so the module, the `--min-resolution` and
 `--upscaler` options and the `esrgan` extra were all unreachable and went with
 it. Only the `max_resolution` cap can move geometry now, and it only scales down.

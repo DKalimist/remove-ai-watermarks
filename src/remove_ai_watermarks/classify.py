@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 CLASSIFY_EXTRA = "'remove-ai-watermarks[classify]'"
 WEIGHTS_ENV = "RAIW_CLASSIFY_WEIGHTS"
-WEIGHTS_REPO = "wiltodelta/raiw-models"
+WEIGHTS_REPO = "wiltodelta/raiw-photo-classify"
 WEIGHTS_REVISION = "c0ac82b6f1ae9fc0b92c467562282e9422da6da6"
 CLIP_FILE = "clip-l-ft.pt"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"

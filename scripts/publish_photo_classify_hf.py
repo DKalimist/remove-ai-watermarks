@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish the photo-classify freeze to Hugging Face wiltodelta/raiw-models.
+"""Publish the photo-classify freeze to Hugging Face wiltodelta/raiw-photo-classify.
 
 Manual. Not a library release step. Weights are not in git: pass --src, a
 directory that holds clip-l-ft.pt and the probe, with detector.pt and
@@ -23,7 +23,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-HUB_REPO = "wiltodelta/raiw-models"
+HUB_REPO = "wiltodelta/raiw-photo-classify"
 CLIP_FILE = "clip-l-ft.pt"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"

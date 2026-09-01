@@ -19,8 +19,8 @@ def _publish() -> Any:
     return module
 
 
-def test_hub_id_is_raiw_models() -> None:
-    assert _publish().HUB_REPO == "wiltodelta/raiw-models"
+def test_hub_id_is_the_photo_classify_repo() -> None:
+    assert _publish().HUB_REPO == "wiltodelta/raiw-photo-classify"
 
 
 def test_weight_paths_accepts_run1_layout(tmp_path: Path) -> None:

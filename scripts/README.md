@@ -44,7 +44,7 @@ explicitly names a tracked canonical result.
 | `visible_recall_sample.py` | Build an unbiased blinded sample for recall measurement. |
 | `visible_sheets.py` | Build blinded contact sheets for relaxation candidates. |
 | `retrain_photo_classify.py` | CPU-retrain the 2026-08-31 photo heads from a sha256-keyed cache pack, no images. |
-| `publish_photo_classify_hf.py` | Upload the photo-classify card and freeze weights to Hugging Face `wiltodelta/raiw-models`. Manual; the Action `publish-photo-classify-hf.yml` is the write-token path. |
+| `publish_photo_classify_hf.py` | Upload the photo-classify card and freeze weights to Hugging Face `wiltodelta/raiw-photo-classify`. Manual; the Action `publish-photo-classify-hf.yml` is the write-token path. |
 | `verify_engine_selection_fixtures.py` | Verify hashes, dimensions, and prompt pairing in the tracked auto-engine content matrix. |
 
 ## Research and diagnostic prototypes

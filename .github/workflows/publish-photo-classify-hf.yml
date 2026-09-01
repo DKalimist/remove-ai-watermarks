@@ -3,7 +3,7 @@ name: Publish photo classifier to Hugging Face
 # Manual only. Not part of a library release. The Space demo
 # (wiltodelta/remove-ai-watermarks) stays on distribute.yml / raiw-hf-space.
 #
-# Hub model: wiltodelta/raiw-models
+# Hub model: wiltodelta/raiw-photo-classify
 # Secret: HF_TOKEN, write-role Hugging Face token (same secret Space sync uses).
 #
 # Weights are not in git. Full mode downloads them from a GitHub Release
