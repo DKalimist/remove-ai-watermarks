@@ -17,6 +17,8 @@ data/
     full-pipeline-quality.csv
                   Reusable full-pipeline evaluation selection
   evaluations/
+    engine-selection/
+                  Prompt-matched AI content matrix for deterministic auto-engine research
     fidelity/     Evaluation instructions and hand-verified ground truth
     video-synthid-oracle.csv
                   Reproducible full-clip Gemini SynthID verdicts
@@ -34,6 +36,9 @@ data/
    commands, hashes, and oracle verdicts instead of committing another corpus
    copy. A small curated before-and-after example may live in `docs/images/`
    when it is part of the public documentation.
+   `evaluations/engine-selection/` is the bounded exception for ORIGINAL study
+   inputs: its manifest tracks a prompt-matched OpenAI/Meta content matrix, not
+   generated model outputs or watermark-oracle evidence.
 6. Keep third-party fixture license notices in `licenses/`, outside directories
    that tests enumerate as media inputs.
 7. Runtime detector assets belong in `src/remove_ai_watermarks/assets/`.

@@ -976,9 +976,10 @@ is the source of truth for:
 The current profiles are `qwen-zimage` (the default), `sdxl-zimage`,
 `chroma-zimage`, and `auto`, and all four are CUDA-only. `controlnet`, `sdxl`,
 `qwen` and `default` were removed rather than kept as a CPU path, and are
-rejected rather than aliased onward. `auto` is a per-cohort engine router:
+rejected rather than aliased onward. `auto` is a deterministic per-cohort
+selection policy:
 chroma-zimage for OpenAI and Microsoft, qwen-zimage for Google, Meta, and
-unknown. It is not a content-class split inside one engine.
+unknown. It does not run a learned router or classify the image's genre.
 
 `qwen-zimage` normally resolves global denoise from image area for unknown content.
 Measured provider cohorts bypass that curve with flat operating points. The values,
@@ -1136,13 +1137,14 @@ geometry alone in schema 2, plus a SHA-256 over decoded RGB width, height, and p
 Validation happens before model loading. The library never treats OCR confidence as
 verification, and geometry-only operators do not need to invent text or script fields.
 
-When enabled, `QwenZImagePipeline` reconstructs the source once through its already
-loaded Qwen VAE, runs the ordinary global and face stages, and calls the shared
-restoration compositor. The optional fidelity anchor first blends 15% of the VAE
+When enabled, the one profile selected before model loading reconstructs the source
+once through its already loaded VAE, runs the ordinary global and face stages, and
+calls the shared restoration compositor. Qwen and Chroma implement this donor hook;
+SDXL does not. The optional Qwen-only fidelity anchor first blends 15% of the VAE
 reconstruction into the clean result; it is off by default because the blend returned
 detector-visible OpenAI SynthID in the measured poster fixtures. The compositor derives
 binary source and candidate silhouettes, groups nearby lines, uses LaMa for the initial
-and residual-glyph erase passes, paints fresh silhouette edges, then copies the Qwen-VAE
+and residual-glyph erase passes, paints fresh silhouette edges, then copies the profile-VAE
 core with a 0.5-pixel feather. The evaluation script
 imports these same mask and compositing helpers so the two implementations cannot
 silently drift. Silhouette crops start 12% of line height beyond each horizontal
@@ -1157,6 +1159,21 @@ resolution caps, humanize, unsharp, and adaptive polish. Those combinations chan
 geometry or final pixels after the verified layer and have no measured oracle result.
 It remains opt-in because annotations are manual and provider verdicts apply only to
 the exact tested output hashes, not to the mechanism in general.
+
+The first full-path H100 check on 2026-08-31 ran each generative engine exactly
+once per source and used that SAME engine's VAE donor; it did not compose Qwen and
+Chroma in one production result. On the two verified multilingual OpenAI posters,
+restoration reduced PaddleOCR CER from 0.303 to 0.160 and 0.279 to 0.136 for Qwen,
+and from 0.213 to 0.130 and 0.204 to 0.108 for Chroma. PSNR improved on all four
+arms (Qwen 26.1 to 29.9 dB and 27.7 to 31.6 dB; Chroma 29.6 to 33.1 dB and 29.7
+to 32.9 dB). The verified CJK Google fixture is the counterexample that prevents
+an unconditional quality claim: Qwen CER stayed 0.074, while Chroma moved from
+0.037 to 0.074 despite better LPIPS, SSIM, PSNR, and text-box pixel error. The
+stage is therefore implemented and fidelity-positive on both OpenAI sources, but
+not assumed to improve every OCR reading. This is a fidelity check, not a provider
+oracle certification; exact output hashes and per-box metrics are produced by
+`scripts/chroma_text_restoration_study.py` under the gitignored
+`out/text-restoration-engine-study/` directory.
 
 A matched stage-isolation check on the 18-face Gemini portrait grid confirms the
 division of responsibility. The visible-cleaned, metadata-stripped control and the
@@ -1196,6 +1213,18 @@ strength-controlled img2img in that family; the full research record,
 including why FLUX.2 itself is not integrable this way, is
 [`chroma1-engine-research.md`](chroma1-engine-research.md).
 
+The profile also implements the shared verified-text donor hook through its already
+loaded Chroma VAE. It edge-pads native geometry to the /16 latent grid, takes the
+deterministic mode of the encoder distribution rather than sampling it, decodes with
+Diffusers' own image processor, and crops back to the exact source dimensions. Thus
+`auto` still loads and runs only the profile selected by the measured vendor table;
+the presence of a manifest does not introduce a second generative model or override
+that decision. A CPU smoke run against the official Chroma1-HD `AutoencoderKL`
+weights on 2026-08-31 verified the real encode/decode contract and exact restoration
+of a non-grid-aligned source size; model-free tests pin mode-not-sample and padding.
+Chroma-specific full-pipeline provider-oracle certification remains an output-hash
+measurement, not something either check can establish.
+
 The profile swaps only the global stage (same inheritance invariant as
 sdxl-zimage, asserted by the same test shape). Three things are bound to the
 calibration and must not drift: the NEUTRAL prompt (`high quality, sharp,
@@ -1226,6 +1255,24 @@ first-clean is still 0.10; botanical seeds 1 and 2 stay DETECTED at
 that rung, which is the margin the 0.17 floor already holds. OpenAI stays on the flat 0.09 floor: extra SynthID-positive carriers
 clear at or below 0.06, including a 2-face file, and only the 9-face
 grid needs 0.075 (seed-stable on 0, 1, 2 via openai.com/research/verify).
+
+A separate content-balanced check on 2026-08-31 tested the exact production
+OpenAI and Meta floors over 19 prompt-matched image strata per provider. Each
+engine ran in its own sequential H100 invocation, and the comparison isolated
+the global stage because the shared face repair does not change with this choice.
+On OpenAI content, Chroma won SSIM and PSNR on 19/19 pairs, MAE on 18/19, edge
+F1 on 15/19, and LPIPS on 12/19. On Meta content, Qwen won LPIPS and edge F1 on
+18/19 pairs; Chroma's better PSNR on 16/19 did not overcome its systematically
+worse perceptual and edge preservation at the higher required floor. Exact
+two-sided sign-test p-values were 3.8e-6 for the OpenAI SSIM and PSNR directions
+and 7.6e-5 for the Meta LPIPS and edge-F1 directions. The tracked discovery
+inputs and manifests are in
+[`data/evaluations/engine-selection/`](../data/evaluations/engine-selection/),
+the run is reproduced by `scripts/engine_selection_study.py`, and paired analysis
+by `scripts/analyze_engine_selection_study.py`. These content files were locally
+re-encoded and are not watermark oracles; they validate fidelity at already
+oracle-calibrated floors, not removal by themselves. No content-stratum override
+is supported by this pass, so `auto` keeps the measured provenance-cohort table.
 
 ### SDXL plus Z-Image
 

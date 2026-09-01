@@ -468,17 +468,18 @@ user can act on rather than after a model load.
 ### Restore operator-verified text
 
 `--text-manifest` enables the experimental `vae-glyphs` post-pass. It reconstructs
-the source with the Qwen VAE, erases the annotated candidate glyphs with LaMa, and
-composites only the reconstructed glyph cores through source-derived silhouettes. It
-does not run OCR or choose which strings are correct. The optional `--fidelity-anchor`
-described below additionally blends 15% of the reconstruction across the full frame.
+the source with the selected profile's VAE, erases the annotated candidate glyphs
+with LaMa, and composites only the reconstructed glyph cores through source-derived
+silhouettes. It does not run OCR or choose which strings are correct. The optional
+Qwen-only `--fidelity-anchor` described below additionally blends 15% of the
+reconstruction across the full frame.
 
 Install the combined extra and run only with an operator-verified manifest:
 
 ```bash
 uv tool install --force "remove-ai-watermarks[text-restoration]"
 remove-ai-watermarks invisible image.png -o clean.png \
-  --pipeline qwen-zimage --text-manifest verified-lines.json --force
+  --pipeline auto --text-manifest verified-lines.json --force
 ```
 
 ``verified: true`` may also be set by an automated operator that attests
@@ -486,7 +487,8 @@ machine-verified geometry: stability-gated detector boxes inside sane caps. Such
 operators should use the geometry-only schema 2, which carries no transcription
 or script metadata.
 
-Since 0.27.1 the global 15% Qwen-VAE fidelity-anchor blend is off by default: it
+Since 0.27.1 the global 15% Qwen-VAE fidelity-anchor blend is off by default and
+remains available only with `qwen-zimage`: it
 was measured to return detector-visible OpenAI SynthID on poster-scale manifests
 (official Content Provenance API, 2026-08-19). `--fidelity-anchor` restores the
 0.27.0 research behavior; text-box fidelity lost by the default is well under one
@@ -503,8 +505,9 @@ container changes remain valid while a resized or edited source fails closed. Th
 experimental helper
 `remove_ai_watermarks._internal.text_restoration.source_pixel_sha256` computes it.
 
-This mode is supported only by `qwen-zimage` at native geometry with
-`humanize=0`, `unsharp=0`, and adaptive polish disabled. `all` also accepts the flag,
+This mode is supported by `qwen-zimage`, `chroma-zimage`, and `auto` at native
+geometry with `humanize=0`, `unsharp=0`, and adaptive polish disabled. The legacy
+`sdxl-zimage` profile does not expose a verified-text VAE donor. `all` also accepts the flag,
 but its manifest must match the pixels entering the invisible stage; if visible-mark
 removal changes those pixels, the hash check rejects the run. One oracle verdict does
 not certify another manifest, seed, model/runtime version, or output hash.

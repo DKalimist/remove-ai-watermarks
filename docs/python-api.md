@@ -672,11 +672,13 @@ engine.remove_watermark(
 
 Install `remove-ai-watermarks[text-restoration]`. The manifest schema and safety
 constraints are documented in the CLI guide. The engine verifies its decoded RGB
-hash before loading the diffusion models and rejects SDXL, downscaling, and
-postprocessing combinations that were not evaluated. Tiling is also rejected because
-the combined tiled-restoration path has no provider-oracle calibration. `InvisibleOptions`
-exposes the same field for `remove_all`; after a visible-stage edit, the manifest must
-be built against the staged pixels rather than the pristine source.
+hash before loading the diffusion models. Qwen and Chroma reconstruct the donor with
+the VAE already loaded for the one profile selected by `auto`; no second generative
+profile runs. The engine rejects SDXL, downscaling, and postprocessing combinations
+that were not evaluated. Tiling is also rejected because the combined
+tiled-restoration path has no provider-oracle calibration. `InvisibleOptions` exposes
+the same field for `remove_all`; after a visible-stage edit, the manifest must be built
+against the staged pixels rather than the pristine source.
 
 Use manifest schema 1 for manually reviewed text plus script metadata. Automated
 operators that verify only text-region geometry should emit schema 2 lines with a
@@ -687,7 +689,8 @@ default** (`fidelity_anchor=False`): that whole-frame blend was measured to
 return detector-visible OpenAI SynthID on poster-scale manifests (official
 Content Provenance API, 2026-08-19 - detected x6 with the anchor, clean x6
 without it, controls and base outputs validated in the same sessions). Pass
-`fidelity_anchor=True` to reproduce the 0.27.0 research behavior.
+`fidelity_anchor=True` with `qwen-zimage` to reproduce the 0.27.0 research
+behavior. Chroma rejects that Qwen-specific reproduction flag.
 
 ### Drafting manifest lines
 
