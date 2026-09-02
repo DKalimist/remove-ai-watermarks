@@ -137,12 +137,20 @@ After publication, the `verify-release.yml` workflow runs automatically once
 `distribute.yml` completes and checks every surface below. It can also be
 dispatched manually with a specific version. Every check fails the job; none of
 them warns and continues, because a surface nobody can confirm is not a verified
-surface. The ComfyUI check reads the published node from the registry's JSON API
-(`https://api.comfy.org/nodes/remove-ai-watermarks`) and asserts the active
-version declares this library release. It deliberately does NOT proxy through
-the sync workflow's run status: the node repository also runs that workflow on a
-daily schedule, so a green nightly run says nothing about whether this release
-was synced. The full checklist for completeness:
+surface, with one deliberate exception noted below. The ComfyUI check reads the
+registry's JSON API and asserts that some published node version declares this
+library release. It deliberately does NOT proxy through the sync workflow's run
+status: the node repository also runs that workflow on a daily schedule, so a
+green nightly run says nothing about whether this release was synced.
+
+Read `/nodes/remove-ai-watermarks/versions`, not `latest_version` on the node
+object. The registry reviews an upload before activating it, and
+`latest_version` reports only the active version, so during that review window a
+correctly published version is indistinguishable from one that was never
+uploaded. A new version therefore sits in `NodeVersionStatusPending` for a while
+after a release; the check reports that state in the run summary and passes,
+because it is the registry's queue rather than an incomplete release. A missing
+version, or any other status, fails. The full checklist for completeness:
 
 - both wheel and source distribution exist on PyPI;
 - the package version matches the tag;

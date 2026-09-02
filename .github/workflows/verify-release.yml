@@ -106,28 +106,52 @@ jobs:
         run: |
           set -euo pipefail
           echo "Checking the ComfyUI Registry node..."
-          # The registry publishes the node as JSON, including the dependency the
-          # published version declares. Read that directly instead of proxying
-          # through the sync workflow's run status: the node repo runs
-          # sync-library.yml on a daily schedule too, so a green nightly run says
-          # nothing about whether THIS release was ever synced.
-          node=$(curl -fsSL "https://api.comfy.org/nodes/remove-ai-watermarks")
-          echo "$node" | VERSION="$VERSION" python3 -c "
+          # Read the published versions directly. Do NOT proxy through the sync
+          # workflow's run status: the node repo runs that workflow on a daily
+          # schedule too, so a green nightly says nothing about THIS release.
+          #
+          # And read the versions list, not `latest_version` on the node object.
+          # The registry reviews a new upload before activating it, and
+          # `latest_version` reports only the active one -- so for the whole
+          # review window a correctly published version looks identical to one
+          # that was never uploaded. Those are opposite situations: one is a
+          # queue nobody here controls, the other is a broken release.
+          versions=$(curl -fsSL "https://api.comfy.org/nodes/remove-ai-watermarks/versions")
+          status=$(printf '%s' "$versions" | VERSION="$VERSION" python3 -c "
           import json, os, sys
           version = os.environ['VERSION']
-          latest = json.load(sys.stdin).get('latest_version') or {}
-          deps = latest.get('dependencies') or []
           floor = f'>={version}'
-          if latest.get('status') != 'NodeVersionStatusActive':
-              sys.exit(f\"::error::ComfyUI node {latest.get('version')} is {latest.get('status')}, not active\")
-          if not any(floor in d for d in deps):
-              sys.exit(
-                  f'::error::ComfyUI node {latest.get(\"version\")} does not require '
-                  f'{version}; it declares {deps}'
-              )
-          print(f'  ComfyUI: node {latest[\"version\"]} requires {version}')
-          "
-          echo "- ComfyUI: registry node requires $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          matches = [
+              v for v in json.load(sys.stdin)
+              if any(floor in d for d in (v.get('dependencies') or []))
+          ]
+          if not matches:
+              sys.exit(f'::error::No ComfyUI node version requires {version}; the sync never published one')
+          # Sort rather than trusting the response order: the endpoint happens to
+          # return newest-first today and nothing documents that it must.
+          newest = max(matches, key=lambda v: v.get('createdAt') or '')
+          print(f\"{newest.get('version')} {newest.get('status')}\")
+          ")
+          node_version=${status%% *}
+          node_status=${status##* }
+          echo "  ComfyUI: node $node_version requires $VERSION (status $node_status)"
+          case "$node_status" in
+            NodeVersionStatusActive)
+              echo "- ComfyUI: registry node $node_version requires $VERSION and is live" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            NodeVersionStatusPending)
+              # Published and waiting on the registry's own review. Say exactly
+              # that in the summary rather than reporting it as live, and do not
+              # fail: an external moderation queue going red on every release
+              # trains everyone to ignore this workflow.
+              echo "::notice::ComfyUI node $node_version is published and awaiting registry review."
+              echo "- ComfyUI: registry node $node_version requires $VERSION, awaiting registry activation" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::ComfyUI node $node_version is $node_status"
+              exit 1
+              ;;
+          esac
 
       # -- HF Space -------------------------------------------------------------------
       - name: Verify the HF Space serves this release
