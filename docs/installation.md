@@ -77,9 +77,11 @@ uv tool install --force "remove-ai-watermarks[qwen-zimage]"
 Both remaining profiles run a Z-Image face stage on the DiffSynth runtime, so
 both need this extra. The third profile, `chroma-zimage`, uses diffusers'
 ChromaImg2ImgPipeline instead of DiffSynth for its global stage but inherits
-the same face stage, so it needs this extra too. It includes the `diffusion`
-dependencies; `diffusion` on its own covers the torch and diffusers imports
-but not the face stage, so it is not enough to run a removal.
+the same face stage, so it needs this extra too. The extra also installs
+SentencePiece for Chroma1-HD's binary `spiece.model`; without that backend,
+Transformers cannot construct the Chroma tokenizer. It includes the `diffusion`
+dependencies; `diffusion` on its own covers the torch and diffusers imports but
+not the face stage or Chroma tokenizer, so it is not enough to run a removal.
 
 **An NVIDIA GPU is required.** `qwen-zimage`, `sdxl-zimage` and `chroma-zimage`
 are CUDA-only, and
@@ -117,7 +119,7 @@ application actually uses:
 | `diffusion` | Torch and Diffusers runtime; video SynthID regeneration | `pixels`, Torch, Diffusers | Yes |
 | `migan` | MI-GAN ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `lama` | big-LaMa ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
-| `qwen-zimage` | Invisible image-watermark removal, all CUDA-only profiles | `diffusion`, DiffSynth | Yes |
+| `qwen-zimage` | Invisible image-watermark removal, all CUDA-only profiles | `diffusion`, DiffSynth, SentencePiece | Yes |
 | `text-restoration` | Opt-in verified profile-VAE glyph restoration | `qwen-zimage`, `lama` | Yes |
 | `text-draft` | Draft OCR proposals for operator verification | PaddleOCR, PaddlePaddle | Model download, no Torch |
 | `all` | Every production feature available on the active Python | All compatible rows above | Yes |

@@ -4,7 +4,7 @@
 # on it, including the ComfyUI node package. The console script below carries
 # the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.37.0"
+version = "0.37.1"
 description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -118,6 +118,9 @@ diffusion = [
 qwen-zimage = [
     "remove-ai-watermarks[diffusion]",
     "diffsynth>=2.0.17,<3",
+    # Chroma1-HD ships a binary spiece.model. Without the matching backend,
+    # Transformers falls through to tiktoken, which cannot parse that file.
+    "sentencepiece>=0.2.2,<0.3",
     "torchvision>=0.20.0",
 ]
 # Opt-in verified-text reconstruction over qwen-zimage. LaMa removes the changed

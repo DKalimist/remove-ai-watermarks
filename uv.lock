@@ -3311,7 +3311,7 @@ wheels = [
 
 [[package]]
 name = "remove-ai-watermarks"
-version = "0.37.0"
+version = "0.37.1"
 source = { editable = "." }
 dependencies = [
     { name = "c2pa-python" },
@@ -3336,6 +3336,7 @@ all = [
     { name = "pillow-heif" },
     { name = "pywavelets" },
     { name = "safetensors" },
+    { name = "sentencepiece" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "torchvision" },
@@ -3412,6 +3413,7 @@ qwen-zimage = [
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "opencv-python-headless" },
     { name = "safetensors" },
+    { name = "sentencepiece" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "torchvision" },
@@ -3432,6 +3434,7 @@ text-restoration = [
     { name = "onnxruntime" },
     { name = "opencv-python-headless" },
     { name = "safetensors" },
+    { name = "sentencepiece" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "torchvision" },
@@ -3500,6 +3503,7 @@ requires-dist = [
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'video'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "safetensors", marker = "extra == 'diffusion'" },
+    { name = "sentencepiece", marker = "extra == 'qwen-zimage'", specifier = ">=0.2.2,<0.3" },
     { name = "tokenizers", marker = "extra == 'classify'", specifier = ">=0.22,<0.23" },
     { name = "tokenizers", marker = "extra == 'diffusion'", specifier = ">=0.22,<0.23" },
     { name = "torch", marker = "extra == 'classify'", specifier = ">=2.0.0" },

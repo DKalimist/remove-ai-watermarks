@@ -81,6 +81,10 @@ def test_classify_extra_owns_the_photo_heads() -> None:
     assert {"torch", "transformers", "huggingface-hub", "tokenizers"} <= names
 
 
+def test_qwen_zimage_extra_owns_every_profile_tokenizer_backend() -> None:
+    assert "sentencepiece" in _requirement_names("qwen-zimage")
+
+
 def test_production_all_does_not_include_development_tools():
     assert {
         "pyright",
