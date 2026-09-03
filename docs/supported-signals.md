@@ -100,6 +100,15 @@ dimensions and as caveats, since no trust anchor list ships to evaluate them.
 Fallback claims, which validate nothing, remain medium-confidence, while a failed
 binding or signature or a revoked credential contributes no origin verdict.
 
+C2PA soft-binding names and their official `watermark` or `fingerprint` type come
+from a generated snapshot of the
+[C2PA registry](https://github.com/c2pa-org/softbinding-algorithm-list). A registry
+match names the declared algorithm but does not imply local payload decoding.
+`identify` keeps both kinds in the generic `soft_binding` signal; only watermark
+entries enter the watermark inventory, while a fingerprint remains a
+re-linkability warning, never selects pixel regeneration, and does not suppress
+independent SynthID evidence.
+
 ## File and container formats
 
 Pixel based image commands discover these extensions:

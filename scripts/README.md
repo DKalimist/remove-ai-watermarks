@@ -68,6 +68,12 @@ explicitly names a tracked canonical result.
 | --- | --- |
 | `render_pill_silhouette.py` | Render the synthetic Jimeng pill silhouette. |
 | `render_vendor_silhouettes.py` | Render synthetic vendor text-mark silhouettes. |
+| `sync_c2pa_soft_bindings.py` | Validate the official C2PA soft-binding registry and refresh its pinned runtime snapshot. |
+
+`maintain.sh` and the CI lint job run `sync_c2pa_soft_bindings.py --check`, so an
+upstream registry change fails with the refresh command instead of silently
+leaving new algorithms unnamed. The check and runtime parser are read-only;
+running the sync command without `--check` is the explicit snapshot update.
 
 ## Shared helpers
 

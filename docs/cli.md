@@ -49,8 +49,10 @@ unanchored or expired signer is reported as a caveat rather than a lower score,
 because no trust anchor list ships with the reader. A failed asset binding or
 signature, or a revoked signing credential, does not confirm the claimed origin. When a structured
 C2PA soft binding is present, the report also names its exact algorithm and
-signed value; removing the manifest does not remove the referenced pixel
-watermark or content fingerprint.
+signed value. Removing the manifest does not remove a referenced pixel
+watermark, and a referenced content fingerprint may still be recomputed. A
+fingerprint is reported as a durable-provenance signal, not as a watermark or a
+pixel-removal target.
 
 Machine readable output:
 

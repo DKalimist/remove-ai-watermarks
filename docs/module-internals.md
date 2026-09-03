@@ -419,13 +419,24 @@ type. Unreachable manifests remain excluded.
 Reachable `c2pa.soft-binding*` assertions retain their exact `alg` and bounded,
 printable block `value` in addition to the normalized vendor label. A block value
 without its algorithm is not surfaced because it cannot be attributed to a
-decoder or registry entry. `com.microsoft.invismark.1` uses that value as the
+decoder or registry entry. The labels and watermark/fingerprint classification
+come from the generated `_internal/_generated_c2pa_soft_bindings.py` snapshot of
+the official C2PA registry. Refresh it with
+`uv run python scripts/sync_c2pa_soft_bindings.py`; the command validates the
+upstream schema invariants, records the exact source revision and writes a
+deterministic module. Runtime inspection remains offline, and registry membership
+is name-only evidence rather than proof that a compatible decoder ships.
+
+`com.microsoft.invismark.1` uses its block value as the
 pixel-watermark identifier in Microsoft Paint output. An InvisMark soft binding
 keeps the invisible-removal gate fail-safe even when the C2PA asset binding has
 since become invalid, because metadata damage does not prove the pixel carrier
 disappeared. `identify` retains the generic `soft_binding` signal for schema-1
 compatibility and adds `invismark` as the stable pixel-removal signal.
-Content-fingerprint soft bindings do not trigger pixel regeneration.
+Registry entries of type `fingerprint` remain durable-provenance signals but are
+not added to the watermark inventory, do not trigger pixel regeneration, and do
+not suppress independently established SynthID watermark evidence. A registered
+watermark or an unknown soft-binding algorithm keeps that inference fail-safe.
 
 The SDK default enables trust verification but supplies no production trust
 anchors. Consequently, an installation without an explicitly maintained C2PA
