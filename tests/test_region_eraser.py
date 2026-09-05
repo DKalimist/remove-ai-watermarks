@@ -296,6 +296,16 @@ class TestMiganWrapper:
         assert out.shape == bgra.shape
         assert np.array_equal(out[..., 3], bgra[..., 3])
 
+    @pytest.mark.usefixtures("_fake_migan")
+    def test_16_bit_bgra_preserves_alpha(self):
+        bgra = np.full((100, 100, 4), 40000, np.uint16)
+        bgra[..., 3] = np.arange(10000, dtype=np.uint16).reshape(100, 100) * 6
+
+        out = erase(bgra, boxes=[(40, 40, 20, 20)], backend="migan", dilate=0)
+
+        assert out.dtype == np.uint16
+        assert np.array_equal(out[..., 3], bgra[..., 3])
+
 
 class TestSixteenBitInputs:
     """A 16-bit source must survive the fill, whatever the backend can hold.
@@ -333,6 +343,15 @@ class TestSixteenBitInputs:
         mask = boxes_to_mask(img.shape[:2], [(30, 30, 20, 20)], dilate=3)
         filled = erase(img, mask=mask, backend="cv2")[mask > 127]
         assert filled.min() > 30000
+
+    def test_cv2_preserves_a_16_bit_alpha_plane(self):
+        bgra = np.full((96, 96, 4), 40000, np.uint16)
+        bgra[..., 3] = np.arange(96 * 96, dtype=np.uint16).reshape(96, 96) * 7
+
+        out = erase(bgra, boxes=[(30, 30, 20, 20)], backend="cv2", dilate=3)
+
+        assert out.dtype == np.uint16
+        assert np.array_equal(out[..., 3], bgra[..., 3])
 
     def test_a_float_image_says_what_is_wrong(self):
         img = np.full((64, 64, 3), 0.5, np.float32)

@@ -2016,15 +2016,11 @@ class TestSixteenBitPngStrip:
 
         width = height = 4
         raw = b"".join(b"\x00" + b"\xab\xcd" * 3 * width for _ in range(height))
-
-        def chunk(ctype: bytes, body: bytes) -> bytes:
-            return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body))
-
         ihdr = struct.pack(">IIBBBBB", width, height, 16, 2, 0, 0, 0)  # 16-bit, truecolour
-        out = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+        out = b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr)
         for ctype, body in chunks:
-            out += chunk(ctype, body)
-        out += chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+            out += _png_chunk(ctype, body)
+        out += _png_chunk(b"IDAT", zlib.compress(raw)) + _png_chunk(b"IEND", b"")
         path.write_bytes(out)
 
     def test_the_depth_and_the_pixels_survive(self, tmp_path: Path):
@@ -2066,6 +2062,16 @@ class TestSixteenBitPngStrip:
         remove_ai_metadata(src, out)
 
         assert b"iCCP" in out.read_bytes()
+
+    def test_remove_all_drops_the_colour_profile(self, tmp_path: Path):
+        import zlib
+
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(src, [(b"iCCP", b"ICC\x00\x00" + zlib.compress(b"not-a-real-profile"))])
+
+        remove_ai_metadata(src, out, keep_standard=False)
+
+        assert b"iCCP" not in out.read_bytes()
 
     def test_a_c2pa_store_still_goes(self, tmp_path: Path):
         src, out = tmp_path / "src.png", tmp_path / "out.png"
