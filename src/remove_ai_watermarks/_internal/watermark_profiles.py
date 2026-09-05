@@ -228,11 +228,14 @@ def resolve_adaptive_polish(adaptive_polish: bool | None, pipeline: str) -> bool
 def global_offload_supported(pipeline: str) -> bool:
     """Whether ``--cpu-offload`` reaches this profile's global stack.
 
-    ``auto`` is not one of them, and that is the honest answer rather than an
-    omission: it resolves per-image and one of its two engines ignores the flag.
-    The remover asks after resolution, so it always asks about a concrete engine.
+    Per-image ``auto`` runs resolve before loading a stack. An explicit preload is
+    the only unresolved ``auto`` load, and that path deliberately uses qwen-zimage
+    as its fallback, so it has the same offload support as qwen-zimage.
     """
-    return normalize_profile(pipeline) in GLOBAL_OFFLOAD_PROFILES
+    profile = normalize_profile(pipeline)
+    if profile == AUTO_PROFILE:
+        profile = resolve_auto_profile(None)
+    return profile in GLOBAL_OFFLOAD_PROFILES
 
 
 def strength_default_help() -> str:

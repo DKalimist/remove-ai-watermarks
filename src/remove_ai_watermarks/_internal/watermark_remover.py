@@ -157,8 +157,9 @@ class WatermarkRemover:
         """Say so when --cpu-offload cannot reach the stack it was asked for.
 
         Warned here rather than at construction because ``auto`` picks its engine
-        per-image: by the time a stack is built, ``model_profile`` is concrete, and
-        this is still ahead of the model load the user is waiting on.
+        per-image. A normal run reaches this point with a concrete profile; preload
+        reaches it as unresolved ``auto`` and builds its qwen-zimage fallback.
+        Either way this remains ahead of the model load the user is waiting on.
         """
         if not self.cpu_offload or global_offload_supported(self.model_profile):
             return

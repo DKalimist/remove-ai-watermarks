@@ -1053,9 +1053,11 @@ plain `.to(device)` and never consult it.
 `GLOBAL_OFFLOAD_PROFILES` in `watermark_profiles.py` is the list, and
 `global_offload_supported` the question; `WatermarkRemover._warn_if_global_offload_unsupported`
 warns ahead of the model load rather than at construction, because `auto` picks
-its engine per-image. Below `RESIDENT_FACE_MODEL_MIN_VRAM_GIB` the flag is a no-op
-for those two profiles -- the face stack was offloading anyway and the global one
-does not ask -- which is what the warning exists to say before a download starts.
+its engine per-image. An explicit `auto` preload uses the qwen-zimage fallback and
+therefore keeps global offload active before that resolution. Below
+`RESIDENT_FACE_MODEL_MIN_VRAM_GIB` the flag is a no-op for the other two profiles --
+the face stack was offloading anyway and the global one does not ask -- which is
+what the warning exists to say before a download starts.
 
 Residency is otherwise chosen from the card's total VRAM, once per stack:
 `resolve_global_model_residency` gates the mandatory Qwen stack at

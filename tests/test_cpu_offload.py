@@ -26,6 +26,14 @@ from remove_ai_watermarks._internal.watermark_profiles import (
 )
 from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover
 
+OFFLOAD_SUPPORT_CASES = (
+    (QWEN_ZIMAGE_PROFILE, True),
+    (CHROMA_ZIMAGE_PROFILE, False),
+    (SDXL_ZIMAGE_PROFILE, False),
+    # Unresolved auto appears only in preload, which builds qwen-zimage.
+    (AUTO_PROFILE, True),
+)
+
 
 def _remover(profile: str, cpu_offload: bool) -> WatermarkRemover:
     remover = WatermarkRemover.__new__(WatermarkRemover)
@@ -43,20 +51,13 @@ def _remover(profile: str, cpu_offload: bool) -> WatermarkRemover:
 class TestGlobalOffloadSupport:
     @pytest.mark.parametrize(
         ("profile", "expected"),
-        [
-            (QWEN_ZIMAGE_PROFILE, True),
-            (CHROMA_ZIMAGE_PROFILE, False),
-            (SDXL_ZIMAGE_PROFILE, False),
-            # auto resolves per-image and one of its engines is chroma-zimage.
-            (AUTO_PROFILE, False),
-        ],
+        OFFLOAD_SUPPORT_CASES,
     )
-    def test_only_qwen_zimage_takes_the_flag_to_its_global_stack(self, profile: str, expected: bool) -> None:
+    def test_loaded_profile_or_preload_fallback_reports_support(self, profile: str, expected: bool) -> None:
         assert global_offload_supported(profile) is expected
 
-    def test_every_profile_has_an_answer(self) -> None:
-        for profile in PROFILE_CHOICES:
-            assert isinstance(global_offload_supported(profile), bool)
+    def test_cases_cover_every_profile(self) -> None:
+        assert {profile for profile, _expected in OFFLOAD_SUPPORT_CASES} == set(PROFILE_CHOICES)
 
     def test_the_underscore_spelling_resolves(self) -> None:
         assert global_offload_supported("qwen_zimage") is True
@@ -85,6 +86,28 @@ class TestUnsupportedProfileWarns:
         with caplog.at_level(logging.WARNING):
             _remover(CHROMA_ZIMAGE_PROFILE, cpu_offload=False)._warn_if_global_offload_unsupported()
         assert caplog.records == []
+
+    def test_preloaded_auto_uses_qwen_offload_without_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from remove_ai_watermarks._internal import qwen_zimage_pipeline
+
+        captured: dict[str, object] = {}
+
+        class Recorder:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+
+            def preload(self, *, global_only: bool = False) -> None:
+                captured["global_only"] = global_only
+
+        monkeypatch.setattr(qwen_zimage_pipeline, "QwenZImagePipeline", Recorder)
+        with caplog.at_level(logging.WARNING):
+            _remover(AUTO_PROFILE, cpu_offload=True).preload(global_only=True)
+
+        assert caplog.records == []
+        assert captured["keep_global_models_on_device"] is False
+        assert captured["global_only"] is True
 
     def test_the_load_path_asks_before_building_the_stack(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # The warning has to reach the user ahead of the download, and it has to see
