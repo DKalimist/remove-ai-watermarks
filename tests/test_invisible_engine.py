@@ -294,17 +294,25 @@ class TestPostprocessingOrder:
     @staticmethod
     def _record(monkeypatch) -> list[str]:
         seen: list[str] = []
+
+        def record(stage):
+            def stub(img, *_args, **_kwargs):
+                seen.append(stage)
+                return img
+
+            return stub
+
         monkeypatch.setattr(
             "remove_ai_watermarks.humanizer.unsharp_mask",
-            lambda img, amount=0.5, sigma=1.0: (seen.append("unsharp"), img)[1],
+            record("unsharp"),
         )
         monkeypatch.setattr(
             "remove_ai_watermarks.humanizer.adaptive_polish",
-            lambda img, ref, seed=None, on_skip=None: (seen.append("polish"), img)[1],
+            record("polish"),
         )
         monkeypatch.setattr(
             "remove_ai_watermarks.humanizer.apply_analog_humanizer",
-            lambda img, grain_intensity=4.0, chromatic_shift=1: (seen.append("humanize"), img)[1],
+            record("humanize"),
         )
         return seen
 
@@ -351,9 +359,15 @@ class TestPostprocessingOrder:
 
         seen = self._record(monkeypatch)
         sizes: list[tuple[int, int]] = []
+
+        def record_unsharp(img, *_args, **_kwargs):
+            seen.append("unsharp")
+            sizes.append(img.shape[:2])
+            return img
+
         monkeypatch.setattr(
             "remove_ai_watermarks.humanizer.unsharp_mask",
-            lambda img, amount=0.5, sigma=1.0: (seen.append("unsharp"), sizes.append(img.shape[:2]), img)[2],
+            record_unsharp,
         )
         out = _apply_postprocessing(
             np.zeros((8, 8, 3), dtype=np.uint8),

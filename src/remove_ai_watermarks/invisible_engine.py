@@ -225,16 +225,17 @@ class InvisibleEngine:
                 profiles are certified at a fixed seed.
             humanize: Intensity of Analog Humanizer film grain (0 = off).
             unsharp: Final unsharp-mask sharpening strength (0 = off, default).
-                Applied last to counter the soft / over-smoothed look of the
-                diffusion pass; ~0.5-0.8 is a safe range, higher risks edge halos.
+                Applied after restoring the original resolution and before adaptive
+                polish and humanize; ~0.5-0.8 is a safe range, higher risks edge halos.
             adaptive_polish: Restore the input's detail level in the softened
                 output: a capped unsharp + edge-masked grain targeting the input's
                 Laplacian variance. Self-limiting -- a no-op when the output already
                 meets the input's detail level (text/flat graphics), so it only acts on
-                over-smoothed photo/face texture. Runs LAST. None (the default) follows
-                the profile: off for qwen-zimage, on for sdxl-zimage. This resolves
-                through the same ``resolve_adaptive_polish`` the CLI uses, so a library
-                caller and a CLI caller on one profile get the same output.
+                over-smoothed photo/face texture. Runs after unsharp and before
+                humanize. None (the default) follows the profile: off for qwen-zimage,
+                on for sdxl-zimage. This resolves through the same
+                ``resolve_adaptive_polish`` the CLI uses, so a library caller and a CLI
+                caller on one profile get the same output.
             max_resolution: Cap the long side (px) before diffusion. 0 (default)
                 = no cap. Set a positive value only to bound GPU memory on very large
                 inputs (it reintroduces a lossy downscale->upscale round-trip).
